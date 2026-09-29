@@ -37,8 +37,10 @@ class PublicJobDetail(PublicJobSummary):
 
 
 class PublicApplicationOutcome(StrEnum):
-    """What the candidate is told — deliberately coarse. Never carries the
-    AI's reasoning, score, model or the internal status name."""
+    """The submission-time screening gate's result, used server-side only
+    (welcome-email variant, campus-drive fast-track). Never serialized to
+    the candidate: the apply response is identical whatever the AI decided,
+    and any decision reaches the candidate by email, not the portal."""
 
     #: In the pipeline for recruiter review (AI matched, or AI unavailable).
     RECEIVED = "RECEIVED"
@@ -48,10 +50,13 @@ class PublicApplicationOutcome(StrEnum):
 
 
 class PublicApplicationResult(BaseModel):
+    """The candidate's submission confirmation. Deliberately carries no
+    screening outcome, status, score or reasoning — a MATCH and a NOT_MATCH
+    produce the same shape, so the portal cannot reveal the decision."""
+
     id: uuid.UUID
     job_title: str
     candidate_email: str
-    outcome: PublicApplicationOutcome
     #: True only when the email provider actually accepted the confirmation
     #: email — the UI must never claim an email that wasn't sent.
     confirmation_email_sent: bool

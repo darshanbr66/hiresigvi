@@ -25,15 +25,13 @@ export interface PublicJobDetail extends PublicJobSummary {
   organization: PublicOrganizationSummary;
 }
 
-/** Deliberately coarse — the candidate never sees AI reasoning, scores or
- * internal statuses. */
-export type PublicApplicationOutcome = "RECEIVED" | "NOT_SHORTLISTED_FOR_ROLE";
-
+/** The submission confirmation. Deliberately carries no screening outcome,
+ * AI score/reasoning or internal status — the response is the same whatever
+ * the AI decided; any decision reaches the candidate by email. */
 export interface PublicApplicationResult {
   id: string;
   job_title: string;
   candidate_email: string;
-  outcome: PublicApplicationOutcome;
   /** true only if the confirmation email was actually sent. */
   confirmation_email_sent: boolean;
   careers_contact_email: string | null;

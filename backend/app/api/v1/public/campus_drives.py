@@ -119,7 +119,6 @@ async def apply_to_campus_drive(
         id=application.id,
         job_title=application.job.title,
         candidate_email=application.candidate.email,
-        outcome=result.submission.outcome,
         confirmation_email_sent=result.submission.confirmation_email_sent,
         careers_contact_email=result.organization.careers_contact_email,
         submitted_at=application.applied_at,

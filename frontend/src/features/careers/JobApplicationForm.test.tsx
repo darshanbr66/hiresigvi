@@ -11,7 +11,9 @@ function renderForm() {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <JobApplicationForm slug="acme" jobId="job-1" contactEmail="careers@acme.test" />
+      <MemoryRouter>
+        <JobApplicationForm slug="acme" jobId="job-1" contactEmail="careers@acme.test" />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -60,7 +62,8 @@ async function verifyEmail() {
   await screen.findByLabelText(/Verification code/);
   fill(/Verification code/, "123456");
   fireEvent.click(await screen.findByRole("button", { name: "Verify email" }));
-  expect(await screen.findByText("Email verified")).toBeInTheDocument();
+  // A valid code lands directly on the resume step.
+  expect(await screen.findByLabelText(/Resume \(PDF only\)/)).toBeInTheDocument();
 }
 
 function attachResume(name = "resume.pdf") {
@@ -73,7 +76,6 @@ const result = (overrides: Partial<PublicApplicationResult> = {}): PublicApplica
   id: "app-1",
   job_title: "Backend Engineer",
   candidate_email: "eli@example.com",
-  outcome: "RECEIVED",
   confirmation_email_sent: true,
   careers_contact_email: "careers@acme.test",
   submitted_at: new Date().toISOString(),
@@ -84,7 +86,6 @@ async function completeFlow() {
   fillDetails({ experienced: true });
   submitCurrentStep();
   await verifyEmail();
-  fireEvent.click(screen.getByRole("button", { name: /continue/i }));
   const file = attachResume();
   submitCurrentStep();
   fireEvent.click(await screen.findByRole("button", { name: "Submit application" }));
@@ -121,16 +122,54 @@ describe("JobApplicationForm", () => {
     expect(await screen.findByText(/at least one language/)).toBeInTheDocument();
   });
 
-  it("can't continue past email verification until the email is verified", async () => {
+  it("moves straight to the resume upload after a valid code, with no separate verified screen", async () => {
     renderForm();
     fillDetails();
     submitCurrentStep();
 
     expect(await screen.findByText("Not verified yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+    // Nothing to click past on the verification step.
+    expect(screen.queryByRole("button", { name: /continue/i })).not.toBeInTheDocument();
 
     await verifyEmail();
-    expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
+    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent(/Resume/);
+    expect(screen.queryByText("Email verified")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Verify email" })).not.toBeInTheDocument();
+  });
+
+  it("doesn't ask for verification again when a verified candidate goes back to edit details", async () => {
+    renderForm();
+    fillDetails();
+    submitCurrentStep();
+    await verifyEmail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByLabelText(/Full name/)).toBeInTheDocument();
+    submitCurrentStep();
+    expect(await screen.findByLabelText(/Resume \(PDF only\)/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["an incorrect", "Incorrect code. 4 attempts remaining.", "otp_incorrect"],
+    ["an expired", "This code has expired. Please request a new one.", "otp_expired"],
+  ])("stays on verification with the server's message for %s code", async (_kind, message, code) => {
+    renderForm();
+    fillDetails();
+    submitCurrentStep();
+    vi.spyOn(careersApi, "requestEmailCode").mockResolvedValue({
+      expires_in_seconds: 600,
+      resend_available_in_seconds: 60,
+    });
+    vi.spyOn(careersApi, "verifyEmailCode").mockRejectedValue(new ApiError(message, 422, code));
+    fireEvent.click(await screen.findByRole("button", { name: "Send verification code" }));
+    await screen.findByLabelText(/Verification code/);
+    fill(/Verification code/, "000000");
+    fireEvent.click(screen.getByRole("button", { name: "Verify email" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Verification code/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Resume \(PDF only\)/)).not.toBeInTheDocument();
+    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent(/Verify/i);
   });
 
   it("shows the server's message for a wrong code", async () => {
@@ -157,7 +196,6 @@ describe("JobApplicationForm", () => {
     fillDetails();
     submitCurrentStep();
     await verifyEmail();
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
 
     attachResume("resume.docx");
     expect(await screen.findByText(/upload your resume as a PDF/)).toBeInTheDocument();
@@ -185,7 +223,11 @@ describe("JobApplicationForm", () => {
       file,
       "verified-token",
     );
-    expect(await screen.findByText("Application received")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
+    expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
+    expect(screen.getByText(/successfully submitted and will be reviewed/)).toBeInTheDocument();
+    expect(screen.getByText(/we will contact you by email/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Careers" })).toHaveAttribute("href", "/org/acme");
     expect(screen.getByText(/confirmation email has been sent/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "careers@acme.test" })).toHaveAttribute(
       "href",
@@ -198,28 +240,65 @@ describe("JobApplicationForm", () => {
     renderForm();
     await completeFlow();
 
-    expect(await screen.findByText("Application received")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
     expect(screen.queryByText(/confirmation email has been sent/)).not.toBeInTheDocument();
     expect(screen.getByText(/couldn't send a confirmation email/)).toBeInTheDocument();
   });
 
-  it("tells a screened-out candidate clearly, without technical detail, they're not eligible for this role", async () => {
-    vi.spyOn(careersApi, "applyToJob").mockResolvedValue(
-      result({ outcome: "NOT_SHORTLISTED_FOR_ROLE", confirmation_email_sent: true }),
-    );
+  it("never shows the candidate a screening result or decision, whatever the backend sends", async () => {
+    // The API no longer returns any screening data; even a stale backend
+    // still sending the old outcome field (or anything similar) must not
+    // change what the candidate sees.
+    const legacy = {
+      ...result(),
+      outcome: "NOT_SHORTLISTED_FOR_ROLE",
+      decision: "NOT_MATCH",
+      overall_score: 42,
+      missing_requirements: ["React.js"],
+      status: "AI_SCREENED_OUT",
+    } as PublicApplicationResult;
+    vi.spyOn(careersApi, "applyToJob").mockResolvedValue(legacy);
     renderForm();
     await completeFlow();
 
-    expect(await screen.findByText("Not eligible for this role")).toBeInTheDocument();
-    expect(screen.getByText(/not eligible for this particular position/)).toBeInTheDocument();
-    expect(screen.getByText(/retained for consideration for other suitable opportunities/)).toBeInTheDocument();
-    // The welcome/acknowledgement email goes out for this outcome too.
-    expect(screen.getByText(/confirmation email has been sent/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "careers@acme.test" })).toBeInTheDocument();
-    // No alarming or technical language.
-    expect(screen.queryByText(/\bAI\b/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/rejected/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/score|%/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
+    const text = document.body.textContent ?? "";
+    for (const leaked of [
+      /\bMATCH\b/,
+      /NOT[ _]MATCH/i,
+      /\bAI\b/,
+      /score/i,
+      /%/,
+      /skills?/i,
+      /React\.js/,
+      /screen(ed|ing)/i,
+      /not eligible/i,
+      /shortlist/i,
+      /rejected/i,
+      /recommend/i,
+      /congratulations/i,
+      /selected/i,
+    ]) {
+      expect(text).not.toMatch(leaked);
+    }
+  });
+
+  it.each([
+    ["mobile", 375],
+    ["desktop", 1280],
+  ])("shows the same complete confirmation on a %s viewport", async (_label, width) => {
+    // jsdom has no CSS layout engine: this checks the confirmation's content
+    // and actions render at either width; the responsive styling itself is
+    // the @media rule in styles/public.css.
+    vi.stubGlobal("innerWidth", width);
+    vi.spyOn(careersApi, "applyToJob").mockResolvedValue(result());
+    renderForm();
+    await completeFlow();
+
+    const heading = await screen.findByRole("heading", { name: "Application Submitted" });
+    expect(heading.closest('[role="status"]')).toHaveClass("application-outcome-success");
+    expect(screen.getByRole("link", { name: "Back to Careers" })).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 
   it("tells a returning candidate they've already applied", async () => {
@@ -261,12 +340,11 @@ describe("JobApplicationForm", () => {
     await screen.findByLabelText(/Verification code/);
     fill(/Verification code/, "123456");
     fireEvent.click(await screen.findByRole("button", { name: "Verify email" }));
-    expect(await screen.findByText("Email verified")).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Resume \(PDF only\)/)).toBeInTheDocument();
     expect(requestCode).toHaveBeenCalledWith("drive-tok", "eli@example.com");
     expect(verifyCode).toHaveBeenCalledWith("drive-tok", "eli@example.com", "123456");
     expect(careersRequest).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
     const file = attachResume();
     submitCurrentStep();
     fireEvent.click(await screen.findByRole("button", { name: "Submit application" }));
@@ -282,5 +360,7 @@ describe("JobApplicationForm", () => {
       "href",
       "/assessment/abc",
     );
+    expect(screen.getByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Careers" })).toHaveAttribute("href", "/");
   });
 });

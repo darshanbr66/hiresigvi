@@ -4,7 +4,9 @@ A. valid candidate -> email verified -> AI MATCH -> application + welcome email
 B. email one-time-code rules (wrong / expired / attempt limit / resend
    throttle / hourly cap / token binding and single use)
 C. duplicate candidate by email or mobile -> blocked, nothing created
-D. AI NOT_MATCH -> AI_SCREENED_OUT, retained, respectful candidate outcome
+D. AI NOT_MATCH -> AI_SCREENED_OUT, retained; the apply response is the same
+   neutral confirmation as a MATCH (the decision reaches the candidate only
+   by email)
 E. HR override of the AI decision (reason required, audited, role-gated)
 F. HR matching a candidate to other jobs; the candidate can't self-apply again
 G. organization careers contact configuration (SUPER_ADMIN only, public read)
@@ -131,6 +133,19 @@ async def _second_job(client: AsyncClient, ctx: dict, title: str = "Data Analyst
     return str(job.json()["id"])
 
 
+#: Everything a candidate's apply response may carry — no screening outcome,
+#: status, score, decision or evidence, whatever the AI verdict was.
+CANDIDATE_CONFIRMATION_FIELDS = {
+    "id",
+    "job_title",
+    "candidate_email",
+    "confirmation_email_sent",
+    "careers_contact_email",
+    "submitted_at",
+}
+CAMPUS_CONFIRMATION_FIELDS = CANDIDATE_CONFIRMATION_FIELDS | {"assessment_invitation_link"}
+
+
 # --- A. valid candidate ------------------------------------------------------
 
 
@@ -147,12 +162,10 @@ async def test_valid_candidate_matching_resume_gets_application_and_welcome_emai
     response = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="ana@example.com")
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["outcome"] == "RECEIVED"
+    assert set(body) == CANDIDATE_CONFIRMATION_FIELDS
     assert body["confirmation_email_sent"] is True
     assert body["careers_contact_email"] == "talent@intake-match.dev"
-    # Nothing internal reaches the candidate.
-    for leaked in ("status", "decision", "overall_score", "summary", "model", "provider"):
-        assert leaked not in body
+    assert "MATCH" not in response.text
 
     (welcome,) = recording_email.sent
     assert welcome.to == ["ana@example.com"]
@@ -210,7 +223,7 @@ async def test_ai_unavailable_keeps_application_for_manual_review(
 
     response = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="cai@example.com")
     assert response.status_code == 201
-    assert response.json()["outcome"] == "RECEIVED"
+    assert set(response.json()) == CANDIDATE_CONFIRMATION_FIELDS
     (application,) = await _applications(client, ctx)
     # Never screened out on a failure — a person decides.
     assert application["status"] == "APPLIED"
@@ -473,10 +486,13 @@ async def test_non_matching_resume_is_screened_out_but_retained(
     response = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="lee@example.com")
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["outcome"] == "NOT_SHORTLISTED_FOR_ROLE"
+    # Exactly the same confirmation shape as a MATCH: the portal never
+    # reveals the screening decision, reasons or evidence.
+    assert set(body) == CANDIDATE_CONFIRMATION_FIELDS
     assert body["careers_contact_email"] == "hr@intake-not-match.dev"
     assert body["confirmation_email_sent"] is True
-    assert "NOT_MATCH" not in response.text and "React.js" not in response.text
+    for leaked in ("MATCH", "SHORTLISTED", "AI_SCREENED_OUT", "React.js", "Node.js"):
+        assert leaked not in response.text
     # Still welcomed and acknowledged -- in the "not eligible for this role"
     # version, which never mentions AI or the reasons.
     (acknowledgement,) = recording_email.sent
@@ -871,7 +887,7 @@ async def test_campus_application_is_screened_welcomed_and_tied_to_the_drive(
     response = await apply_to_campus_drive(client, token, email="ria@example.com")
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["outcome"] == "RECEIVED"
+    assert set(body) == CAMPUS_CONFIRMATION_FIELDS
     assert body["confirmation_email_sent"] is True
 
     (application,) = await _applications(client, ctx)
@@ -919,7 +935,8 @@ async def test_campus_ai_screen_out_is_retained_welcomed_and_not_fast_tracked(
     response = await apply_to_campus_drive(client, token, email="sam@example.com")
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["outcome"] == "NOT_SHORTLISTED_FOR_ROLE"
+    assert set(body) == CAMPUS_CONFIRMATION_FIELDS
+    assert "SHORTLISTED" not in response.text and "MATCH" not in response.text
     assert body["assessment_invitation_link"] is None
     assert body["confirmation_email_sent"] is True
     assert "AI_SCREENED_OUT" not in response.text

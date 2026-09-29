@@ -130,8 +130,8 @@ async def test_apply_creates_candidate_application_and_resume(
     assert body["candidate_email"] == "jane@example.com"
     # No AI provider in tests -> screening can't run -> the application is
     # never screened out; it waits for a recruiter.
-    assert body["outcome"] == "RECEIVED"
-    # Internal state never leaks to the candidate.
+    # Neither the screening outcome nor internal state reaches the candidate.
+    assert "outcome" not in body
     assert "status" not in body
 
     applications = await client.get(

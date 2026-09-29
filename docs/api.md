@@ -52,9 +52,11 @@ A person gets one profile and one self-service application per
 organization, matched by email or normalized mobile number. A duplicate is
 refused with 409 `already_registered` and nothing is created; an existing
 profile is never updated or merged by an anonymous submission. The response
-is `{outcome: RECEIVED | NOT_SHORTLISTED_FOR_ROLE, confirmation_email_sent,
-careers_contact_email}`. It never includes the internal status, AI decision,
-score or reasoning. Errors: 422 `email_not_verified`, `otp_invalid`,
+is `{id, job_title, candidate_email, confirmation_email_sent,
+careers_contact_email, submitted_at}`, and it is the same whatever the AI
+screening decided. It never includes a screening outcome, the internal
+status, AI decision, score, skills or reasoning; any decision reaches the
+candidate by email only. Errors: 422 `email_not_verified`, `otp_invalid`,
 `otp_expired`, `otp_incorrect`; 429 `otp_locked`, `otp_resend_throttled`,
 `otp_send_limit`, `rate_limited`; 409 `already_registered`. The full flow is
 in `docs/recruitment-workflow.md` § 6. Campus drive links have the same three
@@ -116,9 +118,15 @@ POST          /api/v1/recruiter/candidates/{candidate_id}/applications (applicat
                                                                          duplicating it)
 GET           /api/v1/recruiter/candidates/{candidate_id}/reapply-status (candidate.read; when the candidate may self-apply
                                                                          again, plus any open HR grant)
-POST          /api/v1/recruiter/candidates/{candidate_id}/reapply-grants (candidate.reapply.grant; {reason} required ->
-                                                                         201 single-use grant letting them self-apply before
-                                                                         the window ends; 409 if nothing to lift or one is open)
+GET           /api/v1/recruiter/candidates/reapply-search?q= (candidate.reapply.grant; active candidates whose name or
+                                                                         email contains q, or whose mobile contains q's digits
+                                                                         (max 20), each with its reapply-window standing)
+POST          /api/v1/recruiter/candidates/{candidate_id}/grant-reapply (candidate.reapply.grant; clears the candidate's
+                                                                         self-service applications and their data so the same
+                                                                         email + mobile can apply afresh -> 200
+                                                                         {candidate_id, full_name, email,
+                                                                         cleared_application_count}; 404 unknown/other tenant/
+                                                                         deleted; 409 `reapply_not_restricted` if nothing to lift)
 GET           /api/v1/recruiter/applications                  (application.read; searched, filtered, sorted and paged
                                                                 in the database — see "Applications list" below)
 GET/PATCH     /api/v1/recruiter/applications/{application_id}

@@ -42,8 +42,8 @@ class PublicCampusDriveUnavailable(BaseModel):
 
 
 class PublicCampusDriveApplicationResult(PublicApplicationResult):
-    """The careers-site result (coarse outcome only — never the internal
-    status, AI score or reasoning) plus the drive's assessment link, set
+    """The careers-site result (no screening outcome, internal status, AI
+    score or reasoning) plus the drive's assessment link, set
     only when the application was fast-tracked into the drive's default
     assessment."""
 

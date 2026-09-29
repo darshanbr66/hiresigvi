@@ -208,8 +208,8 @@ async def test_public_candidate_can_view_and_apply_to_active_drive(
     body = apply_response.json()
     assert body["job_title"] == "Graduate Engineer"
     assert body["assessment_invitation_link"] is None
-    # Coarse outcome only — never the internal status.
-    assert body["outcome"] == "RECEIVED"
+    # Neither the screening outcome nor internal state reaches the candidate.
+    assert "outcome" not in body
     assert "status" not in body
 
     applications = (

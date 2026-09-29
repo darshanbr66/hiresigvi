@@ -413,11 +413,6 @@
   font-weight: 600;
 }
 
-.verify-status-ok {
-  background: var(--color-active-bg);
-  color: var(--color-active-text);
-}
-
 .verify-code-form {
   display: flex;
   align-items: flex-end;
@@ -478,6 +473,24 @@
 .application-outcome-success {
   border-color: var(--color-success-border);
   background: linear-gradient(180deg, var(--color-active-bg), var(--color-surface) 65%);
+  text-align: center;
+  padding: 2.5rem 2rem;
+}
+
+.application-outcome-success > p {
+  max-width: 34rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.application-outcome-next {
+  margin: 1.25rem 0;
+}
+
+.application-outcome-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.5rem;
 }
 
 .outcome-contact {
@@ -504,6 +517,14 @@
 
   .apply-summary dt {
     margin-top: 0.4rem;
+  }
+
+  .application-outcome-success {
+    padding: 2rem 1.25rem;
+  }
+
+  .application-outcome-success .btn {
+    width: 100%;
   }
 }
 

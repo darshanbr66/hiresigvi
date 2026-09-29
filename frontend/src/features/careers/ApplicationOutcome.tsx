@@ -51,8 +51,8 @@ function OutcomeCard({
   );
 }
 
-/** Whether the welcome/acknowledgement email went out — only claimed when
- * the email provider actually accepted it. */
+/** Whether the acknowledgement email went out — only claimed when the email
+ * provider actually accepted it. */
 function EmailStatus({ result }: { result: PublicApplicationResult }) {
   return result.confirmation_email_sent ? (
     <p className="muted">
@@ -67,54 +67,51 @@ function EmailStatus({ result }: { result: PublicApplicationResult }) {
 }
 
 /**
- * What the candidate sees after submitting. Deliberately simple and
- * respectful: no scores, no AI reasoning, no internal status names — and a
- * confirmation email is only mentioned if it was actually sent. An
- * application the screening found ineligible still gets the welcome email;
- * the screen says clearly that it is not eligible for *this* role.
+ * What the candidate sees after submitting: a neutral confirmation, the
+ * same whatever the AI screening decided. Submission is not selection —
+ * the screen never shows a match/not-match, score, skills, recommendation
+ * or any internal status (the API doesn't send them either; see
+ * backend/app/schemas/public.py). Any decision reaches the candidate by
+ * email from the recruitment team.
  */
-export function ApplicationOutcome({ result }: { result: ApplicationOutcomeResult }) {
-  if (result.outcome === "NOT_SHORTLISTED_FOR_ROLE") {
-    return (
-      <OutcomeCard tone="neutral" title="Not eligible for this role">
-        <p>
-          Thank you for applying for <strong>{result.job_title}</strong>. We have received your
-          application, but based on the information provided, your profile does not currently meet
-          the requirements for this role, so you are not eligible for this particular position.
-        </p>
-        <p>Your profile has been retained for consideration for other suitable opportunities.</p>
-        <EmailStatus result={result} />
-        <p className="muted">
-          If you believe this result is incorrect or need to update your information, please
-          contact our recruitment team
-          {result.careers_contact_email ? (
-            <>
-              {" "}
-              at <a href={`mailto:${result.careers_contact_email}`}>{result.careers_contact_email}</a>
-            </>
-          ) : null}
-          .
-        </p>
-      </OutcomeCard>
-    );
-  }
-
+export function ApplicationOutcome({
+  result,
+  careersHref,
+}: {
+  result: ApplicationOutcomeResult;
+  /** Where "Back to Careers" leads. */
+  careersHref: string;
+}) {
   return (
-    <OutcomeCard tone="success" title="Application received">
+    <OutcomeCard tone="success" title="Application Submitted">
       <p>
-        Thank you for applying for <strong>{result.job_title}</strong>. Your profile is now with our
-        recruitment team, and we'll contact you by email about the next steps.
+        Thank you for applying for <strong>{result.job_title}</strong>.
+      </p>
+      <p>
+        Your application has been successfully submitted and will be reviewed by our recruitment
+        team.
+      </p>
+      <p className="muted">
+        If there is an update regarding your application, we will contact you by email.
       </p>
       {result.assessment_invitation_link && (
-        <>
+        <div className="application-outcome-next">
           <p>This drive includes an assessment — you can start it now.</p>
           <Link to={result.assessment_invitation_link} className="btn btn-primary">
             Start assessment
           </Link>
-        </>
+        </div>
       )}
       <EmailStatus result={result} />
       <UpdateInfoNote contactEmail={result.careers_contact_email} />
+      <div className="application-outcome-actions">
+        <Link
+          to={careersHref}
+          className={result.assessment_invitation_link ? "btn btn-ghost" : "btn btn-primary"}
+        >
+          Back to Careers
+        </Link>
+      </div>
     </OutcomeCard>
   );
 }

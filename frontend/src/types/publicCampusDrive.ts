@@ -27,7 +27,7 @@ export interface PublicCampusDriveUnavailable {
 
 export type PublicCampusDriveResult = PublicCampusDriveView | PublicCampusDriveUnavailable;
 
-/** The careers-site result (coarse outcome only) plus the drive's assessment
+/** The careers-site confirmation (no screening outcome) plus the drive's assessment
  * link — set only when the application was fast-tracked into the drive's
  * default assessment. */
 export interface PublicCampusDriveApplicationResult extends PublicApplicationResult {

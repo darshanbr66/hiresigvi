@@ -19,6 +19,8 @@ import {
   getCandidate,
   listCandidates,
 } from "./api";
+import { ReapplyPermissionPanel } from "./ReapplyPermissionPanel";
+import { canGrantReapply } from "./reapplyPermission";
 
 /** Roles a recruiter-added candidate can be put forward for — the same set
  * the candidate detail page offers. */
@@ -35,7 +37,7 @@ const SOURCE_BADGE: Record<CandidateSource, string> = {
 };
 
 export function CandidatesPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -235,6 +237,8 @@ export function CandidatesPage() {
           </button>
         )}
       </div>
+
+      {canGrantReapply(user?.roles) && <ReapplyPermissionPanel />}
 
       {candidatesQuery.isPending && <SkeletonTable columns={8} />}
 

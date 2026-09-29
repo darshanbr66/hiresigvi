@@ -3,7 +3,7 @@ the authenticated caller, never from the request (docs/security.md § 2)."""
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
@@ -24,8 +24,9 @@ from app.schemas.candidate import (
     CandidateDeleteRequest,
     CandidateResponse,
     CandidateUpdateRequest,
-    ReapplyGrantRequest,
     ReapplyGrantResponse,
+    ReapplyPermissionGrantedResponse,
+    ReapplySearchResult,
     ReapplyStatusResponse,
 )
 from app.schemas.candidate_history import CandidateHistoryResponse
@@ -61,6 +62,39 @@ async def list_candidates(
     assert current_user.organization_id is not None
     candidates = await candidate_service.list_candidates(db, current_user.organization_id)
     return [CandidateResponse.model_validate(candidate) for candidate in candidates]
+
+
+# Declared before "/{candidate_id}" so the literal path isn't read as an id.
+@router.get("/reapply-search", response_model=list[ReapplySearchResult])
+async def search_for_reapply(
+    q: str = Query(min_length=2, max_length=200),
+    current_user: User = Depends(require_permission("candidate.reapply.grant")),
+    db: AsyncSession = Depends(get_db),
+) -> list[ReapplySearchResult]:
+    """HR's "Reapply Permission" lookup by name, email or mobile number,
+    with each match's standing under the reapply rule."""
+    assert current_user.organization_id is not None
+    organization_id = current_user.organization_id
+    candidates = await reapply_service.search_candidates(
+        db, organization_id=organization_id, query=q
+    )
+    results = []
+    for candidate in candidates:
+        eligibility = await reapply_service.check_eligibility(
+            db, organization_id=organization_id, candidate_id=candidate.id
+        )
+        results.append(
+            ReapplySearchResult(
+                id=candidate.id,
+                full_name=candidate.full_name,
+                email=candidate.email,
+                phone=candidate.phone,
+                last_self_applied_at=eligibility.last_self_applied_at,
+                eligible_from=eligibility.eligible_from,
+                can_self_apply_now=eligibility.allowed,
+            )
+        )
+    return results
 
 
 @router.get("/{candidate_id}", response_model=CandidateResponse)
@@ -181,28 +215,30 @@ async def get_reapply_status(
     )
 
 
-@router.post(
-    "/{candidate_id}/reapply-grants",
-    response_model=ReapplyGrantResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def grant_early_reapply(
+@router.post("/{candidate_id}/grant-reapply", response_model=ReapplyPermissionGrantedResponse)
+async def grant_reapply_permission(
     candidate_id: uuid.UUID,
-    payload: ReapplyGrantRequest,
     current_user: User = Depends(require_permission("candidate.reapply.grant")),
     db: AsyncSession = Depends(get_db),
-) -> ReapplyGrantResponse:
-    """HR "Allow Reapply": the candidate may self-apply once more before the
-    reapply window ends. The reason is required and audited."""
+) -> ReapplyPermissionGrantedResponse:
+    """HR "Grant Reapply Permission" for a candidate still inside the reapply
+    window: clears their previous self-service applications (and the data
+    tied to them) so the same email and mobile number can apply afresh.
+    404 for an unknown / other-tenant / deleted candidate; 409
+    `reapply_not_restricted` when there is nothing to lift."""
     assert current_user.organization_id is not None
-    grant = await reapply_service.grant_early_reapply(
+    result = await reapply_service.grant_reapply_permission(
         db,
         organization_id=current_user.organization_id,
         candidate_id=candidate_id,
         actor=current_user,
-        reason=payload.reason,
     )
-    return await _grant_response(db, grant)
+    return ReapplyPermissionGrantedResponse(
+        candidate_id=result.candidate.id,
+        full_name=result.candidate.full_name,
+        email=result.candidate.email,
+        cleared_application_count=result.cleared_application_count,
+    )
 
 
 @router.post(

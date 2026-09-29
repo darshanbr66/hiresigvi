@@ -133,9 +133,11 @@ truth; the candidate projection is a presentation concern.
 
 **Not implemented yet** — there is no candidate portal API (§ 5), so no
 status is shown to candidates after they apply, and the table above has no
-row for `AI_SCREENED_OUT` yet. What a candidate is told today is only the
-submission result of the self-service flow (§ 6): `RECEIVED` or
-`NOT_SHORTLISTED_FOR_ROLE`, plus the welcome email. Neither ever names the
+row for `AI_SCREENED_OUT` yet. After applying (§ 6) the candidate sees only a
+neutral "Application Submitted" confirmation, identical whatever the AI
+decided; the apply response carries no screening outcome at all. The only
+place the screening result reaches the candidate is the welcome email, whose
+variant depends on it. Neither the screen nor the email ever names the
 internal status, the AI, its score or its reasoning.
 
 ## 4. Normal recruitment flow
@@ -186,7 +188,10 @@ and then confirms it. Confirming it returns a short-lived verification token,
 which the application form must send back. The browser never holds a
 "verified" flag of its own. Everything is enforced server-side in
 `app/services/email_verification_service.py`, and its state is stored in the
-tenant-scoped `email_verifications` table:
+tenant-scoped `email_verifications` table. In the form, a valid code moves
+the candidate straight on to the resume upload step (there is no separate
+"verified" screen); a wrong or expired code keeps them on the verification
+step with the server's message:
 
 - the code is stored only as an HMAC keyed with the server secret, and the
   token only as its SHA-256. Neither is ever stored in plain text;
@@ -248,16 +253,37 @@ application. The rule lives in `app/services/reapply_service.py`:
 - a `DUPLICATE_APPLICATION_BLOCKED` activity is recorded for HR, and the
   email verification token is used up, so it can't be replayed.
 
-**HR override ("Allow Reapply").** `POST /api/v1/recruiter/candidates/{id}/reapply-grants`
-(`candidate.reapply.grant`, reason required) records a `CandidateReapplyGrant`
-letting that candidate self-apply once before the window ends. It is
-single-use: their next self-service application stamps `used_at` and
-`used_by_application_id`, after which the normal window applies again. At
-most one grant may be open per candidate. Rows are never deleted — with the
-`CANDIDATE_REAPPLY_GRANTED` / `CANDIDATE_REAPPLY_GRANT_USED` activities they
-are the audit trail of who allowed what, when and why. Existing applications
-are untouched. `GET .../reapply-status` reports the window and any open
-grant.
+**HR override ("Grant Reapply Permission").** On the Candidates page, HR
+(`candidate.reapply.grant`: ORG_ADMIN, RECRUITER) finds the candidate by
+name, email or mobile (`GET /api/v1/recruiter/candidates/reapply-search`) and,
+after a confirmation, calls `POST /api/v1/recruiter/candidates/{id}/grant-reapply`
+(also offered on the candidate detail page). Only a candidate still inside
+the window can be granted (409 `reapply_not_restricted` otherwise). The grant
+permanently clears the candidate's **self-service** applications (careers
+site and campus drive link) so the same email and mobile start over:
+verification, resume upload, AI screening and a new reapply window.
+
+- Deleted, per self-service application: the application; through ON DELETE
+  CASCADE its status history, AI screening runs, assessment invitations
+  (answers, monitoring events, invitation notifications) and notes on it;
+  its resume rows (their embeddings cascade); every stored resume file no
+  remaining resume row still points at; and the candidate's derived resume
+  profile if it was built from one of those resumes (recomputed on demand).
+- Kept: the Candidate profile; HR-created and HR-matched applications and
+  any resume file they share (a shared file's embeddings are moved onto the
+  surviving row); calendar events and match results (their application link
+  is set to NULL); reapply grants; and the entire Activity log, plus a new
+  `CANDIDATE_REAPPLY_PERMISSION_GRANTED` entry naming who granted it.
+- One transaction: every delete and the activity are committed together,
+  and stored files are removed only after that commit succeeds, so a
+  failure part-way changes nothing. A file that can't be removed afterwards
+  is logged, not surfaced (the rows are gone and the candidate can apply).
+
+Single-use `CandidateReapplyGrant` rows written by the earlier "Allow
+Reapply" action are no longer issued, but any still open are honoured: the
+next self-service application spends one (`used_at`,
+`used_by_application_id`, `CANDIDATE_REAPPLY_GRANT_USED`). `GET
+.../reapply-status` reports the window and any open grant.
 
 **4. Commit first, then screen.** The candidate, application and resume are
 committed *before* the AI call and before any email. A slow or failed model,
@@ -269,9 +295,12 @@ The `ScreeningRun` records `decision` (`MATCH` / `NOT_MATCH`) and the
 `matched_requirements` / `missing_requirements` lists.
 
 - `MATCH`: the application stays `APPLIED` for recruiter review, and the
-  candidate is told `RECEIVED`.
+  candidate gets the standard welcome email.
 - `NOT_MATCH`: the system moves it to `AI_SCREENED_OUT` (§ 2). It is kept
-  and visible to HR, and the candidate is told `NOT_SHORTLISTED_FOR_ROLE`.
+  and visible to HR, and the candidate gets the "not eligible for this
+  particular position" version of the welcome email.
+- Either way the portal shows the same "Application Submitted" confirmation;
+  the decision is never shown on screen.
 - AI unconfigured or failing: the application stays `APPLIED` and an
   `AI_SCREENING_FAILED` activity is recorded. A failure never screens anyone
   out; a person decides.

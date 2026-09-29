@@ -304,22 +304,33 @@ class CandidateResponse(BaseModel):
     updated_at: datetime
 
 
-class ReapplyGrantRequest(BaseModel):
-    """HR allowing an early reapply. The reason is required — like every
-    other HR override in this codebase, it is what the audit trail shows."""
+class ReapplySearchResult(BaseModel):
+    """One match in HR's reapply-permission lookup, with where the candidate
+    stands under the reapply rule so the UI can tell "blocked" (offer the
+    grant) from "can already apply" (nothing to do)."""
 
-    reason: str = Field(min_length=1, max_length=1000)
+    id: uuid.UUID
+    full_name: str
+    email: str
+    phone: str | None
+    last_self_applied_at: datetime | None
+    eligible_from: datetime | None
+    can_self_apply_now: bool
 
-    @field_validator("reason")
-    @classmethod
-    def _not_blank(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("A reason is required.")
-        return value
+
+class ReapplyPermissionGrantedResponse(BaseModel):
+    candidate_id: uuid.UUID
+    full_name: str
+    email: str
+    #: Previous self-service applications removed so the candidate can
+    #: apply again from scratch.
+    cleared_application_count: int
 
 
 class ReapplyGrantResponse(BaseModel):
+    """A single-use grant from the earlier "Allow Reapply" action — no longer
+    issued, but any still open are honoured and shown in reapply status."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -334,7 +345,7 @@ class ReapplyGrantResponse(BaseModel):
 
 class ReapplyStatusResponse(BaseModel):
     """Where the candidate stands under the self-service reapply rule, for
-    the HR "Allow Reapply" action. `last_self_applied_at` None = they never
+    HR reapply permission. `last_self_applied_at` None = they never
     self-applied (e.g. HR created them) and can apply any time."""
 
     candidate_id: uuid.UUID

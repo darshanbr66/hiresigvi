@@ -228,6 +228,9 @@ CANDIDATE_TIMELINE_ACTIONS: frozenset[str] = frozenset(
         "CANDIDATE_UPDATED",
         "CANDIDATE_MATCHED_TO_JOB",
         "CANDIDATE_REAPPLIED",
+        "CANDIDATE_REAPPLY_PERMISSION_GRANTED",
+        # Written by the earlier single-use "Allow Reapply" grant; kept so
+        # existing history still shows.
         "CANDIDATE_REAPPLY_GRANTED",
         "CANDIDATE_REAPPLY_GRANT_USED",
         "CANDIDATE_RESUME_ADDED",

@@ -5,7 +5,8 @@ import type {
   CandidateHistoryResponse,
   CandidateResponse,
   HrApplicationWithResumeResponse,
-  ReapplyGrantResponse,
+  ReapplyPermissionGrantedResponse,
+  ReapplySearchResult,
   ReapplyStatusResponse,
 } from "../../../types/recruitment";
 
@@ -61,12 +62,21 @@ export function getReapplyStatus(candidateId: string, accessToken: string) {
   );
 }
 
-/** HR "Allow Reapply" — lets the candidate self-apply once before the
- * cooldown ends. Single use, and the reason is audited. */
-export function grantEarlyReapply(candidateId: string, reason: string, accessToken: string) {
-  return apiClient.post<ReapplyGrantResponse>(
-    `/api/v1/recruiter/candidates/${candidateId}/reapply-grants`,
-    { reason },
+/** HR's "Reapply Permission" lookup by name, email or mobile number. */
+export function searchCandidatesForReapply(query: string, accessToken: string) {
+  return apiClient.get<ReapplySearchResult[]>(
+    `/api/v1/recruiter/candidates/reapply-search?q=${encodeURIComponent(query)}`,
+    accessToken,
+  );
+}
+
+/** HR "Grant Reapply Permission": clears the candidate's previous
+ * self-service applications so they can apply again with the same email and
+ * mobile number. 404 unknown candidate; 409 when nothing is restricted. */
+export function grantReapplyPermission(candidateId: string, accessToken: string) {
+  return apiClient.post<ReapplyPermissionGrantedResponse>(
+    `/api/v1/recruiter/candidates/${candidateId}/grant-reapply`,
+    undefined,
     accessToken,
   );
 }

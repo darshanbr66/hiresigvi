@@ -162,7 +162,6 @@ async def apply_to_job(
         id=result.application.id,
         job_title=result.application.job.title,
         candidate_email=result.application.candidate.email,
-        outcome=result.outcome,
         confirmation_email_sent=result.confirmation_email_sent,
         careers_contact_email=organization.careers_contact_email,
         submitted_at=result.application.applied_at,

@@ -197,9 +197,12 @@ export function JobApplicationForm(
       props.campusToken !== undefined
         ? verifyCampusEmailCode(props.campusToken, values.email.trim(), code.trim())
         : verifyEmailCode(props.slug, values.email.trim(), code.trim()),
+    // A valid code moves straight on to the resume — there is no separate
+    // "verified" screen to click through. An invalid/expired code stays on
+    // this step with the backend's message.
     onSuccess: (data) => {
       setVerification({ email: values.email.trim().toLowerCase(), token: data.verification_token });
-      setFormError(null);
+      goTo("resume");
     },
     onError: (err) => {
       if (!handleConflict(err)) setFormError(errorMessage(err, "We couldn't verify the code."));
@@ -228,7 +231,13 @@ export function JobApplicationForm(
     },
   });
 
-  if (result) return <ApplicationOutcome result={result} />;
+  if (result)
+    return (
+      <ApplicationOutcome
+        result={result}
+        careersHref={props.slug !== undefined ? `/org/${props.slug}` : "/"}
+      />
+    );
   if (reapplyLocked)
     return (
       <ReapplyRestricted
@@ -253,7 +262,9 @@ export function JobApplicationForm(
       setFormError("Please add at least one language you know.");
       return;
     }
-    goTo("verify");
+    // Already verified this exact address (they came back to edit details):
+    // no need to verify it again.
+    goTo(emailIsVerified ? "resume" : "verify");
   }
 
   function handleResumeSubmit(event: FormEvent) {
@@ -401,69 +412,57 @@ export function JobApplicationForm(
             it's your email address.
           </p>
 
-          {emailIsVerified ? (
-            <p className="verify-status verify-status-ok" role="status">
-              <Icon name="check" size={16} /> Email verified
-            </p>
-          ) : (
-            <>
-              <p className="verify-status" role="status">
-                <Icon name="email" size={16} />
-                {codeSentTo === values.email.trim().toLowerCase()
-                  ? "Code sent — check your inbox (and spam folder)."
-                  : "Not verified yet"}
-              </p>
-              <div className="apply-actions apply-actions-start">
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => sendCodeMutation.mutate()}
-                  disabled={busy || resendIn > 0}
-                >
-                  {sendCodeMutation.isPending ? (
-                    <Spinner label="Sending…" />
-                  ) : codeSentTo ? (
-                    resendIn > 0 ? `Resend code in ${resendIn}s` : "Resend code"
-                  ) : (
-                    "Send verification code"
-                  )}
-                </button>
-              </div>
-              {codeSentTo && (
-                <form
-                  className="verify-code-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    verifyMutation.mutate();
-                  }}
-                >
-                  <Field label="Verification code">
-                    <input
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      pattern="[0-9]{6}"
-                      maxLength={6}
-                      required
-                      value={code}
-                      onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                      className="verify-code-input"
-                    />
-                  </Field>
-                  <button type="submit" className="btn btn-primary" disabled={busy || code.length !== 6}>
-                    {verifyMutation.isPending ? <Spinner label="Verifying…" /> : "Verify email"}
-                  </button>
-                </form>
+          <p className="verify-status" role="status">
+            <Icon name="email" size={16} />
+            {codeSentTo === values.email.trim().toLowerCase()
+              ? "Code sent — check your inbox (and spam folder)."
+              : "Not verified yet"}
+          </p>
+          <div className="apply-actions apply-actions-start">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => sendCodeMutation.mutate()}
+              disabled={busy || resendIn > 0}
+            >
+              {sendCodeMutation.isPending ? (
+                <Spinner label="Sending…" />
+              ) : codeSentTo ? (
+                resendIn > 0 ? `Resend code in ${resendIn}s` : "Resend code"
+              ) : (
+                "Send verification code"
               )}
-            </>
+            </button>
+          </div>
+          {codeSentTo && (
+            <form
+              className="verify-code-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                verifyMutation.mutate();
+              }}
+            >
+              <Field label="Verification code">
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  className="verify-code-input"
+                />
+              </Field>
+              <button type="submit" className="btn btn-primary" disabled={busy || code.length !== 6}>
+                {verifyMutation.isPending ? <Spinner label="Verifying…" /> : "Verify email"}
+              </button>
+            </form>
           )}
-
           {formError && <Alert>{formError}</Alert>}
           <div className="apply-actions">
             <button type="button" className="btn btn-ghost" onClick={() => goTo("details")} disabled={busy}>
               Back
-            </button>
-            <button type="button" className="btn btn-primary" onClick={() => goTo("resume")} disabled={!emailIsVerified}>
-              Continue <Icon name="arrow-right" size={16} />
             </button>
           </div>
         </div>
@@ -481,7 +480,11 @@ export function JobApplicationForm(
           )}
           {formError && <Alert>{formError}</Alert>}
           <div className="apply-actions">
-            <button type="button" className="btn btn-ghost" onClick={() => goTo("verify")}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => goTo(emailIsVerified ? "details" : "verify")}
+            >
               Back
             </button>
             <button type="submit" className="btn btn-primary">

@@ -209,8 +209,9 @@ export interface ApplicationDeleteRequest {
 }
 
 
-/** Mirrors backend/app/schemas/candidate.py § ReapplyGrantResponse — one
- * HR grant letting a candidate self-apply before the cooldown ends. */
+/** Mirrors backend/app/schemas/candidate.py § ReapplyGrantResponse — a
+ * single-use grant from the earlier "Allow Reapply" action. No longer
+ * issued, but one still open is honoured and shown. */
 export interface ReapplyGrantResponse {
   id: string;
   candidate_id: string;
@@ -232,6 +233,26 @@ export interface ReapplyStatusResponse {
   eligible_from: string | null;
   can_self_apply_now: boolean;
   open_grant: ReapplyGrantResponse | null;
+}
+
+/** One match in HR's "Reapply Permission" lookup (backend:
+ * ReapplySearchResult). `can_self_apply_now` false = still inside the
+ * reapply window, so the grant is on offer. */
+export interface ReapplySearchResult {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  last_self_applied_at: string | null;
+  eligible_from: string | null;
+  can_self_apply_now: boolean;
+}
+
+export interface ReapplyPermissionGrantedResponse {
+  candidate_id: string;
+  full_name: string;
+  email: string;
+  cleared_application_count: number;
 }
 
 /** Result of HR adding a resume + applying role for a candidate.

@@ -1,13 +1,16 @@
-"""The 3-month self-apply window and HR's "Allow Reapply" override
-(app/services/reapply_service.py).
+"""The 3-month self-apply window, single-use grants left by the earlier
+"Allow Reapply" action, and the security boundaries of HR's "Grant Reapply
+Permission" (app/services/reapply_service.py). What that grant clears, end
+to end, is in tests/test_reapply_permission.py.
 
 The window is measured from the candidate's last *self-service* application,
 so these tests seed applications with a controlled `applied_at` and drive the
 real HTTP endpoints against them. A seeded application is only self-service
 when it says so: `is_self_service` is what the rule counts, not `source`.
 
-Covers the lock, expiry, the single-use HR grant, and the two security
-boundaries CLAUDE.md § 5 requires — tenant isolation and authorization.
+Covers the lock, expiry, a still-open legacy grant being spent, and the two
+security boundaries CLAUDE.md § 5 requires — tenant isolation and
+authorization.
 """
 
 import uuid
@@ -209,61 +212,34 @@ def test_add_months_clamps_to_shorter_month() -> None:
 # --- the HR grant ----------------------------------------------------------
 
 
-async def test_hr_grant_lets_a_locked_candidate_apply_again(
+async def _seed_legacy_grant(db: AsyncSession, ctx: dict, candidate_id: uuid.UUID) -> None:
+    """A single-use grant as the earlier "Allow Reapply" action wrote it —
+    no longer issued, but any still open must keep working."""
+    async with rls_bypass(db):
+        db.add(
+            CandidateReapplyGrant(
+                organization_id=ctx["org_id"],
+                candidate_id=candidate_id,
+                granted_by_user_id=None,
+                reason="Allowed once.",
+            )
+        )
+        await db.flush()
+    await db.commit()
+
+
+async def test_open_legacy_grant_lets_a_locked_candidate_apply(
     client: AsyncClient, db_session: AsyncSession, super_admin
 ) -> None:
-    ctx = await _bootstrap(client, "reapply-grant")
+    ctx = await _bootstrap(client, "reapply-legacy-grant")
     candidate_id = await _seed_applicant(
-        db_session, ctx, email="locked@reapply-grant.dev", applied_at=_months_ago(1)
+        db_session, ctx, email="locked@reapply-legacy-grant.dev", applied_at=_months_ago(1)
     )
-
-    granted = await client.post(
-        f"/api/v1/recruiter/candidates/{candidate_id}/reapply-grants",
-        json={"reason": "Completed a relevant certification since applying."},
-        headers=ctx["headers"],
-    )
-    assert granted.status_code == 201, granted.text
-    body = granted.json()
-    assert body["used_at"] is None
-    # Who granted it, and why, is part of the record — not only the activity.
-    assert body["granted_by_name"] == "Acme Admin"
-    assert body["reason"].startswith("Completed a relevant certification")
+    await _seed_legacy_grant(db_session, ctx, candidate_id)
 
     status = await _status(client, ctx, candidate_id)
     assert status["can_self_apply_now"] is True
-    assert status["open_grant"]["id"] == body["id"]
-
-
-async def test_grant_is_refused_when_there_is_no_restriction_to_lift(
-    client: AsyncClient, db_session: AsyncSession, super_admin
-) -> None:
-    ctx = await _bootstrap(client, "reapply-grant-noop")
-    candidate_id = await _seed_applicant(
-        db_session, ctx, email="free@reapply-grant-noop.dev", applied_at=_months_ago(4)
-    )
-
-    response = await client.post(
-        f"/api/v1/recruiter/candidates/{candidate_id}/reapply-grants",
-        json={"reason": "Not needed."},
-        headers=ctx["headers"],
-    )
-    assert response.status_code == 409, response.text
-
-
-async def test_only_one_grant_may_be_open_at_a_time(
-    client: AsyncClient, db_session: AsyncSession, super_admin
-) -> None:
-    ctx = await _bootstrap(client, "reapply-grant-twice")
-    candidate_id = await _seed_applicant(
-        db_session, ctx, email="twice@reapply-grant-twice.dev", applied_at=_months_ago(1)
-    )
-    url = f"/api/v1/recruiter/candidates/{candidate_id}/reapply-grants"
-
-    first = await client.post(url, json={"reason": "First."}, headers=ctx["headers"])
-    assert first.status_code == 201, first.text
-
-    second = await client.post(url, json={"reason": "Second."}, headers=ctx["headers"])
-    assert second.status_code == 409, second.text
+    assert status["open_grant"]["used_at"] is None
 
 
 async def test_grant_is_single_use_and_preserves_history(
@@ -276,12 +252,7 @@ async def test_grant_is_single_use_and_preserves_history(
     candidate_id = await _seed_applicant(
         db_session, ctx, email="consume@reapply-grant-consumed.dev", applied_at=_months_ago(1)
     )
-    granted = await client.post(
-        f"/api/v1/recruiter/candidates/{candidate_id}/reapply-grants",
-        json={"reason": "Allowed once."},
-        headers=ctx["headers"],
-    )
-    assert granted.status_code == 201, granted.text
+    await _seed_legacy_grant(db_session, ctx, candidate_id)
 
     # The candidate's next self-service application spends the grant.
     second_job = await client.post(
@@ -355,22 +326,28 @@ async def test_reapply_endpoints_are_tenant_isolated(
     assert leaked_status.status_code == 404, leaked_status.text
 
     leaked_grant = await client.post(
-        f"/api/v1/recruiter/candidates/{candidate_id}/reapply-grants",
-        json={"reason": "Not mine to give."},
+        f"/api/v1/recruiter/candidates/{candidate_id}/grant-reapply",
         headers=org_b["headers"],
     )
     assert leaked_grant.status_code == 404, leaked_grant.text
+    assert leaked_grant.json()["error"]["message"] == "Candidate not found."
 
-    # ...and nothing was written for the other tenant's candidate.
+    leaked_search = await client.get(
+        "/api/v1/recruiter/candidates/reapply-search",
+        params={"q": "theirs@reapply-tenant-a.dev"},
+        headers=org_b["headers"],
+    )
+    assert leaked_search.status_code == 200, leaked_search.text
+    assert leaked_search.json() == []
+
+    # ...and nothing of the other tenant's candidate was cleared.
     async with rls_bypass(db_session):
-        assert (
-            await db_session.scalar(
-                select(CandidateReapplyGrant).where(
-                    CandidateReapplyGrant.candidate_id == candidate_id
-                )
+        remaining = (
+            await db_session.scalars(
+                select(Application).where(Application.candidate_id == candidate_id)
             )
-            is None
-        )
+        ).all()
+        assert len(remaining) == 1
 
     # The 404s above are isolation, not a missing row: the owning
     # organization still reads the very same candidate.
@@ -381,41 +358,35 @@ async def test_reapply_endpoints_are_tenant_isolated(
 async def test_granting_reapply_requires_the_permission(
     client: AsyncClient, db_session: AsyncSession, super_admin
 ) -> None:
-    """`candidate.reapply.grant` is held by ORG_ADMIN and RECRUITER only."""
+    """`candidate.reapply.grant` is held by ORG_ADMIN and RECRUITER only. The
+    action exists only under the staff API: an anonymous caller (a
+    candidate has no staff token) is refused before anything happens."""
     ctx = await _bootstrap(client, "reapply-authz")
     candidate_id = await _seed_applicant(
         db_session, ctx, email="authz@reapply-authz.dev", applied_at=_months_ago(1)
     )
-    url = f"/api/v1/recruiter/candidates/{candidate_id}/reapply-grants"
+    url = f"/api/v1/recruiter/candidates/{candidate_id}/grant-reapply"
+    search_url = "/api/v1/recruiter/candidates/reapply-search"
 
-    anonymous = await client.post(url, json={"reason": "No token."})
+    anonymous = await client.post(url)
     assert anonymous.status_code == 401, anonymous.text
+    assert (await client.get(search_url, params={"q": "authz"})).status_code == 401
 
     interviewer = await _create_staff(
         client, ctx, email="interviewer@reapply-authz.dev", role="INTERVIEWER"
     )
-    forbidden = await client.post(url, json={"reason": "Not my call."}, headers=interviewer)
+    forbidden = await client.post(url, headers=interviewer)
     assert forbidden.status_code == 403, forbidden.text
+    forbidden_search = await client.get(search_url, params={"q": "authz"}, headers=interviewer)
+    assert forbidden_search.status_code == 403
+    async with rls_bypass(db_session):
+        assert await db_session.scalar(
+            select(Application.id).where(Application.candidate_id == candidate_id)
+        )
 
     recruiter = await _create_staff(
         client, ctx, email="recruiter@reapply-authz.dev", role="RECRUITER"
     )
-    allowed = await client.post(url, json={"reason": "Recruiter's call."}, headers=recruiter)
-    assert allowed.status_code == 201, allowed.text
-
-
-async def test_grant_requires_a_reason(
-    client: AsyncClient, db_session: AsyncSession, super_admin
-) -> None:
-    """The reason is what the audit trail shows, so it can't be blank."""
-    ctx = await _bootstrap(client, "reapply-reason")
-    candidate_id = await _seed_applicant(
-        db_session, ctx, email="reason@reapply-reason.dev", applied_at=_months_ago(1)
-    )
-
-    response = await client.post(
-        f"/api/v1/recruiter/candidates/{candidate_id}/reapply-grants",
-        json={"reason": "   "},
-        headers=ctx["headers"],
-    )
-    assert response.status_code == 422, response.text
+    allowed = await client.post(url, headers=recruiter)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["cleared_application_count"] == 1

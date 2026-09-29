@@ -17,12 +17,9 @@ import { useAuth } from "../../auth/AuthContext";
 import { downloadResume, listApplicationsForCandidate } from "../applications/api";
 import { getCandidate, getReapplyStatus } from "./api";
 import { AddResumeAndRoleModal } from "./AddResumeAndRoleModal";
-import { AllowReapplyModal } from "./AllowReapplyModal";
 import { CandidateJourney } from "./CandidateJourney";
-
-/** Roles holding `candidate.reapply.grant` on the backend (see the reapply
- * migration seeding it). UX only — the API re-checks the permission. */
-const REAPPLY_GRANT_ROLES = ["ORG_ADMIN", "RECRUITER"];
+import { GrantReapplyModal } from "./GrantReapplyModal";
+import { canGrantReapply as hasReapplyGrantRole } from "./reapplyPermission";
 
 function formatDay(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -40,9 +37,9 @@ export function CandidateDetailPage() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<{ applicationId: string; filename: string } | null>(null);
-  const [showAllowReapply, setShowAllowReapply] = useState(false);
+  const [showGrantReapply, setShowGrantReapply] = useState(false);
   const [showAddResume, setShowAddResume] = useState(false);
-  const canGrantReapply = user?.roles.some((role) => REAPPLY_GRANT_ROLES.includes(role)) ?? false;
+  const canGrantReapply = hasReapplyGrantRole(user?.roles);
 
   const candidateQuery = useQuery({
     queryKey: ["recruiter", "candidates", candidateId],
@@ -207,8 +204,8 @@ export function CandidateDetailPage() {
               refused server-side otherwise, so a button that always showed
               would mostly be a dead end. */}
           {canGrantReapply && reapplyQuery.data && !reapplyQuery.data.can_self_apply_now && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAllowReapply(true)}>
-              Allow Reapply
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowGrantReapply(true)}>
+              Grant Reapply Permission
             </button>
           )}
         </div>
@@ -410,13 +407,8 @@ export function CandidateDetailPage() {
 
       <CandidateJourney candidateId={candidate.id} />
 
-      {showAllowReapply && (
-        <AllowReapplyModal
-          candidateId={candidate.id}
-          candidateName={candidate.full_name}
-          eligibleFrom={reapply?.eligible_from ?? null}
-          onClose={() => setShowAllowReapply(false)}
-        />
+      {showGrantReapply && (
+        <GrantReapplyModal candidate={candidate} onClose={() => setShowGrantReapply(false)} />
       )}
 
       {showAddResume && (

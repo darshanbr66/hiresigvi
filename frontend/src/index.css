@@ -578,6 +578,39 @@ fieldset.field legend {
     box-shadow var(--dur-fast) var(--ease-out);
 }
 
+/* HR "Reapply Permission" lookup results (Candidates page) */
+.reapply-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.reapply-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.reapply-result + .reapply-result {
+  border-top: 1px solid var(--color-border);
+}
+
+.reapply-result-action {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.reapply-result-note {
+  font-size: 0.85rem;
+}
+
 .filter-select {
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--color-border-strong);

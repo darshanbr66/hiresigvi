@@ -114,10 +114,12 @@ async def apply_publicly(
     resume: tuple[str, bytes, str] | None = None,
     token: str | None = None,
     isolate_welcome_email: bool = False,
+    marks_card: tuple[str, bytes, str] | None = None,
     **overrides: Any,
 ) -> Response:
     """Verifies `email` (unless a `token` is given) and submits a complete
     application. `overrides` replace/add form fields (None drops one).
+    `marks_card` attaches the optional 10th marks card upload.
     `isolate_welcome_email` sends the automatic welcome email to a throwaway
     recorder, for tests that assert on the emails *they* trigger later."""
     if token is None:
@@ -125,11 +127,14 @@ async def apply_publicly(
     data = profile_form(email, full_name=full_name, **overrides)
     data["email_verification_token"] = token
     file = resume or ("resume.pdf", make_minimal_pdf(resume_text), "application/pdf")
+    files: dict[str, tuple[str, bytes, str]] = {"resume": file}
+    if marks_card is not None:
+        files["tenth_marks_card"] = marks_card
     url = f"/api/v1/public/organizations/{slug}/jobs/{job_id}/apply"
     if isolate_welcome_email:
         with patch.object(notification_service, "get_email_provider", RecordingEmailProvider):
-            return await client.post(url, data=data, files={"resume": file})
-    return await client.post(url, data=data, files={"resume": file})
+            return await client.post(url, data=data, files=files)
+    return await client.post(url, data=data, files=files)
 
 
 async def apply_to_campus_drive(
@@ -140,6 +145,7 @@ async def apply_to_campus_drive(
     full_name: str = "Priya Candidate",
     resume_text: str = DEFAULT_RESUME_TEXT,
     token: str | None = None,
+    marks_card: tuple[str, bytes, str] | None = None,
     **overrides: Any,
 ) -> Response:
     """The campus drive link's version of `apply_publicly`: same verified
@@ -148,7 +154,9 @@ async def apply_to_campus_drive(
         token = await verify_campus_email(client, drive_token, email)
     data = profile_form(email, full_name=full_name, **overrides)
     data["email_verification_token"] = token
-    file = ("resume.pdf", make_minimal_pdf(resume_text), "application/pdf")
-    return await client.post(
-        f"{_drive_base(drive_token)}/apply", data=data, files={"resume": file}
-    )
+    files: dict[str, tuple[str, bytes, str]] = {
+        "resume": ("resume.pdf", make_minimal_pdf(resume_text), "application/pdf")
+    }
+    if marks_card is not None:
+        files["tenth_marks_card"] = marks_card
+    return await client.post(f"{_drive_base(drive_token)}/apply", data=data, files=files)

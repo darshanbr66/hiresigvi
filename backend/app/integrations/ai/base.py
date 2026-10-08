@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 class AIProviderError(Exception):
@@ -55,11 +56,44 @@ class ScreeningVerdict(BaseModel):
         return self
 
 
+def parse_structured_verdict(data: dict[str, Any]) -> ScreeningVerdict:
+    """The one validation path for a structured-output adapter's decoded
+    JSON (Gemini, Groq): clamp the score into 0-100, then validate against
+    `ScreeningVerdict`. Anything that still doesn't validate is an
+    `AIProviderError` — never a guessed verdict."""
+    if isinstance(data.get("overall_score"), int):
+        data["overall_score"] = max(0, min(100, data["overall_score"]))
+    try:
+        return ScreeningVerdict.model_validate(data)
+    except ValidationError as exc:
+        raise AIProviderError(
+            "Could not parse the AI provider's response as a structured screening result."
+        ) from exc
+
+
+@dataclass(frozen=True)
+class ScreeningAttemptFailure:
+    """One provider attempt that failed before the final result (or final
+    failure) of a fallback chain. `error` is our own exception text — never
+    the request, the upstream body, or a credential."""
+
+    provider: str
+    model: str
+    error: str
+
+
 class LLMProvider(ABC):
-    #: Short provider identifier persisted onto ScreeningRun.provider.
+    #: Short provider identifier persisted onto ScreeningRun.provider. For a
+    #: fallback chain, the provider that produced (or last failed) the result.
     name: str
     #: Model identifier persisted onto ScreeningRun.model.
     model: str
+
+    @property
+    def failed_attempts(self) -> Sequence[ScreeningAttemptFailure]:
+        """Attempts that failed before the last `screen_candidate` call's
+        outcome — always empty for a single provider."""
+        return ()
 
     @abstractmethod
     async def screen_candidate(

@@ -32,8 +32,9 @@ each prefix (not per-endpoint, to avoid one endpoint being forgotten).
 ### Public
 ```
 GET  /api/v1/public/organizations/{org_slug}                                -- name + careers_contact_email
-POST /api/v1/public/organizations/{org_slug}/email-verification/request     -- {email} -> 202, code emailed
-POST /api/v1/public/organizations/{org_slug}/email-verification/verify      -- {email, code} -> {verification_token, ...}
+POST /api/v1/public/organizations/{org_slug}/applicant-status              -- {email?, phone?, job_id?} -> {already_applied}
+POST /api/v1/public/organizations/{org_slug}/email-verification/request     -- {email, job_id?} -> 202, code emailed; 409 already_applied
+POST /api/v1/public/organizations/{org_slug}/email-verification/verify      -- {email, code, job_id?} -> {verification_token, existing_profile, ...}
 GET  /api/v1/public/organizations/{org_slug}/jobs
 GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}
 POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply             (multipart)
@@ -41,12 +42,26 @@ POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply             (mu
 `apply` needs `email_verification_token` (from `verify`), `full_name`,
 `email`, `phone`, `date_of_birth`, `place_of_birth`, `languages` (1–15),
 `candidate_type` (`FRESHER`|`EXPERIENCED`), `current_location`,
-`preferred_location`, `qualification`, `linkedin_url`, `github_url` and a
-`resume`. `years_experience`, `notice_period_days`, `immediate_joiner`,
+`preferred_location`, `qualification` and a `resume`. `full_name` has no
+length limit. `years_experience`, `notice_period_days`, `immediate_joiner`,
 `current_title` and `current_company` are optional. `EXPERIENCED` requires
 `years_experience` and either `notice_period_days` or `immediate_joiner`; a
-`FRESHER` is stored with 0 years and no notice period. Profile URLs must be
-http(s) on linkedin.com / github.com, and `phone` is normalized to E.164.
+`FRESHER` is stored with 0 years and no notice period. `linkedin_url` and
+`github_url` are optional, but when supplied must be http(s) on linkedin.com
+/ github.com; `phone` is normalized to E.164.
+
+Optional education fields: `tenth_marks_percentage` (0–100, at most two
+decimals) and `tenth_marks_card` (file: PDF, PNG or JPG, checked by
+extension *and* file signature, at most `MAX_MARKS_CARD_SIZE_MB`, default
+5 MB; 400 `invalid_file_type` / `file_too_large` / `invalid_file`
+otherwise, before the verification token is spent). The card is stored
+through the resume storage abstraction (GridFS in production) and only
+referenced from the candidate row; its location is never returned. A
+returning candidate's new card replaces the old one (the old file is
+deleted after the commit); applying without one keeps the stored card. A
+submission that fails before it is committed deletes the card it stored.
+The verified-email prefill (`existing_profile`) includes
+`tenth_marks_percentage` but nothing about the stored card.
 
 A person gets one profile and one self-service application per
 organization, matched by email or normalized mobile number. A duplicate is
@@ -154,6 +169,12 @@ GET           /api/v1/recruiter/admin-messages/conversations/{conversation_id}
 POST          /api/v1/recruiter/admin-messages/conversations/{conversation_id}/messages
 POST          /api/v1/recruiter/admin-messages/conversations/{conversation_id}/read
 GET/POST      /api/v1/recruiter/users
+DELETE        /api/v1/recruiter/users/{user_id}               (user.manage_admins, ORG_ADMIN; 204. Deactivated accounts
+                                                                only: 409 user_active if active, 409 user_has_history if
+                                                                the account authored jobs/assessments/campus drives/
+                                                                employee records/notes/calendar events (data.authored
+                                                                has the counts), 403 cannot_delete_self / last_org_admin,
+                                                                404 for another tenant's or an unknown user)
 GET           /api/v1/recruiter/auth/me                       (includes organization_name)
 GET           /api/v1/recruiter/activities                    (activity.read, ORG_ADMIN)
 GET           /api/v1/recruiter/activities/count              (activity.read, ORG_ADMIN; the org's total)

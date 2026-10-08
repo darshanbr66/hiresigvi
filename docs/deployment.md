@@ -95,6 +95,8 @@ nothing sensitive is stored in the Blueprint file itself.
 | `GEMINI_API_KEY` | **For the Sigvi assistant** | **Secret** — a Google Gemini API key (free tier: <https://aistudio.google.com/apikey>); set only in the Render dashboard (`sync: false`). Unset ⇒ Sigvi answers "temporarily unavailable"; nothing else is affected. Never commit it. |
 | `GEMINI_MODEL` | No (default `gemini-3.5-flash-lite`) | The Gemini model Sigvi and the internal AI use. Does not affect resume screening. |
 | `GEMINI_SCREENING_MODEL` / `GEMINI_SCREENING_THINKING_BUDGET` | No (defaults `gemini-2.5-flash` / `0`) | The Gemini model used for AI resume screening (when Gemini is the screening provider), and its thinking budget (`0` = thinking off; empty = send no `thinkingConfig`). See `docs/ai-screening.md`. |
+| `GROQ_API_KEY` | For Groq-primary screening | **Secret**: a Groq API key (<https://console.groq.com/keys>). Set it only in the Render dashboard (`sync: false`). When set, Groq is the primary resume-screening provider, and Gemini (if `GEMINI_API_KEY` is set) gets one fallback attempt when Groq fails. Never commit it. |
+| `GROQ_SCREENING_MODEL` / `GROQ_SCREENING_REASONING_EFFORT` / `GROQ_REQUEST_TIMEOUT_SECONDS` / `AI_SCREENING_PROVIDER` | No (defaults `openai/gpt-oss-120b` / `low` / `30` / `groq`) | The Groq screening model, which must support strict structured outputs. The others are its reasoning effort (empty = send no reasoning parameters), its timeout, and which of `groq`/`gemini` is tried first. See `docs/ai-screening.md`. |
 | `SIGVI_*` | No | `SIGVI_REQUEST_TIMEOUT_SECONDS`, `SIGVI_MAX_OUTPUT_TOKENS`, `SIGVI_ORGANIZATION_SLUG`, `SIGVI_RATE_LIMIT_PER_MINUTE`, `SIGVI_GLOBAL_RATE_LIMIT_PER_MINUTE` — see `docs/sigvi.md` § 9. |
 | `DEFAULT_PHONE_REGION`, `EMAIL_OTP_*`, `EMAIL_VERIFICATION_TOKEN_TTL_MINUTES`, `PUBLIC_*_LIMIT_PER_WINDOW` | No (safe defaults) | Candidate intake tuning. Defaults and meanings are in `backend/.env.example`; the flow is in `docs/recruitment-workflow.md` § 6. |
 
@@ -477,16 +479,18 @@ recipients or the message body.
 ## 13. AI provider — production behavior
 
 Optional by construction (`app/integrations/ai/__init__.py::get_llm_provider`):
-if none of `OLLAMA_BASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
-`GEMINI_API_KEY` is set, AI-assisted screening returns a clear "not
+if none of `OLLAMA_BASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`GROQ_API_KEY` or `GEMINI_API_KEY` is set, AI-assisted screening returns a clear "not
 configured" error rather than failing startup or fabricating a result. A
 self-service application is then kept at `APPLIED` for manual review; it is
 never screened out. **Do not set any AI provider key as part of this
 deployment** unless you've decided to enable AI screening. The platform is
 fully usable without it.
 
-**Note:** `GEMINI_API_KEY` (below) also enables screening, as the last
-fallback, when none of the other three is set. Setting it for Sigvi therefore
+**Note:** when none of the first three is set, `GROQ_API_KEY` and
+`GEMINI_API_KEY` (below) enable screening. Groq is the primary provider and
+Gemini gets one fallback attempt when Groq fails; either key also works on
+its own. Setting it for Sigvi therefore
 also turns on automatic submission-time screening
 (`docs/ai-screening.md`).
 

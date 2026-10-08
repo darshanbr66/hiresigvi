@@ -111,11 +111,7 @@ export function ReportsPage() {
                   </div>
                   <div className="detail-row">
                     <span className="detail-row-label">Average score</span>
-                    <span>
-                      {reportQuery.data.screening.average_score !== null
-                        ? reportQuery.data.screening.average_score
-                        : "—"}
-                    </span>
+                    <span>{reportQuery.data.screening.average_score}</span>
                   </div>
                 </div>
               )}

@@ -428,7 +428,8 @@ async def test_existing_mobile_number_blocks_a_new_profile_whatever_its_formatti
         client, ctx["slug"], job_b, email="jay.other@example.com", phone="098765-43210"
     )
     assert second.status_code == 409
-    assert second.json()["error"]["code"] == "already_registered"
+    assert second.json()["error"]["code"] == "phone_already_registered"
+    assert "mobile number" in second.json()["error"]["message"]
     assert "jay@example.com" not in second.text
 
     assert len(await _candidates(client, ctx)) == 1
@@ -656,13 +657,12 @@ async def test_hr_matches_candidate_to_other_jobs_and_history_is_preserved(
     assert original["status"] == "AI_SCREENED_OUT"
     assert [t["action"] for t in history["timeline"]].count("CANDIDATE_MATCHED_TO_JOB") == 2
 
-    # The candidate cannot self-apply to job B (or anything) again.
-    _, code = await request_code(client, ctx["slug"], "quinn@example.com")
-    verify = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/email-verification/verify",
-        json={"email": "quinn@example.com", "code": code},
-    )
-    assert verify.status_code == 409
+    # The candidate cannot self-apply to job B (or anything) again: no code
+    # is even sent.
+    code_response, code = await request_code(client, ctx["slug"], "quinn@example.com")
+    assert code_response.status_code == 409
+    assert code_response.json()["error"]["code"] == "already_applied"
+    assert code is None
 
 
 async def test_candidate_history_requires_staff_permissions(
@@ -849,19 +849,17 @@ async def test_one_application_per_person_across_careers_site_and_campus_drive(
     first = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="kim@example.com")
     assert first.status_code == 201, first.text
 
-    # Same email through the drive link: stopped as soon as it is verified.
+    # Same email through the drive link: stopped before any code is sent,
+    # with nothing but "You have already applied." Only HR granting reapply
+    # permission lets them apply again.
     code_response, code = await request_campus_code(client, token, "kim@example.com")
-    assert code_response.status_code == 202, code_response.text
-    same_email = await client.post(
-        f"/api/v1/public/campus-drive/{token}/email-verification/verify",
-        json={"email": "kim@example.com", "code": code},
-    )
-    # `reapply_locked`, not `already_registered`: this *is* the same person and
-    # they have proven it, so they are told when they may apply again rather
-    # than being treated as an unrecognized duplicate. They stay blocked until
-    # the reapply window ends (or HR grants an early reapply).
-    assert same_email.status_code == 409
-    assert same_email.json()["error"]["code"] == "reapply_locked"
+    assert code_response.status_code == 409, code_response.text
+    assert code_response.json()["error"] == {
+        "code": "already_applied",
+        "message": "You have already applied.",
+        "request_id": code_response.json()["error"]["request_id"],
+    }
+    assert code is None
 
     # A different email with the same mobile number (differently formatted).
     same_mobile = await apply_to_campus_drive(
@@ -871,7 +869,7 @@ async def test_one_application_per_person_across_careers_site_and_campus_drive(
         phone=phone_for("kim@example.com").replace("+91", "0"),
     )
     assert same_mobile.status_code == 409
-    assert same_mobile.json()["error"]["code"] == "already_registered"
+    assert same_mobile.json()["error"]["code"] == "phone_already_registered"
 
     assert len(await _candidates(client, ctx)) == 1
     assert len(await _applications(client, ctx)) == 1

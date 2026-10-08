@@ -2,6 +2,7 @@
 PATCH /api/v1/recruiter/users/{id} (app/services/user_service.py), and the
 Activities audit log's tenant isolation (QA § 4-5)."""
 
+import pytest
 from httpx import AsyncClient
 
 from app.models.user import User
@@ -178,21 +179,49 @@ async def test_cannot_change_role_of_the_last_org_admin(client: AsyncClient, sup
     assert response.status_code == 409
 
 
-async def test_recruiter_cannot_manage_team_members(client: AsyncClient, super_admin: User) -> None:
-    org = await _bootstrap_org(client, "team-recruiter-forbidden")
+@pytest.mark.parametrize("role", ["HIRING_MANAGER", "INTERVIEWER"])
+async def test_restricted_roles_cannot_manage_team_members(
+    client: AsyncClient, super_admin: User, role: str
+) -> None:
+    """HR (RECRUITER) manages the team (tests/test_hr_team_management.py);
+    the other non-admin roles still cannot."""
+    slug = f"team-{role.lower().replace('_', '-')}-forbidden"
+    org = await _bootstrap_org(client, slug)
     admin_headers = await _org_admin_headers(client, org)
-    recruiter = await _create_recruiter(client, admin_headers, "team-recruiter-forbidden")
-    recruiter_tokens = await login(
-        client, email=recruiter["email"], password="RecruiterPass1"
+    recruiter = await _create_recruiter(client, admin_headers, slug)
+    restricted = await client.post(
+        "/api/v1/recruiter/users",
+        json={
+            "email": f"restricted@{slug}.dev",
+            "full_name": "Restricted User",
+            "password": "RestrictedPass1",
+            "role": role,
+        },
+        headers=admin_headers,
     )
-    recruiter_headers = {"Authorization": f"Bearer {recruiter_tokens['access_token']}"}
+    assert restricted.status_code == 201, restricted.text
+    tokens = await login(client, email=f"restricted@{slug}.dev", password="RestrictedPass1")
+    restricted_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
+    listed = await client.get("/api/v1/recruiter/users", headers=restricted_headers)
+    assert listed.status_code == 403
     response = await client.patch(
         f"/api/v1/recruiter/users/{recruiter['id']}",
         json={"is_active": False},
-        headers=recruiter_headers,
+        headers=restricted_headers,
     )
     assert response.status_code == 403
+    created = await client.post(
+        "/api/v1/recruiter/users",
+        json={
+            "email": f"another@{slug}.dev",
+            "full_name": "Another",
+            "password": "AnotherPass12",
+            "role": "RECRUITER",
+        },
+        headers=restricted_headers,
+    )
+    assert created.status_code == 403
 
 
 async def test_activities_are_tenant_isolated(client: AsyncClient, super_admin: User) -> None:

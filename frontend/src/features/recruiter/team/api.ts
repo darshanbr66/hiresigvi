@@ -6,6 +6,7 @@ import type {
   DepartmentUpdateRequest,
   EmployeeCreateRequest,
   EmployeeDeactivateRequest,
+  EmployeeDeleteRequest,
   EmployeeMoveRequest,
   EmployeeReorderRequest,
   EmployeeResponse,
@@ -89,6 +90,20 @@ export function deactivateEmployee(
 ) {
   return apiClient.post<EmployeeResponse>(
     `/api/v1/recruiter/employees/${employeeId}/deactivate`,
+    payload,
+    accessToken,
+  );
+}
+
+/** Removes an employee who left the company (soft delete — the record is
+ * kept for history but no longer appears in any employee or department list). */
+export function deleteEmployee(
+  employeeId: string,
+  payload: EmployeeDeleteRequest,
+  accessToken: string,
+) {
+  return apiClient.post<EmployeeResponse>(
+    `/api/v1/recruiter/employees/${employeeId}/delete`,
     payload,
     accessToken,
   );

@@ -171,6 +171,39 @@ properties, all implemented in `app/services/email_verification_service.py`:
   fields or other interviewers' private notes once that distinction is
   built — tracked as a future permission granularity, not implemented in
   Phase 2's initial role set).
+- Team management (`/api/v1/recruiter/users`, `/departments`, `/employees`):
+  `user.read`/`user.create`/`user.update`, `department.manage` and
+  `employee.manage` are held by `ORG_ADMIN` and by HR, which is the
+  `RECRUITER` role (migration `d7e8f9a0b1c2`). Anything that creates,
+  promotes, demotes, deactivates or reactivates an `ORG_ADMIN`, or changes
+  one's own role, additionally needs `user.manage_admins`. Only `ORG_ADMIN`
+  holds that permission, and `app/services/user_service.py` enforces it, so
+  team management can't escalate to admin. `HIRING_MANAGER` reads the
+  department hierarchy only, and `INTERVIEWER` has no team access.
+- Removing an employee who left (`POST /api/v1/recruiter/employees/{id}/delete`,
+  `employee.manage`) is a soft delete: `deleted_at`, `deleted_by_user_id` and
+  `deletion_reason` are set and the row is kept for history, but it drops out of
+  every employee list, department count and the org chart. The caller can't
+  remove the record linked to their own portal account, and a record linked to
+  an `ORG_ADMIN` account needs `user.manage_admins`. Another tenant's employee
+  is a 404. The linked portal login, if there is one, isn't touched; it's
+  deactivated separately under Accounts.
+- Deleting a team account (`DELETE /api/v1/recruiter/users/{id}`) needs
+  `user.manage_admins` (`ORG_ADMIN` only) and works only on an account that is
+  already deactivated. Never one's own account, never the organization's last
+  `ORG_ADMIN`, never another tenant's user (404). The row is removed with a
+  plain SQL `DELETE`, so the schema's foreign keys decide what happens to the
+  account's data. These go with the login (`CASCADE`): role assignments,
+  refresh tokens (every session ends; an old access token gets 401 because
+  the user no longer exists), the account's own notification inbox, its
+  calendar attendances, and its "Talk to Admin" thread. These stay, with the
+  link cleared (`SET NULL`): activities (they keep the actor's name), status
+  history, screening and matching runs, assessment invitations, `deleted_by`
+  columns, notifications and messages it sent, and a linked employee record.
+  An account that authored jobs, assessments, campus drives, employee
+  records, notes or calendar events (`RESTRICT`) is refused with 409
+  `user_has_history` and stays deactivated, so that history keeps its
+  author. The deletion is recorded in Activities (`USER_DELETED`).
 - Error responses never include stack traces, ORM/SQL error text, or
   internal file paths — mapped to safe, generic messages with a
   `request_id` for support/log correlation.

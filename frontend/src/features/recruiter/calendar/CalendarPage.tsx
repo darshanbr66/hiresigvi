@@ -204,8 +204,8 @@ export function CalendarPage() {
     enabled: accessToken !== null && showForm,
   });
   // Attendee options come from the calendar's own directory endpoint rather
-  // than /recruiter/users: that one needs `user.read` (ORG_ADMIN only), so a
-  // RECRUITER creating an event got an empty attendee list. Also loaded for
+  // than /recruiter/users: that one needs `user.read` (ORG_ADMIN and HR only),
+  // so other roles creating an event would get an empty attendee list. Also loaded for
   // the detail modal, to show attendees by name instead of by id.
   const attendeesQuery = useQuery({
     queryKey: ["recruiter", "calendar", "attendee-options"],

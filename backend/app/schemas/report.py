@@ -18,7 +18,8 @@ class ScreeningSummary(BaseModel):
     total_runs: int
     completed: int
     failed: int
-    average_score: float | None
+    #: Mean score of the COMPLETED runs that carry one; 0 when there are none.
+    average_score: float
 
 
 class AssessmentSummaryStats(BaseModel):

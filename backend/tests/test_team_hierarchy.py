@@ -1,7 +1,7 @@
 """Team Hierarchy: departments and employees (SIGVITAS platform overhaul
 § 9-13) — a directory domain deliberately separate from the existing
-users/RBAC Team page. ORG_ADMIN has full CRUD; RECRUITER/HIRING_MANAGER are
-read-only."""
+users/RBAC Team page. ORG_ADMIN and HR (RECRUITER) have full CRUD;
+HIRING_MANAGER is read-only."""
 
 from httpx import AsyncClient
 
@@ -32,14 +32,16 @@ async def _org_admin_headers(client: AsyncClient, org: dict) -> dict:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
-async def _create_recruiter_headers(client: AsyncClient, admin_headers: dict, org_slug: str) -> dict:
+async def _create_recruiter_headers(
+    client: AsyncClient, admin_headers: dict, org_slug: str, role: str = "RECRUITER"
+) -> dict:
     response = await client.post(
         "/api/v1/recruiter/users",
         json={
             "email": f"recruiter@{org_slug}.dev",
             "full_name": "Riya Recruiter",
             "password": "RecruiterPass1",
-            "role": "RECRUITER",
+            "role": role,
         },
         headers=admin_headers,
     )
@@ -227,12 +229,28 @@ async def test_duplicate_employee_email_in_same_org_is_rejected(
     assert second.status_code == 409
 
 
-async def test_recruiter_can_read_but_not_manage_hierarchy(
+async def test_hiring_manager_can_read_but_not_manage_hierarchy(
     client: AsyncClient, super_admin: User
 ) -> None:
+    """HR (RECRUITER) manages the hierarchy (tests/test_hr_team_management.py);
+    HIRING_MANAGER stays read-only."""
     org = await _bootstrap_org(client, "hierarchy-recruiter-perms")
     admin_headers = await _org_admin_headers(client, org)
-    recruiter_headers = await _create_recruiter_headers(client, admin_headers, "hierarchy-recruiter-perms")
+    created = await client.post(
+        "/api/v1/recruiter/users",
+        json={
+            "email": "manager@hierarchy-recruiter-perms.dev",
+            "full_name": "Hiring Manager",
+            "password": "ManagerPass12",
+            "role": "HIRING_MANAGER",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 201, created.text
+    tokens = await login(
+        client, email="manager@hierarchy-recruiter-perms.dev", password="ManagerPass12"
+    )
+    recruiter_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     dept = (
         await client.post(

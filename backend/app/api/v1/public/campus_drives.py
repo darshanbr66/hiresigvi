@@ -7,7 +7,7 @@ email is verified with a one-time code first (the two
 and the submission takes the same complete, mandatory form
 (`applicant_submission`)."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.public.applications import ApplicantSubmission, applicant_submission
@@ -15,11 +15,15 @@ from app.api.v1.public.candidate_intake import (
     CandidateIntakeRateLimiters,
     enforce,
     get_candidate_intake_rate_limiters,
+    verified_response,
 )
 from app.db.session import get_db
 from app.integrations.storage import ResumeStorage, get_resume_storage
 from app.models.campus_drive import CampusDriveStatus
 from app.schemas.public import (
+    ApplicantPrecheck,
+    ApplicantStatus,
+    ApplicantStatusQuery,
     EmailVerificationConfirm,
     EmailVerificationConfirmed,
     EmailVerificationRequest,
@@ -80,6 +84,27 @@ async def request_email_verification(
     )
 
 
+@router.post("/{token}/applicant-status", response_model=ApplicantStatus)
+async def get_applicant_status(
+    token: str,
+    payload: ApplicantStatusQuery,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limiters: CandidateIntakeRateLimiters = Depends(get_candidate_intake_rate_limiters),
+) -> ApplicantStatus:
+    """The careers site's early "already applied?" check, for the drive's job
+    (any `job_id` in the body is ignored)."""
+    enforce(limiters.otp_verify, request)
+    return ApplicantStatus(
+        already_applied=await public_campus_drive_service.has_already_applied(
+            db,
+            token=token,
+            email=str(payload.email) if payload.email else None,
+            phone=payload.phone,
+        )
+    )
+
+
 @router.post("/{token}/email-verification/verify", response_model=EmailVerificationConfirmed)
 async def verify_email(
     token: str,
@@ -89,12 +114,30 @@ async def verify_email(
     limiters: CandidateIntakeRateLimiters = Depends(get_candidate_intake_rate_limiters),
 ) -> EmailVerificationConfirmed:
     enforce(limiters.otp_verify, request)
-    issued = await public_campus_drive_service.verify_email_code(
+    verified = await public_campus_drive_service.verify_email_code(
         db, token=token, email=str(payload.email), code=payload.code
     )
-    return EmailVerificationConfirmed(
-        verification_token=issued.token, expires_at=issued.expires_at
+    return verified_response(verified)
+
+
+@router.post("/{token}/apply/precheck", status_code=204)
+async def precheck_campus_application(
+    token: str,
+    payload: ApplicantPrecheck,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limiters: CandidateIntakeRateLimiters = Depends(get_candidate_intake_rate_limiters),
+) -> Response:
+    """The careers site's pre-resume identity checks, for the drive's job."""
+    enforce(limiters.otp_verify, request)
+    await public_campus_drive_service.precheck_applicant(
+        db,
+        token=token,
+        email=str(payload.email),
+        verification_token=payload.email_verification_token,
+        phone=payload.phone,
     )
+    return Response(status_code=204)
 
 
 @router.post("/{token}/apply", response_model=PublicCampusDriveApplicationResult, status_code=201)
@@ -113,6 +156,7 @@ async def apply_to_campus_drive(
         profile=submission.profile,
         resume_filename=submission.resume_filename,
         resume_bytes=submission.resume_bytes,
+        marks_card=submission.marks_card,
     )
     application = result.submission.application
     return PublicCampusDriveApplicationResult(

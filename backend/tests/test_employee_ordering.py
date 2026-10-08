@@ -319,9 +319,13 @@ async def test_partial_lists_and_lists_spanning_departments_are_rejected(
 # --- permissions and tenant isolation ---------------------------------------
 
 
-async def test_non_admins_cannot_reorder(client: AsyncClient, super_admin: User) -> None:
+async def test_read_only_roles_cannot_reorder(client: AsyncClient, super_admin: User) -> None:
+    """HR (RECRUITER) may reorder (it holds `employee.manage`); a
+    HIRING_MANAGER only reads the hierarchy."""
     org, admin_headers = await _org(client, "ordering-rbac")
-    recruiter_headers = await _create_recruiter_headers(client, admin_headers, "ordering-rbac")
+    recruiter_headers = await _create_recruiter_headers(
+        client, admin_headers, "ordering-rbac", role="HIRING_MANAGER"
+    )
     dept = await _department(client, admin_headers, "Engineering")
     ids = await _add_all(client, admin_headers, NAMES, dept, "rbac.dev")
     reversed_ids = list(reversed(list(ids.values())))
@@ -335,7 +339,7 @@ async def test_non_admins_cannot_reorder(client: AsyncClient, super_admin: User)
     assert anonymous.status_code == 401
 
     assert await _listed_names(client, admin_headers, dept) == NAMES
-    # ...but the recruiter still sees the persisted order
+    # ...but the hiring manager still sees the persisted order
     assert await _listed_names(client, recruiter_headers, dept) == NAMES
 
 

@@ -16,9 +16,11 @@ from app.integrations.ai.base import (
     LLMProvider,
     ScreeningVerdict,
 )
+from app.integrations.ai.fallback_provider import FallbackLLMProvider
 from app.integrations.ai.gemini_embedding_provider import GeminiEmbeddingProvider
 from app.integrations.ai.gemini_provider import GeminiChatProvider
 from app.integrations.ai.gemini_screening_provider import GeminiLLMProvider
+from app.integrations.ai.groq_screening_provider import GroqLLMProvider
 from app.integrations.ai.internal_ai_reasoning_provider import InternalAIReasoningProvider
 from app.integrations.ai.ollama_provider import OllamaLLMProvider
 from app.integrations.ai.openai_provider import OpenAILLMProvider
@@ -36,9 +38,11 @@ __all__ = [
     "ChatProvider",
     "EmbeddingProvider",
     "EmbeddingTaskType",
+    "FallbackLLMProvider",
     "GeminiChatProvider",
     "GeminiEmbeddingProvider",
     "GeminiLLMProvider",
+    "GroqLLMProvider",
     "InternalAIReasoningProvider",
     "LLMProvider",
     "ScreeningVerdict",
@@ -61,7 +65,7 @@ class _UnconfiguredLLMProvider(LLMProvider):
     ) -> ScreeningVerdict:
         raise AIProviderNotConfiguredError(
             "AI screening is currently unavailable because no AI provider is configured. "
-            "Set OLLAMA_BASE_URL for a free local model, GEMINI_API_KEY, or "
+            "Set OLLAMA_BASE_URL for a free local model, GROQ_API_KEY / GEMINI_API_KEY, or "
             "ANTHROPIC_API_KEY / OPENAI_API_KEY (see README)."
         )
 
@@ -72,9 +76,12 @@ def get_llm_provider() -> LLMProvider:
     sent to a third party. Falls back to a paid provider only if the
     caller configured one instead; Anthropic wins if both paid keys are
     set (arbitrary but deterministic — an organization only ever
-    configures one in practice). Gemini — whose key most deployments
-    already hold for Sigvi and the internal AI — is the last fallback, so
-    configuring a dedicated screening provider always takes precedence."""
+    configures one in practice).
+
+    Otherwise Groq and Gemini form a fallback chain: by default Groq first
+    and Gemini as the single fallback attempt when Groq fails
+    (`AI_SCREENING_PROVIDER` picks which goes first). With only one of the
+    two keys set, that provider is used on its own."""
     settings = get_settings()
     if settings.ollama_base_url:
         return OllamaLLMProvider(base_url=settings.ollama_base_url, model=settings.ollama_model)
@@ -82,17 +89,36 @@ def get_llm_provider() -> LLMProvider:
         return AnthropicLLMProvider(api_key=settings.anthropic_api_key)
     if settings.openai_api_key:
         return OpenAILLMProvider(api_key=settings.openai_api_key)
+
+    chain: list[LLMProvider] = []
+    groq_key = settings.groq_api_key.get_secret_value().strip() if settings.groq_api_key else ""
+    if groq_key:
+        chain.append(
+            GroqLLMProvider(
+                api_key=groq_key,
+                model=settings.groq_screening_model,
+                timeout_seconds=settings.groq_request_timeout_seconds,
+                reasoning_effort=settings.groq_screening_reasoning_effort,
+            )
+        )
     gemini_key = (
         settings.gemini_api_key.get_secret_value().strip() if settings.gemini_api_key else ""
     )
     if gemini_key:
-        return GeminiLLMProvider(
-            api_key=gemini_key,
-            model=settings.gemini_screening_model,
-            timeout_seconds=settings.internal_ai_request_timeout_seconds,
-            thinking_budget=settings.gemini_screening_thinking_budget,
+        chain.append(
+            GeminiLLMProvider(
+                api_key=gemini_key,
+                model=settings.gemini_screening_model,
+                timeout_seconds=settings.internal_ai_request_timeout_seconds,
+                thinking_budget=settings.gemini_screening_thinking_budget,
+            )
         )
-    return _UnconfiguredLLMProvider()
+    chain.sort(key=lambda provider: provider.name != settings.ai_screening_provider)
+    if not chain:
+        return _UnconfiguredLLMProvider()
+    if len(chain) == 1:
+        return chain[0]
+    return FallbackLLMProvider(chain)
 
 
 class _UnconfiguredChatProvider(ChatProvider):

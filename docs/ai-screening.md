@@ -28,15 +28,53 @@ override. An unavailable or failing provider never screens anyone out.
 
 **Provider selection** (`app/integrations/ai/__init__.py::get_llm_provider`):
 Ollama if `OLLAMA_BASE_URL` is set, then Anthropic (`ANTHROPIC_API_KEY`), then
-OpenAI (`OPENAI_API_KEY`), and finally **Gemini** (`GEMINI_API_KEY`) as the
-last fallback. That way a dedicated screening provider always takes
-precedence over the key most deployments already hold for Sigvi. The Gemini
-adapter (`gemini_screening_provider.py::GeminiLLMProvider`) sends the same
-shared prompt (`prompts.py`) as every other adapter. It uses the existing
-Gemini REST client with a native response schema, so the model can only
-return the verdict's JSON shape. Scores are clamped to 0–100, and a reply
-that still doesn't validate is an `AIProviderError`, never a guessed
-verdict. There's no new SDK and no new secret.
+OpenAI (`OPENAI_API_KEY`). That way a dedicated screening provider always
+takes precedence. Otherwise **Groq** (`GROQ_API_KEY`) is the primary provider
+and **Gemini** (`GEMINI_API_KEY`) is the fallback. With only one of the two
+keys set, that provider is used on its own. `AI_SCREENING_PROVIDER`
+(`groq` by default, or `gemini`) chooses which of the two goes first when
+both keys are set.
+
+**Fallback rules** (`fallback_provider.py::FallbackLLMProvider`): each
+provider is tried **at most once**, in order. The fallback runs only when the
+primary *fails* with an `AIProviderError`: a timeout, a connection failure,
+401/403, 429 (or Groq's 413 "request too large for your TPM limit"), 5xx, a
+non-JSON or truncated reply, or a reply that doesn't validate as a verdict. A
+verdict is a successful result whatever it says. `NOT_MATCH` with score 15 is
+final and is never "re-asked" of Gemini. When both providers fail, the run is
+`FAILED` as before, and a self-service application is kept for manual review.
+There is no retry loop. The `ScreeningRun` records the provider/model that
+**actually produced** the result (`provider = "gemini"` after a fallback). On
+a `COMPLETED` run that needed the fallback, `error_message` keeps the failed
+attempt for audit, e.g. `Fallback used after: groq (openai/gpt-oss-120b): Groq
+rate limit or quota reached (429).` That text is always our own exception
+message, never the upstream body, the request, or a key. The recruiter UI
+shows `error_message` only for `FAILED` runs, and candidates never see any
+screening data.
+
+**Groq adapter** (`groq_screening_provider.py::GroqLLMProvider`): a plain
+authenticated POST to Groq's OpenAI-compatible
+`https://api.groq.com/openai/v1/chat/completions`. It needs no SDK, and the
+key travels only in the `Authorization` header. It sends the same shared
+prompt (`prompts.py`) as every adapter, with `response_format: json_schema`
+in **strict** mode (constrained decoding). The JSON schema is derived from
+the Gemini adapter's `RESPONSE_SCHEMA`, so the two share one definition of
+the verdict contract. Both adapters validate the reply through
+`base.parse_structured_verdict`, which clamps the score to 0–100 and treats
+anything invalid as an `AIProviderError`. The default model,
+`GROQ_SCREENING_MODEL=openai/gpt-oss-120b`, is a Groq **production** model
+(not preview) with a 131k context. It is one of the few Groq models that
+supports strict structured outputs (checked against Groq's model and
+structured-output docs, 2026-10). It is a reasoning model, so screening sends
+`reasoning_effort=low` (`GROQ_SCREENING_REASONING_EFFORT`) and
+`include_reasoning=false`. If that setting is empty, no reasoning parameters
+are sent, which is needed for non-reasoning models. A model without strict
+structured-output support is rejected by Groq and fails over to Gemini, so
+pick one that supports it. Groq's free tier for this model is about 8K tokens
+per minute. A very long resume plus job description can exceed it (413/429),
+and that case falls back to Gemini. `GROQ_REQUEST_TIMEOUT_SECONDS` (default
+30) leaves room for the fallback in the same request. Tests fake the HTTP
+layer (`tests/test_groq_screening_fallback.py`).
 
 Screening has its own model setting, `GEMINI_SCREENING_MODEL` (default
 `gemini-2.5-flash`), separate from `GEMINI_MODEL`. That way, changing the

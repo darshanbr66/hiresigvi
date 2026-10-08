@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -11,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
 )
@@ -81,11 +83,31 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
             "AND place_of_birth IS NOT NULL AND cardinality(languages) > 0)",
             name="ck_candidates_verified_identity_complete",
         ),
+        CheckConstraint(
+            "tenth_marks_percentage IS NULL OR "
+            "(tenth_marks_percentage >= 0 AND tenth_marks_percentage <= 100)",
+            name="ck_candidates_tenth_marks_percentage_range",
+        ),
+        # A marks-card reference is either complete or absent — never a
+        # path without its provider (which could not be resolved or cleaned
+        # up).
+        CheckConstraint(
+            "(tenth_marks_card_storage_path IS NULL) = "
+            "(tenth_marks_card_storage_provider IS NULL) AND "
+            "(tenth_marks_card_storage_path IS NULL) = (tenth_marks_card_filename IS NULL) AND "
+            "(tenth_marks_card_storage_path IS NULL) = "
+            "(tenth_marks_card_content_type IS NULL) AND "
+            "(tenth_marks_card_storage_path IS NULL) = (tenth_marks_card_size_bytes IS NULL) AND "
+            "(tenth_marks_card_storage_path IS NULL) = (tenth_marks_card_uploaded_at IS NULL)",
+            name="ck_candidates_tenth_marks_card_complete",
+        ),
     )
 
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Unbounded: the self-service form imposes no length limit on a name
+    # (some legal names are long); see migration f9a0b1c2d3e4.
+    full_name: Mapped[str] = mapped_column(Text, nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     current_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -113,6 +135,25 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     # free-text blob. Empty for candidates who never supplied it.
     languages: Mapped[list[str]] = mapped_column(
         ARRAY(String(50)), nullable=False, default=list, server_default="{}"
+    )
+    # Optional education data from the self-service form: the 10th-standard
+    # (SSLC/secondary) result as a percentage, and a reference to the
+    # uploaded marks card. The card's *bytes* live in the file-storage
+    # abstraction (app/integrations/storage — MongoDB GridFS in production),
+    # never in Postgres (CLAUDE.md § 2: "Resume storage != DB blob"); these
+    # columns are metadata only. `tenth_marks_card_storage_path` is opaque,
+    # resolved against `tenth_marks_card_storage_provider`, and never
+    # returned to any client. All-or-nothing: see the check constraint.
+    tenth_marks_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    tenth_marks_card_storage_provider: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
+    tenth_marks_card_storage_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    tenth_marks_card_filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    tenth_marks_card_content_type: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    tenth_marks_card_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tenth_marks_card_uploaded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     # Set once the candidate proved ownership of `email` with a one-time code
     # (app/services/email_verification_service.py). NULL for recruiter-added

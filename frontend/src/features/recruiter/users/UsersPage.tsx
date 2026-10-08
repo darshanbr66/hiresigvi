@@ -10,7 +10,7 @@ import { SkeletonTable } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
 import { useAuth } from "../../auth/AuthContext";
-import { createUser, listUsers, updateUser } from "../../auth/api";
+import { createUser, deleteUser, listUsers, updateUser } from "../../auth/api";
 import { DepartmentsHierarchy } from "../team/DepartmentsHierarchy";
 
 const USERS_QUERY_KEY = ["recruiter", "users"];
@@ -22,7 +22,7 @@ export function UsersPage() {
   const token = accessToken as string;
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<TeamTab>("accounts");
+  const [activeTab, setActiveTab] = useState<TeamTab>("departments");
 
   const usersQuery = useQuery({
     queryKey: USERS_QUERY_KEY,
@@ -41,6 +41,9 @@ export function UsersPage() {
   const [deactivateReason, setDeactivateReason] = useState("");
   const [deactivateError, setDeactivateError] = useState<string | null>(null);
   const [pendingReactivate, setPendingReactivate] = useState<UserResponse | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<UserResponse | null>(null);
+  const [deleteAcknowledged, setDeleteAcknowledged] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const createUserMutation = useMutation({
     mutationFn: () => createUser({ email, password, full_name: fullName, role }, token),
@@ -119,6 +122,35 @@ export function UsersPage() {
     },
   });
 
+  // Permanent: only for a deactivated account, Org Admins only — the
+  // backend enforces both, plus "never yourself / the last Org Admin" and
+  // refusing an account that authored recruitment records.
+  const deleteMutation = useMutation({
+    mutationFn: (target: UserResponse) => deleteUser(target.id, token),
+    onSuccess: (_result, target) => {
+      showToast(`${target.full_name}'s account was permanently deleted.`, "success");
+      queryClient.setQueryData<UserResponse[]>(USERS_QUERY_KEY, (current) =>
+        current?.filter((member) => member.id !== target.id),
+      );
+      setPendingDelete(null);
+      void queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY });
+    },
+    onError: (err) => {
+      setDeleteError(err instanceof ApiError ? err.message : "Unable to reach the server.");
+    },
+  });
+
+  function openDeleteModal(teamUser: UserResponse) {
+    setPendingDelete(teamUser);
+    setDeleteAcknowledged(false);
+    setDeleteError(null);
+  }
+
+  function closeDeleteModal() {
+    if (deleteMutation.isPending) return;
+    setPendingDelete(null);
+  }
+
   function openDeactivateModal(teamUser: UserResponse) {
     setPendingDeactivate(teamUser);
     setDeactivateReason("");
@@ -137,10 +169,17 @@ export function UsersPage() {
     deactivateMutation.mutate();
   }
 
-  // Today only ORG_ADMIN holds `user.read` (seeded in the Phase 2 migration),
-  // and ORG_ADMIN is also the only role holding `user.create` — so a
-  // successful list load already implies create access too.
+  // ORG_ADMIN and HR (RECRUITER) hold `user.read` together with
+  // `user.create`/`user.update` (migration d7e8f9a0b1c2) — so a successful
+  // list load already implies manage access too.
   const canManageUsers = !(usersQuery.error instanceof ApiError && usersQuery.error.status === 403);
+  // Only an Org Admin (`user.manage_admins`) may create, promote, demote,
+  // deactivate or reactivate an Org Admin. The backend enforces it; HR
+  // simply isn't offered those controls.
+  const isOrgAdmin = currentUser?.roles.includes("ORG_ADMIN") ?? false;
+  const roleOptions = isOrgAdmin
+    ? ASSIGNABLE_ROLES
+    : ASSIGNABLE_ROLES.filter((option) => option !== "ORG_ADMIN");
 
   return (
     <div className="stack-lg">
@@ -164,21 +203,22 @@ export function UsersPage() {
         <button
           type="button"
           role="tab"
-          aria-selected={activeTab === "accounts"}
-          className={`btn btn-sm ${activeTab === "accounts" ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => setActiveTab("accounts")}
-        >
-          Accounts
-        </button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={activeTab === "departments"}
           className={`btn btn-sm ${activeTab === "departments" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setActiveTab("departments")}
         >
           Departments
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "accounts"}
+          className={`btn btn-sm ${activeTab === "accounts" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setActiveTab("accounts")}
+        >
+          Accounts
+        </button>
+
       </div>
 
       {activeTab === "departments" && <DepartmentsHierarchy />}
@@ -220,6 +260,8 @@ export function UsersPage() {
                   {usersQuery.data.map((teamUser, index) => {
                     const isSelf = teamUser.id === currentUser?.id;
                     const currentRole = (teamUser.roles[0] as AssignableRole | undefined) ?? "RECRUITER";
+                    const canManageRow =
+                      canManageUsers && !isSelf && (isOrgAdmin || !teamUser.roles.includes("ORG_ADMIN"));
                     return (
                       <tr key={teamUser.id}>
                         <td>{index + 1}</td>
@@ -229,9 +271,10 @@ export function UsersPage() {
                         </td>
                         <td>{teamUser.email}</td>
                         <td>
-                          {canManageUsers && !isSelf ? (
+                          {canManageRow ? (
                             <select
                               value={currentRole}
+                              aria-label={`Role for ${teamUser.full_name}`}
                               disabled={roleMutation.isPending}
                               onChange={(e) =>
                                 roleMutation.mutate({
@@ -240,7 +283,7 @@ export function UsersPage() {
                                 })
                               }
                             >
-                              {ASSIGNABLE_ROLES.map((option) => (
+                              {roleOptions.map((option) => (
                                 <option key={option} value={option}>
                                   {option}
                                 </option>
@@ -259,7 +302,7 @@ export function UsersPage() {
                         </td>
                         {canManageUsers && (
                           <td>
-                            {isSelf ? (
+                            {!canManageRow ? (
                               <span className="muted" style={{ fontSize: "0.8rem" }}>
                                 —
                               </span>
@@ -272,13 +315,25 @@ export function UsersPage() {
                                 Deactivate
                               </button>
                             ) : (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setPendingReactivate(teamUser)}
-                              >
-                                Reactivate
-                              </button>
+                              <div className="btn-group">
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => setPendingReactivate(teamUser)}
+                                >
+                                  Reactivate
+                                </button>
+                                {isOrgAdmin && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-danger btn-sm"
+                                    onClick={() => openDeleteModal(teamUser)}
+                                    aria-label={`Delete ${teamUser.full_name}`}
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </td>
                         )}
@@ -336,7 +391,7 @@ export function UsersPage() {
                 onChange={(e) => setRole(e.target.value as AssignableRole)}
                 disabled={createUserMutation.isPending}
               >
-                {ASSIGNABLE_ROLES.map((option) => (
+                {roleOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
@@ -398,6 +453,64 @@ export function UsersPage() {
                 className="btn btn-ghost"
                 onClick={closeDeactivateModal}
                 disabled={deactivateMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {pendingDelete && (
+        <Modal title="Delete account permanently" onClose={closeDeleteModal}>
+          <form
+            onSubmit={(event: FormEvent) => {
+              event.preventDefault();
+              if (!deleteAcknowledged) return;
+              setDeleteError(null);
+              deleteMutation.mutate(pendingDelete);
+            }}
+          >
+            <p>
+              <strong>Team member:</strong> {pendingDelete.full_name}
+              <br />
+              <strong>Email:</strong> {pendingDelete.email}
+            </p>
+            <Alert>
+              This permanently removes {pendingDelete.full_name}'s account and cannot be undone.
+              They can never sign in with it again.
+            </Alert>
+            <p className="muted">
+              Their activity history and messages they sent are kept, and a linked employee record
+              stays in the hierarchy without a login. An account that created jobs, assessments,
+              campus drives, notes or calendar events can't be deleted — it stays deactivated so
+              that history keeps its author. This action is recorded in Activities.
+            </p>
+            <label className="field field-inline">
+              <input
+                type="checkbox"
+                checked={deleteAcknowledged}
+                onChange={(e) => setDeleteAcknowledged(e.target.checked)}
+                disabled={deleteMutation.isPending}
+              />
+              <span>I understand this cannot be undone</span>
+            </label>
+
+            {deleteError && <Alert>{deleteError}</Alert>}
+
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button
+                type="submit"
+                className="btn btn-danger"
+                disabled={!deleteAcknowledged || deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? <Spinner label="Deleting…" /> : "Delete permanently"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeDeleteModal}
+                disabled={deleteMutation.isPending}
               >
                 Cancel
               </button>

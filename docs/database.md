@@ -151,6 +151,16 @@ GridFS ObjectId for `"mongodb_gridfs"`. Either way this table stays
 metadata-only; file bytes never live in Postgres. `resume_documents` /
 `resume_chunks` below are still Phase 5 future work, not yet built.
 
+**candidates — 10th marks** (migration `f9a0b1c2d3e4`): optional
+`tenth_marks_percentage NUMERIC(5,2)` (0–100, checked) and a reference to
+the optional 10th marks card: `tenth_marks_card_storage_provider`,
+`_storage_path`, `_filename`, `_content_type`, `_size_bytes`,
+`_uploaded_at` — all set or all NULL (`ck_candidates_tenth_marks_card_complete`).
+The bytes are written through the same `ResumeStorage` abstraction (same
+GridFS bucket, `metadata.document_kind = "tenth_marks_card"`, no
+`application_id`); the same migration widened `candidates.full_name` to
+`TEXT`.
+
 **resume_documents**
 `id, resume_id, extracted_text, extraction_engine, extracted_at`
 (1:1 with `resumes`; kept separate so re-extraction/versioning doesn't bloat

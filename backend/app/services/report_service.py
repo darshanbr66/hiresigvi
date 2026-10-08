@@ -1,12 +1,13 @@
 import uuid
 from collections import Counter
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.application import ApplicationStatus
+from app.models.application import Application, ApplicationStatus
 from app.models.assessment import AssessmentInvitation, AssessmentResult, InvitationStatus
-from app.models.job import JobStatus
+from app.models.candidate import Candidate
+from app.models.job import Job, JobStatus
 from app.models.screening import ScreeningRun, ScreeningStatus
 from app.schemas.report import (
     AssessmentSummaryStats,
@@ -53,10 +54,32 @@ async def get_overview(db: AsyncSession, organization_id: uuid.UUID) -> ReportOv
     )
 
 
+def _live_application_ids(organization_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:
+    """The organization's current applications — the same population
+    `application_service.list_applications` (and so `total_applications`)
+    reports on. AI screening runs and assessment invitations are counted only
+    through these: deleting an application, its candidate or its job is a
+    soft delete that keeps every linked run/invitation for the audit trail,
+    so counting those rows by `organization_id` alone would keep reporting
+    archived pipeline data after the pipeline itself shows zero."""
+    return (
+        select(Application.id)
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .join(Job, Job.id == Application.job_id)
+        .where(
+            Application.organization_id == organization_id,
+            Application.deleted_at.is_(None),
+            Candidate.organization_id == organization_id,
+            Job.organization_id == organization_id,
+        )
+    )
+
+
 async def _screening_summary(db: AsyncSession, organization_id: uuid.UUID) -> ScreeningSummary:
     result = await db.execute(
         select(ScreeningRun.status, ScreeningRun.overall_score).where(
-            ScreeningRun.organization_id == organization_id
+            ScreeningRun.organization_id == organization_id,
+            ScreeningRun.application_id.in_(_live_application_ids(organization_id)),
         )
     )
     rows = result.all()
@@ -65,14 +88,17 @@ async def _screening_summary(db: AsyncSession, organization_id: uuid.UUID) -> Sc
         total_runs=len(rows),
         completed=sum(1 for status, _ in rows if status == ScreeningStatus.COMPLETED),
         failed=sum(1 for status, _ in rows if status == ScreeningStatus.FAILED),
-        average_score=round(sum(completed_scores) / len(completed_scores), 1) if completed_scores else None,
+        average_score=(
+            round(sum(completed_scores) / len(completed_scores), 1) if completed_scores else 0.0
+        ),
     )
 
 
 async def _assessment_summary(db: AsyncSession, organization_id: uuid.UUID) -> AssessmentSummaryStats:
     result = await db.execute(
         select(AssessmentInvitation.id, AssessmentInvitation.status).where(
-            AssessmentInvitation.organization_id == organization_id
+            AssessmentInvitation.organization_id == organization_id,
+            AssessmentInvitation.application_id.in_(_live_application_ids(organization_id)),
         )
     )
     invitations = result.all()

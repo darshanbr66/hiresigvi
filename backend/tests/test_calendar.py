@@ -225,21 +225,52 @@ async def test_attendees_must_belong_to_the_same_organization(client: AsyncClien
 async def test_attendee_options_are_available_without_user_read_and_stay_tenant_scoped(
     client: AsyncClient, super_admin: User
 ) -> None:
-    """Picking a meeting attendee is not user administration: a RECRUITER has
-    `calendar.read` but not `user.read`, and must still be able to list the
-    people they may invite — from their own organization only."""
+    """Picking a meeting attendee is not user administration: a
+    HIRING_MANAGER has `calendar.read` but not `user.read`, and must still be
+    able to list the people they may invite — from their own organization
+    only."""
     org_a = await _bootstrap_org_with_two_users(client, "cal-attendee-opts-a")
     org_b = await _bootstrap_org_with_two_users(client, "cal-attendee-opts-b")
 
-    # The Team directory stays admin-only.
-    assert (await client.get("/api/v1/recruiter/users", headers=org_a["recruiter_headers"])).status_code == 403
+    manager = await client.post(
+        "/api/v1/recruiter/users",
+        json={
+            "email": "manager@cal-attendee-opts-a.dev",
+            "full_name": "Hiring Manager",
+            "password": "ManagerPass12",
+            "role": "HIRING_MANAGER",
+        },
+        headers=org_a["admin_headers"],
+    )
+    assert manager.status_code == 201, manager.text
+    manager_tokens = await login(
+        client, email="manager@cal-attendee-opts-a.dev", password="ManagerPass12"
+    )
+    manager_headers = {"Authorization": f"Bearer {manager_tokens['access_token']}"}
+
+    # The Team directory is ORG_ADMIN/HR only.
+    assert (await client.get("/api/v1/recruiter/users", headers=manager_headers)).status_code == 403
+
+    from_manager = await client.get(
+        "/api/v1/recruiter/calendar/attendee-options", headers=manager_headers
+    )
+    assert from_manager.status_code == 200, from_manager.text
+    assert {option["email"] for option in from_manager.json()} == {
+        "admin@cal-attendee-opts-a.dev",
+        "recruiter@cal-attendee-opts-a.dev",
+        "manager@cal-attendee-opts-a.dev",
+    }
 
     response = await client.get(
         "/api/v1/recruiter/calendar/attendee-options", headers=org_a["recruiter_headers"]
     )
     assert response.status_code == 200, response.text
     emails = {option["email"] for option in response.json()}
-    assert emails == {"admin@cal-attendee-opts-a.dev", "recruiter@cal-attendee-opts-a.dev"}
+    assert emails == {
+        "admin@cal-attendee-opts-a.dev",
+        "recruiter@cal-attendee-opts-a.dev",
+        "manager@cal-attendee-opts-a.dev",
+    }
 
     org_b_emails = {
         option["email"]

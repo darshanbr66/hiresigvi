@@ -18,6 +18,7 @@ import {
   createEmployee,
   deactivateEmployee,
   deleteDepartment,
+  deleteEmployee,
   listDepartments,
   listEmployees,
   moveEmployee,
@@ -44,17 +45,19 @@ type EmployeeFormState = typeof EMPTY_EMPLOYEE_FORM;
 
 /**
  * "<organization> → Departments → Employees" hierarchy view (SIGVITAS platform
- * overhaul § 9-12). Org Admin gets full CRUD; Recruiter/HR see the same
- * tree read-only — the frontend hides manage controls for UX only, the
- * backend's `department.manage`/`employee.manage` permissions are the
- * actual authority (CLAUDE.md § 2).
+ * overhaul § 9-12). Org Admin and HR (the RECRUITER role) get full CRUD;
+ * Hiring Managers see the same tree read-only — the frontend hides manage
+ * controls for UX only, the backend's `department.manage`/`employee.manage`
+ * permissions are the actual authority (CLAUDE.md § 2).
  */
+const MANAGE_ROLES = ["ORG_ADMIN", "RECRUITER"];
+
 export function DepartmentsHierarchy() {
   const { accessToken, user: currentUser } = useAuth();
   const token = accessToken as string;
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const canManage = currentUser?.roles.includes("ORG_ADMIN") ?? false;
+  const canManage = currentUser?.roles.some((role) => MANAGE_ROLES.includes(role)) ?? false;
 
   const departmentsQuery = useQuery({
     queryKey: DEPARTMENTS_KEY,
@@ -76,6 +79,9 @@ export function DepartmentsHierarchy() {
   const [pendingDeleteDept, setPendingDeleteDept] = useState<DepartmentResponse | null>(null);
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [removingEmployee, setRemovingEmployee] = useState<EmployeeResponse | null>(null);
+  const [removeReason, setRemoveReason] = useState("");
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const [employeeFormDeptId, setEmployeeFormDeptId] = useState<string | null | undefined>(undefined);
   const [editingEmployee, setEditingEmployee] = useState<EmployeeResponse | null>(null);
@@ -247,6 +253,35 @@ export function DepartmentsHierarchy() {
     },
   });
 
+  // Removing someone who left: a soft delete server-side, so they drop out of
+  // every list and count here, while their record stays for history.
+  const removeEmployeeMutation = useMutation({
+    mutationFn: () =>
+      deleteEmployee(removingEmployee!.id, { reason: removeReason.trim() || null }, token),
+    onSuccess: (removed) => {
+      showToast(`${removed.full_name} was removed.`, "success");
+      setRemovingEmployee(null);
+      setRemoveReason("");
+      setRemoveError(null);
+      void queryClient.invalidateQueries({ queryKey: EMPLOYEES_KEY });
+      void queryClient.invalidateQueries({ queryKey: DEPARTMENTS_KEY });
+    },
+    onError: (err) => {
+      setRemoveError(err instanceof ApiError ? err.message : "Unable to reach the server.");
+    },
+  });
+
+  function openRemoveEmployee(employee: EmployeeResponse) {
+    setRemovingEmployee(employee);
+    setRemoveReason("");
+    setRemoveError(null);
+  }
+
+  function closeRemoveEmployee() {
+    if (removeEmployeeMutation.isPending) return;
+    setRemovingEmployee(null);
+  }
+
   if (departmentsQuery.isPending || employeesQuery.isPending) {
     return (
       <div className="stack-lg" role="status" aria-label="Loading organization">
@@ -379,6 +414,15 @@ export function DepartmentsHierarchy() {
                                           ? "Deactivate"
                                           : "Reactivate"}
                                       </button>
+                                      {currentUser?.id !== employee.user_id && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-danger btn-sm"
+                                          onClick={() => openRemoveEmployee(employee)}
+                                        >
+                                          Remove
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 )}
@@ -447,13 +491,24 @@ export function DepartmentsHierarchy() {
                     <td>{employee.email}</td>
                     {canManage && (
                       <td>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => setMovingEmployee(employee)}
-                        >
-                          Assign to department
-                        </button>
+                        <div className="btn-group">
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => setMovingEmployee(employee)}
+                          >
+                            Assign to department
+                          </button>
+                          {currentUser?.id !== employee.user_id && (
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() => openRemoveEmployee(employee)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -556,6 +611,57 @@ export function DepartmentsHierarchy() {
                 className="btn btn-ghost"
                 onClick={() => setPendingDeleteDept(null)}
                 disabled={deleteDeptMutation.isPending}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {removingEmployee && (
+        <Modal title="Remove employee" onClose={closeRemoveEmployee}>
+          <form
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              removeEmployeeMutation.mutate();
+            }}
+          >
+            <p>
+              <strong>Employee:</strong> {removingEmployee.full_name}
+              <br />
+              <strong>Email:</strong> {removingEmployee.email}
+            </p>
+            <p className="muted">
+              Use this when {removingEmployee.full_name} has left the company. They will no longer
+              appear in any department or in the organization chart. Their record is kept for
+              history, and this action is recorded in Activities. A portal login, if they have
+              one, is deactivated separately under Accounts.
+            </p>
+            <label className="field">
+              <span>Reason (optional)</span>
+              <textarea
+                rows={2}
+                value={removeReason}
+                onChange={(e) => setRemoveReason(e.target.value)}
+                disabled={removeEmployeeMutation.isPending}
+                placeholder="e.g. Resigned"
+              />
+            </label>
+            {removeError && <Alert>{removeError}</Alert>}
+            <div className="btn-group" style={{ marginTop: "1rem" }}>
+              <button
+                type="submit"
+                className="btn btn-danger"
+                disabled={removeEmployeeMutation.isPending}
+              >
+                {removeEmployeeMutation.isPending ? <Spinner label="Removing…" /> : "Remove employee"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeRemoveEmployee}
+                disabled={removeEmployeeMutation.isPending}
               >
                 Cancel
               </button>

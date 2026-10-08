@@ -85,3 +85,7 @@ export interface EmployeeReorderRequest {
 export interface EmployeeDeactivateRequest {
   reason?: string | null;
 }
+
+export interface EmployeeDeleteRequest {
+  reason?: string | null;
+}

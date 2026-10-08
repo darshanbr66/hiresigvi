@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, NotFoundError
-from app.integrations.ai import AIProviderError, get_llm_provider
+from app.integrations.ai import AIProviderError, LLMProvider, get_llm_provider
 from app.integrations.ai.extraction import extract_resume_text
 from app.integrations.storage import StorageError, get_resume_storage_for_provider
 from app.models.screening import ScreeningDecision, ScreeningRun, ScreeningStatus
@@ -61,11 +61,20 @@ async def run_screening(
             job_description=application.job.description,
         )
     except (AIProviderError, StorageError) as exc:
+        _record_provider(run, provider)
         run.status = ScreeningStatus.FAILED
         run.error_message = str(exc)
         await db.flush()
         return run
 
+    _record_provider(run, provider)
+    # Audit trail for a fallback chain: a COMPLETED run whose primary
+    # provider failed keeps that (sanitized) failure here.
+    failed = getattr(provider, "failed_attempts", ())
+    if failed:
+        run.error_message = "Fallback used after: " + "; ".join(
+            f"{f.provider} ({f.model}): {f.error}" for f in failed
+        )
     run.status = ScreeningStatus.COMPLETED
     run.overall_score = verdict.overall_score
     run.recommendation = verdict.recommendation
@@ -82,6 +91,14 @@ async def run_screening(
     run.completed_at = datetime.now(UTC)
     await db.flush()
     return run
+
+
+def _record_provider(run: ScreeningRun, provider: LLMProvider) -> None:
+    """A fallback chain's `name`/`model` move to whichever provider
+    produced (or last failed) the result — record that one, not the
+    provider the PENDING row was created with."""
+    run.provider = provider.name
+    run.model = provider.model
 
 
 #: `created_at` is the transaction's `now()`, so two runs in one transaction

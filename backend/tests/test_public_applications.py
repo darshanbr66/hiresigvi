@@ -180,20 +180,17 @@ async def test_duplicate_application_is_rejected(
     first = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="jane@example.com")
     assert first.status_code == 201
 
-    # The same person can't even get past email verification a second time.
-    # They applied moments ago, so the block is the reapply window
-    # (app/services/reapply_service.py) rather than "already registered":
-    # having just proven they own the address, they are told both dates.
+    # The same person doesn't even get a verification code a second time.
+    # They applied moments ago and have no reapply permission
+    # (app/services/reapply_service.py). They haven't proven they own the
+    # address, so nothing but "already applied" comes back — no dates.
     code_response, code = await request_code(client, ctx["slug"], "jane@example.com")
-    assert code_response.status_code == 202
-    verify = await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/email-verification/verify",
-        json={"email": "jane@example.com", "code": code},
-    )
-    assert verify.status_code == 409
-    error = verify.json()["error"]
-    assert error["code"] == "reapply_locked"
-    assert error["data"]["eligible_from"] > error["data"]["last_applied_at"]
+    assert code_response.status_code == 409
+    error = code_response.json()["error"]
+    assert error["code"] == "already_applied"
+    assert error["message"] == "You have already applied."
+    assert "data" not in error or not error["data"]
+    assert code is None
 
 
 async def test_apply_with_disallowed_file_type_is_rejected(

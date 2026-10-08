@@ -28,7 +28,7 @@ any tenant — `organization_id` is `NULL`.
 | Password | `OrgAdmin@2026Dev` |
 | Role | `ORG_ADMIN` |
 | Organization | Acme Corp (`acme-corp`) |
-| Purpose | Full recruiter-portal access + user management (`user.create`/`user.read`) for the tenant |
+| Purpose | Full recruiter-portal access + user management (`user.create`/`user.read`/`user.update`, plus `user.manage_admins` for Org Admin accounts) for the tenant |
 
 ## Recruiter — Acme Corp
 
@@ -38,7 +38,7 @@ any tenant — `organization_id` is `NULL`.
 | Password | `Recruiter@2026Dev` |
 | Role | `RECRUITER` |
 | Organization | Acme Corp (`acme-corp`) |
-| Purpose | Standard recruiter-portal testing (jobs, candidates, applications) without user-management permissions — use to verify role boundaries against `admin@acme-corp.dev` |
+| Purpose | Standard recruiter-portal (HR) testing: jobs, candidates, applications, and Team/department management. It has no Org Admin powers: it can't create, promote, demote or deactivate an Org Admin, delete activities, or change org settings. Use it to verify role boundaries against `admin@acme-corp.dev`. |
 
 ## Organization admin — Sigvitas Pvt. Ltd.
 

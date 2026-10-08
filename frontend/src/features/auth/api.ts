@@ -44,6 +44,12 @@ export function updateUser(userId: string, payload: UserUpdateRequest, accessTok
   return apiClient.patch<UserResponse>(`/api/v1/recruiter/users/${userId}`, payload, accessToken);
 }
 
+/** Permanently deletes a deactivated team account (Org Admins only — the
+ * backend enforces every rule). */
+export function deleteUser(userId: string, accessToken: string) {
+  return apiClient.delete(`/api/v1/recruiter/users/${userId}`, accessToken);
+}
+
 export function listOrganizations(accessToken: string) {
   return apiClient.get<OrganizationResponse[]>("/api/v1/admin/organizations", accessToken);
 }

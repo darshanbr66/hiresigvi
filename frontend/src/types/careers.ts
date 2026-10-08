@@ -43,15 +43,53 @@ export interface EmailVerificationRequested {
   resend_available_in_seconds: number;
 }
 
+/** A returning candidate's stored profile — mirrors the backend's
+ * ApplicantProfilePrefill. Only ever received after the email's one-time code
+ * has been verified. Any field may be null (an HR-created profile can be
+ * incomplete). */
+export interface ApplicantProfilePrefill {
+  full_name: string | null;
+  phone: string | null;
+  date_of_birth: string | null;
+  place_of_birth: string | null;
+  languages: string[];
+  candidate_type: CandidateType | null;
+  years_experience: number | null;
+  notice_period_days: number | null;
+  immediate_joiner: boolean | null;
+  current_title: string | null;
+  current_company: string | null;
+  location: string | null;
+  preferred_location: string | null;
+  qualification: string | null;
+  linkedin_url: string | null;
+  github_url: string | null;
+  tenth_marks_percentage: number | null;
+}
+
 export interface EmailVerificationConfirmed {
   verification_token: string;
   expires_at: string;
+  existing_profile?: ApplicantProfilePrefill | null;
+}
+
+/** The early "already applied?" check — deliberately only a yes/no. */
+export interface ApplicantStatus {
+  already_applied: boolean;
+}
+
+export interface ApplicantStatusQuery {
+  email?: string;
+  phone?: string;
+  job_id?: string;
 }
 
 /** All text inputs are kept as strings (the form's own state); `applyToJob`
  * decides what is sent — experience/availability fields only for
- * EXPERIENCED candidates. Every field is mandatory (the backend enforces it
- * too). */
+ * EXPERIENCED candidates. Every field is mandatory except `linkedin_url`,
+ * `github_url` and `tenth_marks_percentage` (the backend enforces the same
+ * rules). The optional 10th marks card file is passed to `applyToJob`
+ * separately, like the resume. */
 export interface JobApplicationFormValues {
   full_name: string;
   email: string;
@@ -70,4 +108,5 @@ export interface JobApplicationFormValues {
   qualification: string;
   linkedin_url: string;
   github_url: string;
+  tenth_marks_percentage: string;
 }

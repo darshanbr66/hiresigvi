@@ -1,5 +1,7 @@
 import { apiClient } from "../../lib/apiClient";
 import type {
+  ApplicantStatus,
+  ApplicantStatusQuery,
   EmailVerificationConfirmed,
   EmailVerificationRequested,
   JobApplicationFormValues,
@@ -31,18 +33,32 @@ export function getPublicOrganization(slug: string) {
   return apiClient.get<PublicOrganizationSummary>(`/api/v1/public/organizations/${slug}`);
 }
 
-export function requestEmailCode(slug: string, email: string) {
+/** `jobId`: the job being applied for, so a candidate who already applied
+ * to it gets no code. */
+export function requestEmailCode(slug: string, email: string, jobId?: string) {
   return apiClient.post<EmailVerificationRequested>(
     `/api/v1/public/organizations/${slug}/email-verification/request`,
-    { email },
+    jobId ? { email, job_id: jobId } : { email },
   );
 }
 
-export function verifyEmailCode(slug: string, email: string, code: string) {
+export function verifyEmailCode(slug: string, email: string, code: string, jobId?: string) {
   return apiClient.post<EmailVerificationConfirmed>(
     `/api/v1/public/organizations/${slug}/email-verification/verify`,
-    { email, code },
+    jobId ? { email, code, job_id: jobId } : { email, code },
   );
+}
+
+/** The apply form's early check, before any code is sent: only a yes/no. */
+export function checkApplicantStatus(slug: string, query: ApplicantStatusQuery) {
+  return apiClient.post<ApplicantStatus>(
+    `/api/v1/public/organizations/${slug}/applicant-status`,
+    query,
+  );
+}
+
+export function checkCampusApplicantStatus(token: string, query: ApplicantStatusQuery) {
+  return apiClient.post<ApplicantStatus>(`/api/v1/public/campus-drive/${token}/applicant-status`, query);
 }
 
 /** The complete application form — shared by the careers site and campus
@@ -51,6 +67,7 @@ function buildApplicationFormData(
   values: JobApplicationFormValues,
   resume: File,
   verificationToken: string,
+  marksCard: File | null,
 ): FormData {
   const formData = new FormData();
   // Only non-empty values are sent — the backend treats an absent field as
@@ -83,7 +100,9 @@ function buildApplicationFormData(
   append("qualification", values.qualification);
   append("linkedin_url", values.linkedin_url);
   append("github_url", values.github_url);
+  append("tenth_marks_percentage", values.tenth_marks_percentage);
   formData.append("resume", resume);
+  if (marksCard) formData.append("tenth_marks_card", marksCard);
   return formData;
 }
 
@@ -93,10 +112,11 @@ export function applyToJob(
   values: JobApplicationFormValues,
   resume: File,
   verificationToken: string,
+  marksCard: File | null = null,
 ) {
   return apiClient.postForm<PublicApplicationResult>(
     `/api/v1/public/organizations/${slug}/jobs/${jobId}/apply`,
-    buildApplicationFormData(values, resume, verificationToken),
+    buildApplicationFormData(values, resume, verificationToken, marksCard),
   );
 }
 
@@ -141,9 +161,10 @@ export function applyToCampusDrive(
   values: JobApplicationFormValues,
   resume: File,
   verificationToken: string,
+  marksCard: File | null = null,
 ) {
   return apiClient.postForm<PublicCampusDriveApplicationResult>(
     `/api/v1/public/campus-drive/${token}/apply`,
-    buildApplicationFormData(values, resume, verificationToken),
+    buildApplicationFormData(values, resume, verificationToken, marksCard),
   );
 }

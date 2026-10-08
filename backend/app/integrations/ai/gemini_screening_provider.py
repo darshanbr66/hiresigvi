@@ -3,15 +3,14 @@
 Gemini structured-output client (`InternalAIReasoningProvider.
 generate_structured`, which constrains the reply to a JSON schema natively
 instead of hoping prose parses). Same `GEMINI_API_KEY`, no new secret or
-SDK. Selected by `get_llm_provider()` only when no other screening provider
-is configured (app/integrations/ai/__init__.py).
+SDK. Selected by `get_llm_provider()` when no dedicated screening provider
+(Ollama/Anthropic/OpenAI) is configured — by default as the fallback behind
+Groq (app/integrations/ai/__init__.py).
 """
 
 from typing import Any
 
-from pydantic import ValidationError
-
-from app.integrations.ai.base import AIProviderError, LLMProvider, ScreeningVerdict
+from app.integrations.ai.base import LLMProvider, ScreeningVerdict, parse_structured_verdict
 from app.integrations.ai.internal_ai_reasoning_provider import InternalAIReasoningProvider
 from app.integrations.ai.prompts import RECOMMENDATIONS, SYSTEM_PROMPT, build_user_prompt
 
@@ -83,11 +82,4 @@ class GeminiLLMProvider(LLMProvider):
             max_output_tokens=2048,
             thinking_budget=self._thinking_budget,
         )
-        if isinstance(data.get("overall_score"), int):
-            data["overall_score"] = max(0, min(100, data["overall_score"]))
-        try:
-            return ScreeningVerdict.model_validate(data)
-        except ValidationError as exc:
-            raise AIProviderError(
-                "Could not parse the AI provider's response as a structured screening result."
-            ) from exc
+        return parse_structured_verdict(data)

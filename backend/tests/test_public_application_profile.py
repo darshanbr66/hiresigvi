@@ -1,5 +1,6 @@
 """The public application form's candidate profile: every field is
-mandatory (first HR meeting), the experienced-only fields exactly when the
+mandatory (first HR meeting) except the optional LinkedIn/GitHub URLs and
+10th marks (tests/test_candidate_registration_fields.py), the experienced-only fields exactly when the
 candidate declares themselves EXPERIENCED, plus the new identity fields
 (DOB, place of birth, languages) and mobile-number normalization. The
 backend enforces all of it even when the React form is bypassed."""
@@ -134,8 +135,6 @@ async def test_every_field_is_mandatory_server_side(
         "current_location",
         "preferred_location",
         "qualification",
-        "linkedin_url",
-        "github_url",
         "email_verification_token",
     ):
         overrides: dict = {field: None}

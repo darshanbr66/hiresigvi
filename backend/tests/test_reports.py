@@ -1,10 +1,22 @@
 """Recruitment reports are computed from real, tenant-scoped data — never
 hardcoded (CLAUDE.md § 2)."""
 
-from httpx import AsyncClient
+import uuid
 
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.rls import rls_bypass
+from app.integrations.ai import AIProviderError
+from app.models.screening import ScreeningRun
 from app.models.user import User
+from app.services import screening_service
 from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login
+from tests.public_apply import apply_publicly
+from tests.test_candidate_intake import _StubScreeningProvider
+from tests.test_public_applications import _bootstrap_org_with_open_job
 
 
 async def _bootstrap_org(client: AsyncClient, slug: str) -> dict:
@@ -42,7 +54,7 @@ async def test_overview_reflects_real_data(client: AsyncClient, super_admin: Use
         "hired_candidates": 0,
         "applications_by_status": [],
         "applications_by_job": [],
-        "screening": {"total_runs": 0, "completed": 0, "failed": 0, "average_score": None},
+        "screening": {"total_runs": 0, "completed": 0, "failed": 0, "average_score": 0.0},
         "assessments": {"total_invitations": 0, "submitted": 0, "passed": 0},
         "campus_drives": [],
     }
@@ -195,3 +207,151 @@ async def test_reports_are_tenant_scoped(client: AsyncClient, super_admin: User)
 async def test_reports_require_authentication(client: AsyncClient) -> None:
     response = await client.get("/api/v1/recruiter/reports/overview")
     assert response.status_code == 401
+
+
+# --- AI screening metrics count only the current pipeline ----------------------------
+#
+# Deleting an application, candidate or job is a soft delete that keeps every
+# linked ScreeningRun for the audit trail; the report must count runs only
+# through the organization's current applications, never every run row the
+# organization ever produced.
+
+_EMPTY_SCREENING = {"total_runs": 0, "completed": 0, "failed": 0, "average_score": 0.0}
+
+
+def _ai_verdict(monkeypatch: pytest.MonkeyPatch, decision: str) -> None:
+    provider = _StubScreeningProvider(decision)
+    monkeypatch.setattr(screening_service, "get_llm_provider", lambda: provider)
+
+
+async def _report(client: AsyncClient, headers: dict) -> dict:
+    response = await client.get("/api/v1/recruiter/reports/overview", headers=headers)
+    assert response.status_code == 200, response.text
+    return dict(response.json())
+
+
+async def _delete(client: AsyncClient, headers: dict, path: str) -> None:
+    response = await client.post(
+        f"/api/v1/recruiter/{path}/delete", json={"reason": "Demo data clean-up"}, headers=headers
+    )
+    assert response.status_code == 200, response.text
+
+
+async def test_screening_metrics_are_zero_once_all_recruitment_data_is_deleted(
+    client: AsyncClient, super_admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The production report: 0 jobs/candidates/applications, yet still
+    "2 runs, average 15" from the deleted demo applications."""
+    _ai_verdict(monkeypatch, "NOT_MATCH")
+    ctx = await _bootstrap_org_with_open_job(client, "reports-stale-screening")
+    headers = ctx["admin_headers"]
+    for email in ("demo1@example.com", "demo2@example.com"):
+        applied = await apply_publicly(client, ctx["slug"], ctx["job_id"], email=email)
+        assert applied.status_code == 201, applied.text
+
+    before = await _report(client, headers)
+    assert before["screening"] == {
+        "total_runs": 2, "completed": 2, "failed": 0, "average_score": 12.0,
+    }
+
+    for application in (
+        await client.get("/api/v1/recruiter/applications", headers=headers)
+    ).json():
+        await _delete(client, headers, f"applications/{application['id']}")
+    for candidate in (await client.get("/api/v1/recruiter/candidates", headers=headers)).json():
+        await _delete(client, headers, f"candidates/{candidate['id']}")
+    await _delete(client, headers, f"jobs/{ctx['job_id']}")
+
+    after = await _report(client, headers)
+    assert after["total_jobs"] == 0
+    assert after["total_candidates"] == 0
+    assert after["total_applications"] == 0
+    assert after["screening"] == _EMPTY_SCREENING
+    assert after["assessments"] == {"total_invitations": 0, "submitted": 0, "passed": 0}
+
+
+async def test_deleted_self_service_application_leaves_no_stale_screening_metrics(
+    client: AsyncClient, super_admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = await _bootstrap_org_with_open_job(client, "reports-deleted-application")
+    headers = ctx["admin_headers"]
+
+    _ai_verdict(monkeypatch, "MATCH")  # score 84 — stays
+    kept = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="kept@example.com")
+    assert kept.status_code == 201, kept.text
+    _ai_verdict(monkeypatch, "NOT_MATCH")  # score 12 — deleted
+    gone = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="gone@example.com")
+    assert gone.status_code == 201, gone.text
+
+    await _delete(client, headers, f"applications/{gone.json()['id']}")
+
+    report = await _report(client, headers)
+    assert report["total_applications"] == 1
+    assert report["screening"] == {
+        "total_runs": 1, "completed": 1, "failed": 0, "average_score": 84.0,
+    }
+
+
+async def test_screening_metrics_never_count_another_organizations_runs(
+    client: AsyncClient, super_admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ai_verdict(monkeypatch, "MATCH")
+    org_a = await _bootstrap_org_with_open_job(client, "reports-screening-a")
+    org_b = await _bootstrap_org_with_open_job(client, "reports-screening-b")
+    applied = await apply_publicly(client, org_a["slug"], org_a["job_id"], email="a@example.com")
+    assert applied.status_code == 201, applied.text
+
+    assert (await _report(client, org_a["admin_headers"]))["screening"]["total_runs"] == 1
+    report_b = await _report(client, org_b["admin_headers"])
+    assert report_b["total_applications"] == 0
+    assert report_b["screening"] == _EMPTY_SCREENING
+
+
+async def test_completed_and_failed_runs_and_average_and_history_is_kept(
+    client: AsyncClient,
+    super_admin: User,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
+) -> None:
+    """Completed and failed runs are both counted; only completed scores make
+    the average. Deleting an application drops its runs from the report while
+    the ScreeningRun rows themselves stay (soft delete, audit trail)."""
+    ctx = await _bootstrap_org_with_open_job(client, "reports-mixed-runs")
+    headers = ctx["admin_headers"]
+
+    _ai_verdict(monkeypatch, "MATCH")  # COMPLETED, score 84
+    matched = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="m@example.com")
+    assert matched.status_code == 201, matched.text
+    _ai_verdict(monkeypatch, "NOT_MATCH")  # COMPLETED, score 12
+    unmatched = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="n@example.com")
+    assert unmatched.status_code == 201, unmatched.text
+    failing = _StubScreeningProvider(None, error=AIProviderError("provider down"))
+    monkeypatch.setattr(screening_service, "get_llm_provider", lambda: failing)  # FAILED
+    failed = await apply_publicly(client, ctx["slug"], ctx["job_id"], email="f@example.com")
+    assert failed.status_code == 201, failed.text
+
+    report = await _report(client, headers)
+    assert report["total_applications"] == 3
+    assert report["screening"] == {
+        "total_runs": 3, "completed": 2, "failed": 1, "average_score": 48.0,
+    }
+
+    await _delete(client, headers, f"applications/{matched.json()['id']}")
+    await _delete(client, headers, f"applications/{failed.json()['id']}")
+    report = await _report(client, headers)
+    assert report["screening"] == {
+        "total_runs": 1, "completed": 1, "failed": 0, "average_score": 12.0,
+    }
+
+    async with rls_bypass(db_session):
+        stored = await db_session.scalar(
+            select(func.count(ScreeningRun.id)).where(
+                ScreeningRun.application_id.in_(
+                    [
+                        uuid.UUID(matched.json()["id"]),
+                        uuid.UUID(failed.json()["id"]),
+                    ]
+                )
+            )
+        )
+    assert stored == 2  # the history of the deleted applications is untouched

@@ -176,6 +176,7 @@ Both entry points run the same code, `app/services/public_application_service.py
 so the identity rules below are identical for both.
 
 ```
+early "already applied?" check (email / mobile, before any code) →
 verify email (one-time code) → fill the full form + resume → identity check
 (one profile per person) → Candidate + Application + resume COMMITTED →
 AI screening against the job → MATCH / AI unavailable: APPLIED
@@ -207,15 +208,47 @@ step with the server's message:
   (`PUBLIC_OTP_REQUEST_LIMIT_PER_WINDOW`, `PUBLIC_OTP_VERIFY_LIMIT_PER_WINDOW`,
   `PUBLIC_APPLY_LIMIT_PER_WINDOW`, per 10-minute window, per instance).
 
-Asking for a code never reveals whether the address already has a profile.
-Once the code is confirmed, the caller has proven they own the address, so
-an existing candidate is told at that point (409 `already_registered`) rather
-than after filling in the form.
+**0. Early "already applied" check.** As soon as the candidate has typed a
+plausible email or mobile number, and has paused typing (400 ms debounce),
+the form calls `POST .../applicant-status` (`/campus-drive/{token}/applicant-status`
+for a drive link). The body is `{email?, phone?, job_id?}`, and the response
+is only `{"already_applied": true|false}`
+(`public_application_service.has_already_applied`). It's `true` when the
+profile that email or mobile number belongs to:
 
-**2. The form.** All of these are mandatory: full name, email, mobile
-number, date of birth (at least 16 years old), place of birth, languages
-known (1–15), candidate type, current and preferred location, qualification,
-LinkedIn and GitHub URLs, and a resume. The database enforces the identity
+- has an earlier application and no reapply permission: still inside the
+  reapply window, with no HR grant (§ 3a, unchanged), for **any** job;
+- already applied for this very job (one application per job); or
+- was removed.
+
+In that case the form shows "You have already applied." next to a disabled
+Continue, and the candidate never reaches the code, resume or submit steps.
+The backend enforces the same rule on its own. A code request for a blocked
+email gets 409 `already_applied` with the same message, and no code is sent.
+Verification, the precheck and the submission keep all their own checks. A
+caller who hasn't verified the email learns nothing beyond that yes/no:
+there's no name, date, job or reason. A returning candidate who *may* apply
+gets their stored profile only in the verify response, after the code
+checks out. The form uses it to fill in fields left blank, and never
+overwrites what they typed. The check shares the
+`PUBLIC_OTP_VERIFY_LIMIT_PER_WINDOW` per-IP budget.
+
+Once the code is confirmed, the caller has proven they own the address, so a
+remaining conflict is told at that point (for example 409 `already_registered`)
+rather than after filling in the form.
+
+**2. The form.** All of these are mandatory: full name (no length limit),
+email, mobile number, date of birth (at least 16 years old), place of birth,
+languages known (1–15), candidate type, current and preferred location,
+qualification, and a resume. Optional: LinkedIn and GitHub URLs (validated
+when given), 10th marks (percentage) and a 10th marks card (PDF/PNG/JPG, up
+to 5 MB) — the card is candidate profile data, stored through the resume
+storage abstraction and referenced from `candidates.tenth_marks_card_*`.
+If the email already blocks a new application, the early check's "You have
+already applied." appears directly below the Email field; nothing about the
+existing profile (mobile number included) is shown before the one-time
+code is verified, and the verified prefill then fills the stored mobile
+number and marks into any field left blank. The database enforces the identity
 part: `ck_candidates_verified_identity_complete` means a candidate with
 `email_verified_at` set always has a phone, date of birth, place of birth and
 at least one language. Recruiter-created candidates don't go through

@@ -6,10 +6,10 @@ the request — see app/schemas/user.py and docs/security.md § 2.
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_permission
+from app.api.deps import granted_permission_codes, require_permission
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.models.user import User
@@ -17,6 +17,13 @@ from app.schemas.user import UserCreateRequest, UserResponse, UserUpdateRequest
 from app.services import user_service
 
 router = APIRouter(prefix="/users", tags=["recruiter-users"])
+
+
+async def _can_manage_admins(db: AsyncSession, user: User) -> bool:
+    """`user.create`/`user.update` are held by ORG_ADMIN and HR (RECRUITER);
+    only `user.manage_admins` (ORG_ADMIN) reaches Org Admin accounts — the
+    service enforces it."""
+    return user_service.MANAGE_ADMINS_PERMISSION in await granted_permission_codes(db, user)
 
 
 async def _to_response(db: AsyncSession, user: User) -> UserResponse:
@@ -49,6 +56,7 @@ async def create_user(
         password=payload.password,
         full_name=payload.full_name,
         role_name=payload.role.value,
+        can_manage_admins=await _can_manage_admins(db, current_user),
         actor=current_user,
     )
     return await _to_response(db, created)
@@ -85,11 +93,32 @@ async def update_user(
 ) -> UserResponse:
     """Deactivate/reactivate a team member or change their role
     (app/services/user_service.py::update_team_member owns every guard —
-    self-deactivation and last-admin protection — and the audit trail)."""
+    self-deactivation, last-admin protection, and Org Admin changes
+    requiring `user.manage_admins` — and the audit trail)."""
     target = await user_service.get_organization_user(db, user_id)
     if target is None:
         raise NotFoundError("User not found.")
     updated = await user_service.update_team_member(
-        db, actor=current_user, target=target, payload=payload
+        db,
+        actor=current_user,
+        target=target,
+        payload=payload,
+        can_manage_admins=await _can_manage_admins(db, current_user),
     )
     return await _to_response(db, updated)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: uuid.UUID,
+    current_user: User = Depends(require_permission(user_service.MANAGE_ADMINS_PERMISSION)),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Permanently delete a deactivated team account — Org Admins only
+    (`user.manage_admins`). The guards, and what happens to the account's
+    data, live in app/services/user_service.py::delete_team_member."""
+    target = await user_service.get_organization_user(db, user_id)
+    if target is None:
+        raise NotFoundError("User not found.")
+    await user_service.delete_team_member(db, actor=current_user, target=target)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

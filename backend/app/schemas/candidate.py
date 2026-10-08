@@ -1,6 +1,7 @@
 import re
 import uuid
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Annotated
 from urllib.parse import urlparse
 
@@ -147,9 +148,12 @@ class CandidateProfileFields(BaseModel):
 
 
 class PublicApplicantProfile(BaseModel):
-    """Everything the public (self-service) application form collects, and
-    all of it is mandatory: an incomplete submission is rejected here even
-    if the React form is bypassed. The fields that only make sense for an
+    """Everything the public (self-service) application form collects. All
+    of it is mandatory except the LinkedIn/GitHub profile URLs and the 10th
+    marks percentage, which are optional (validated when supplied): an
+    incomplete submission is rejected here even if the React form is
+    bypassed. The full name is required but has no length limit. The fields
+    that only make sense for an
     experienced professional (experience, current role, availability) are
     required exactly when `candidate_type == EXPERIENCED`; a FRESHER carries
     0 years of experience, no current role and no notice period.
@@ -157,7 +161,7 @@ class PublicApplicantProfile(BaseModel):
     Field names match `CandidateProfileFields` so the service can copy the
     profile onto a Candidate with the same `model_dump(include=...)`."""
 
-    full_name: str = Field(min_length=1, max_length=255)
+    full_name: str = Field(min_length=1)
     phone: str = Field(min_length=1, max_length=32)
     date_of_birth: date
     place_of_birth: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
@@ -166,8 +170,12 @@ class PublicApplicantProfile(BaseModel):
     location: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
     preferred_location: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
     qualification: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
-    linkedin_url: Annotated[str, BlankToNone] = Field(min_length=1, max_length=500)
-    github_url: Annotated[str, BlankToNone] = Field(min_length=1, max_length=500)
+    linkedin_url: Annotated[str | None, BlankToNone] = Field(default=None, max_length=500)
+    github_url: Annotated[str | None, BlankToNone] = Field(default=None, max_length=500)
+    #: The 10th-standard result as a percentage — optional for now.
+    tenth_marks_percentage: Decimal | None = Field(
+        default=None, ge=0, le=100, max_digits=5, decimal_places=2
+    )
     years_experience: int | None = Field(default=None, ge=0, le=80)
     current_title: Annotated[str | None, BlankToNone] = Field(default=None, max_length=255)
     current_company: Annotated[str | None, BlankToNone] = Field(default=None, max_length=255)
@@ -205,13 +213,13 @@ class PublicApplicantProfile(BaseModel):
 
     @field_validator("linkedin_url")
     @classmethod
-    def _check_linkedin_url(cls, value: str) -> str:
-        return _normalize_profile_url(value, allowed_hosts=("linkedin.com",)) or value
+    def _check_linkedin_url(cls, value: str | None) -> str | None:
+        return _normalize_profile_url(value, allowed_hosts=("linkedin.com",))
 
     @field_validator("github_url")
     @classmethod
-    def _check_github_url(cls, value: str) -> str:
-        return _normalize_profile_url(value, allowed_hosts=("github.com",)) or value
+    def _check_github_url(cls, value: str | None) -> str | None:
+        return _normalize_profile_url(value, allowed_hosts=("github.com",))
 
     @model_validator(mode="after")
     def _validate_by_candidate_type(self) -> "PublicApplicantProfile":

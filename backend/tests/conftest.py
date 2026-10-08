@@ -28,6 +28,7 @@ for _name in (
     "OLLAMA_BASE_URL",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
+    "GROQ_API_KEY",
 ):
     os.environ[_name] = ""
 

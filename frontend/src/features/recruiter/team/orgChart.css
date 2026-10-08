@@ -1,128 +1,471 @@
 /*
  * Organization chart (organization -> departments -> employees).
  *
- * Pure CSS tree connectors — no diagram library. Colours come from the app's
- * theme variables (index.css), so light/dark themes work without extra rules.
- * Desktop: a horizontal tree that scrolls sideways if it is wider than the
- * card. Narrow screens (<= 720px): a compact vertical tree, no sideways scroll.
+ * A pannable, zoomable canvas with pure CSS connectors — no diagram library.
+ * Every colour is an app theme token (styles/tokens.css): departments use the
+ * `--kind-*` accents and the canvas the `--stage-*` surface, all of which have
+ * their own dark-mode values, so both themes work without extra rules.
+ * Depth is a calm 2.5D: layered shadows and a slight lift on hover — no 3D
+ * transforms. Desktop: a horizontal tree inside the canvas, which scrolls,
+ * pans and zooms. Narrow screens (<= 720px): a vertical, drill-down tree in
+ * the page flow — no sideways scroll, no zoom.
  */
+
+.org-card {
+  --org-line: color-mix(in srgb, var(--color-text-muted) 34%, var(--stage-bg));
+  --org-line-strong: color-mix(in srgb, var(--color-text-muted) 55%, var(--stage-bg));
+  --org-gap: 1.75rem;
+  --org-dept-width: 15.5rem;
+  --org-spine: 1.4rem;
+  position: relative;
+}
+
+/* --- header & toolbar ----------------------------------------------------- */
 
 .org-chart-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
-  margin-bottom: 1rem;
+  margin-bottom: 0.9rem;
 }
 
 .org-chart-header h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-section);
+  letter-spacing: -0.01em;
+}
+
+.org-chart-summary {
+  margin: 0.15rem 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+}
+
+.org-reorder-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+}
+
+.org-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.org-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 16rem;
+  min-width: 12rem;
+  max-width: 26rem;
+}
+
+.org-search-icon {
+  position: absolute;
+  left: 0.7rem;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.org-search input {
+  width: 100%;
+  height: 2.25rem;
+  padding: 0 0.75rem 0 2.1rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.875rem;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.org-search input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.8;
+}
+
+.org-search input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+.org-search-has-count input {
+  padding-right: 5.75rem;
+}
+
+.org-search-count {
+  position: absolute;
+  right: 0.75rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  pointer-events: none;
+}
+
+.org-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.org-tool {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  padding: 0 0.35rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.org-tool:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
+}
+
+.org-tool:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.org-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.org-tool-text {
+  padding: 0 0.65rem;
+}
+
+.org-zoom-level {
+  min-width: 3.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- canvas --------------------------------------------------------------- */
+
+.org-stage {
+  position: relative;
 }
 
 .org-chart-scroll {
+  position: relative;
   overflow-x: auto;
-  padding: 0.25rem 0.25rem 1rem;
+  overflow-y: auto;
+  max-height: min(74vh, 52rem);
+  padding: 2rem 1.5rem 2.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background-color: var(--stage-bg);
+  /* a quiet dot grid: reads as a canvas without competing with the cards */
+  background-image: radial-gradient(var(--stage-line) 1px, transparent 1.2px);
+  background-size: 20px 20px;
+  cursor: grab;
+  overscroll-behavior: contain;
+  transition: padding-right var(--dur-slow) var(--ease-out);
+}
+
+.org-chart-scroll.org-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* the profile panel overlays the canvas's right side; leave room to scroll
+   the last department out from under it */
+.org-stage-with-drawer .org-chart-scroll {
+  padding-right: calc(21rem + 1.5rem);
 }
 
 .org-chart {
-  --org-line: var(--color-border);
-  /* Connectors need more contrast than a card border, in both themes — and must
-     be opaque, or the overlapping branch segments show as dots. */
-  --org-line: color-mix(in srgb, var(--color-text-muted) 50%, var(--color-surface));
-  --org-gap: 1.5rem;
-
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Centre when narrower than the card, grow (and scroll) when wider. */
+  /* Centre when narrower than the canvas, grow (and scroll) when wider. */
   width: max-content;
   min-width: 100%;
+  cursor: auto;
 }
 
-/* --- nodes ---------------------------------------------------------- */
+/* --- nodes: shared ---------------------------------------------------------- */
 
 .org-node {
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.15rem;
-  min-width: 9.5rem;
-  max-width: 14rem;
-  padding: 0.55rem 1rem;
+  gap: 0.7rem;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--color-surface-raised);
   color: var(--color-text);
   font: inherit;
-  text-align: center;
+  text-align: left;
+  box-shadow: var(--shadow-card), var(--highlight-top);
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
 }
 
 .org-node-title {
-  font-weight: 600;
+  font-weight: var(--weight-strong);
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
 .org-node-meta {
-  font-size: 0.75rem;
   color: var(--color-text-muted);
+  font-size: var(--text-meta);
 }
 
+/* --- organization root ---------------------------------------------------- */
+
 .org-node-root {
-  padding: 0.7rem 1.5rem;
-  background: var(--color-primary-solid);
-  border-color: var(--color-primary-solid);
+  gap: 0.9rem;
+  min-width: 17rem;
+  max-width: 26rem;
+  padding: 0.95rem 1.4rem 0.95rem 0.95rem;
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--color-primary-soft), transparent 60%),
+    var(--color-surface-raised);
+  box-shadow:
+    0 14px 34px -12px var(--stage-glow),
+    var(--shadow-raised),
+    var(--highlight-top);
+}
+
+.org-root-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.85rem;
+  background: linear-gradient(140deg, var(--color-primary-solid), color-mix(in srgb, var(--color-primary-solid) 55%, var(--kind-job)));
   color: var(--color-on-primary);
-  font-size: 1rem;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 6px 16px -6px var(--color-primary-ring), inset 0 1px 0 color-mix(in srgb, var(--color-on-primary) 25%, transparent);
+}
+
+.org-root-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.org-root-eyebrow {
+  color: var(--color-primary);
+  font-size: 0.68rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.org-root-name {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
-button.org-node {
+.org-root-meta {
+  margin-top: 0.1rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+}
+
+/* --- departments ---------------------------------------------------------- */
+
+.org-node-dept {
+  flex-wrap: wrap;
+  width: var(--org-dept-width);
+  padding: 0.75rem 0.8rem 0.75rem 0.75rem;
+  border-top: 3px solid var(--accent);
+}
+
+button.org-node-dept {
   cursor: pointer;
 }
 
-button.org-node:hover {
-  border-color: var(--color-primary);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 10%);
+button.org-node-dept:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--color-border));
+  border-top-color: var(--accent);
+  box-shadow: var(--shadow-raised);
 }
 
-button.org-node:focus-visible {
+button.org-node-dept:focus-visible {
   outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 .org-node-dept[aria-expanded="true"] {
-  border-color: var(--color-primary);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
+    var(--color-surface-raised);
+  box-shadow: var(--shadow-raised);
+}
+
+.org-dept-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--accent) 14%, var(--color-surface));
+  color: var(--accent);
+}
+
+.org-dept-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.org-dept-chevron {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-muted);
+  transform: rotate(-90deg);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.org-node-dept[aria-expanded="true"] .org-dept-chevron {
+  transform: none;
 }
 
 .org-node-unassigned {
   border-style: dashed;
+  border-top-style: solid;
 }
 
-/* --- departments level ---------------------------------------------- */
+/* a collapsed department previews who's inside */
+.org-avatar-stack {
+  display: flex;
+  flex-basis: 100%;
+  padding-left: 2.95rem;
+}
+
+.org-avatar-stack .org-avatar + .org-avatar {
+  margin-left: -0.3rem;
+}
+
+/* --- avatars ---------------------------------------------------------------- */
+
+.org-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent, var(--color-primary)) 15%, var(--color-surface));
+  color: color-mix(in srgb, var(--accent, var(--color-primary)) 80%, var(--color-text));
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, var(--color-primary)) 22%, transparent);
+}
+
+.org-avatar-xs {
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.6rem;
+  letter-spacing: 0;
+  box-shadow: 0 0 0 2px var(--color-surface-raised);
+}
+
+.org-avatar-more {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-muted);
+}
+
+.org-avatar-lg {
+  width: 3.75rem;
+  height: 3.75rem;
+  font-size: 1.15rem;
+}
+
+.org-presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--color-active-text);
+  box-shadow: 0 0 0 2px var(--color-surface-raised);
+}
+
+.org-avatar-lg .org-presence {
+  width: 0.85rem;
+  height: 0.85rem;
+  right: 1px;
+  bottom: 1px;
+}
+
+/* --- departments level & connectors --------------------------------------- */
 
 .org-level {
-  list-style: none;
-  margin: 0;
-  padding: var(--org-gap) 0 0;
+  position: relative;
   display: flex;
   justify-content: center;
-  position: relative;
+  margin: 0;
+  padding: var(--org-gap) 0 0;
+  list-style: none;
 }
 
-/* vertical stem from the organization down to the branch line */
+/* stem from the organization down to the branch line */
 .org-level::before {
   content: "";
   position: absolute;
   top: 0;
   left: 50%;
   height: var(--org-gap);
-  border-left: 2px solid var(--org-line);
+  border-left: 1.5px solid var(--org-line);
 }
 
 .org-branch {
@@ -130,10 +473,11 @@ button.org-node:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--org-gap) 0.6rem 0;
+  padding: var(--org-gap) 0.7rem 0;
 }
 
-/* left half / right half of the horizontal branch line, plus the drop to the node */
+/* left / right half of the branch line; the right half also drops to the
+   department. Rounded where the line turns at either end. */
 .org-branch::before,
 .org-branch::after {
   content: "";
@@ -141,7 +485,7 @@ button.org-node:focus-visible {
   top: 0;
   width: 50%;
   height: var(--org-gap);
-  border-top: 2px solid var(--org-line);
+  border-top: 1.5px solid var(--org-line);
 }
 
 .org-branch::before {
@@ -150,12 +494,24 @@ button.org-node:focus-visible {
 
 .org-branch::after {
   left: 50%;
-  border-left: 2px solid var(--org-line);
+  border-left: 1.5px solid var(--org-line);
 }
 
-.org-branch:first-child::before,
+.org-branch:first-child::before {
+  display: none;
+}
+
+.org-branch:first-child::after {
+  border-top-left-radius: 12px;
+}
+
+.org-branch:last-child::before {
+  border-right: 1.5px solid var(--org-line);
+  border-top-right-radius: 12px;
+}
+
 .org-branch:last-child::after {
-  border-top: 0;
+  display: none;
 }
 
 /* a single department hangs straight off the stem */
@@ -168,80 +524,148 @@ button.org-node:focus-visible {
   display: none;
 }
 
-/* --- employees level ------------------------------------------------ */
+/* --- employees -------------------------------------------------------------- */
 
 .org-employees {
-  list-style: none;
-  margin: 0;
-  padding: var(--org-gap) 0 0;
-  width: 100%;
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  position: relative;
-}
-
-.org-employees::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 1.2rem;
-  left: 50%;
-  border-left: 2px solid var(--org-line);
+  gap: 0.6rem;
+  width: var(--org-dept-width);
+  margin: 0;
+  padding: 0.9rem 0 0 calc(var(--org-spine) + 0.85rem);
+  list-style: none;
+  animation: org-grow var(--dur-slow) var(--ease-out) backwards;
 }
 
 .org-employee {
   position: relative;
-  z-index: 1;
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 35ms);
+}
+
+/* elbow from the department's spine into each card */
+.org-employee::before {
+  content: "";
+  position: absolute;
+  left: -0.85rem;
+  top: -0.6rem;
+  width: 0.7rem;
+  height: calc(50% + 0.6rem);
+  border-left: 1.5px solid var(--org-line);
+  border-bottom: 1.5px solid var(--org-line);
+  border-bottom-left-radius: 9px;
+  pointer-events: none;
+}
+
+.org-employee:first-child::before {
+  top: -0.9rem;
+  height: calc(50% + 0.9rem);
+}
+
+/* the spine continues past every card but the last */
+.org-employee:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: -0.85rem;
+  top: 50%;
+  bottom: -0.6rem;
+  border-left: 1.5px solid var(--org-line);
+  pointer-events: none;
+}
+
+.org-employee-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-card), var(--highlight-top);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.org-employee-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--color-border));
+  box-shadow: var(--shadow-raised);
+}
+
+.org-employee-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.org-employee-card[aria-pressed="true"] {
+  transform: translateY(-2px);
+  border-color: var(--color-primary);
+  background:
+    linear-gradient(180deg, var(--color-primary-soft), transparent),
+    var(--color-surface-raised);
+  box-shadow:
+    0 0 0 3px var(--color-primary-ring),
+    var(--shadow-raised);
+}
+
+.org-employee-text {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  min-width: 8rem;
-  max-width: 13rem;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
-  font-size: 0.85rem;
-  text-align: center;
-  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.org-employee-text .org-node-title {
+  font-size: 0.875rem;
 }
 
 .org-employee-role {
-  font-size: 0.72rem;
   color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 /* --- reordering (org admins only; absent from the DOM for everyone else) --- */
 
-.org-reorder-hint {
-  font-size: 0.8rem;
-  margin-right: auto;
+.org-employee-reorderable .org-employee-card {
+  padding-right: 2rem;
 }
 
 .org-employee-reorderable {
-  /* room for the handle so it never overlaps a long name */
-  padding-right: 1.6rem;
   cursor: grab;
 }
 
 .org-drag-handle {
   position: absolute;
   top: 50%;
-  right: 0.35rem;
-  transform: translateY(-50%);
-  padding: 0.1rem 0.15rem;
-  border-radius: 4px;
+  right: 0.4rem;
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.6rem;
+  border-radius: 6px;
   color: var(--color-text-muted);
-  font-size: 0.8rem;
-  line-height: 1;
-  letter-spacing: -0.1em;
+  opacity: 0.45;
+  transform: translateY(-50%);
   cursor: grab;
   user-select: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.org-employee:hover .org-drag-handle,
+.org-drag-handle:focus-visible {
+  opacity: 1;
 }
 
 .org-drag-handle:hover {
+  background: var(--color-bg-subtle);
   color: var(--color-text);
 }
 
@@ -251,185 +675,226 @@ button.org-node:focus-visible {
 }
 
 .org-drag-handle[aria-disabled="true"] {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: progress;
 }
 
-.org-employee-dragging {
-  opacity: 0.45;
+@media (hover: none) {
+  .org-drag-handle {
+    opacity: 0.8;
+  }
+}
+
+.org-employees-dropzone {
+  border-radius: var(--radius-md);
+}
+
+.org-employee-dragging .org-employee-card {
+  opacity: 0.4;
+  border-style: dashed;
+  box-shadow: none;
+  transform: none;
 }
 
 /* where the dragged employee will land: a bar just above / below the card */
-.org-employee-drop-before {
-  box-shadow: 0 -4px 0 -1px var(--color-primary);
-}
-
-.org-employee-drop-after {
-  box-shadow: 0 4px 0 -1px var(--color-primary);
-}
-
-.org-empty-note {
-  margin: var(--org-gap) 0 0;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-/* --- compact vertical tree on narrow screens ------------------------- */
-
-@media (max-width: 720px) {
-  .org-chart {
-    align-items: stretch;
-    width: auto;
-    min-width: 0;
-  }
-
-  .org-node-root {
-    align-self: flex-start;
-  }
-
-  .org-node {
-    align-items: flex-start;
-    width: 100%;
-    max-width: none;
-    text-align: left;
-  }
-
-  .org-node-root {
-    width: auto;
-  }
-
-  .org-level {
-    flex-direction: column;
-    align-items: stretch;
-    margin-left: 1.1rem;
-    padding: 0.25rem 0 0 0;
-    border-left: 2px solid var(--org-line);
-  }
-
-  .org-level::before {
-    display: none;
-  }
-
-  .org-branch,
-  .org-branch:only-child {
-    align-items: flex-start;
-    padding: 0.75rem 0 0 1.25rem;
-  }
-
-  /* a short tick from the vertical line to each department */
-  .org-branch::before,
-  .org-branch:first-child::before,
-  .org-branch:only-child::before {
-    display: block;
-    top: 1.85rem;
-    right: auto;
-    left: 0;
-    width: 1.25rem;
-    height: 0;
-    border-top: 2px solid var(--org-line);
-  }
-
-  .org-branch::after,
-  .org-branch:only-child::after {
-    display: none;
-  }
-
-  .org-employees {
-    align-items: stretch;
-    margin-left: 1rem;
-    padding: 0.5rem 0 0 1rem;
-    border-left: 2px solid var(--org-line);
-  }
-
-  .org-employees::before {
-    display: none;
-  }
-
-  .org-employee {
-    align-items: flex-start;
-    max-width: none;
-    text-align: left;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .org-node {
-    transition: none;
-  }
-}
-
-/* --- visual layer: depth, motion and the "network" feel ----------------------
-   Purely additive over the geometry above: none of these rules change how the
-   tree is laid out, only how its nodes look and arrive. */
-
-.org-node {
-  box-shadow: var(--shadow-card), var(--highlight-top);
-  transition:
-    border-color var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out),
-    transform var(--dur-base) var(--ease-out);
-}
-
-.org-node-root {
-  position: relative;
+.org-employee-drop-before .org-employee-card {
   box-shadow:
-    0 10px 28px var(--color-primary-ring),
-    inset 0 1px 0 rgb(255 255 255 / 20%);
+    0 -5px 0 -2px var(--color-primary),
+    var(--shadow-card);
 }
 
-/* the organization "transmits": a slow ring, not a flashing light */
-.org-node-root::after {
-  content: "";
+.org-employee-drop-after .org-employee-card {
+  box-shadow:
+    0 5px 0 -2px var(--color-primary),
+    var(--shadow-card);
+}
+
+/* --- search: focus the matches and the path to them ---------------------- */
+
+.org-chart mark {
+  padding: 0 0.05em;
+  border-radius: 3px;
+  background: var(--color-accent-soft);
+  color: inherit;
+}
+
+.org-dim,
+.org-employee.org-dim .org-employee-card {
+  opacity: 0.32;
+}
+
+.org-match.org-node-dept,
+.org-employee.org-match .org-employee-card {
+  border-color: var(--color-primary);
+}
+
+.org-match-active.org-node-dept,
+.org-employee.org-match-active .org-employee-card {
+  box-shadow:
+    0 0 0 3px var(--color-primary-ring),
+    var(--shadow-raised);
+}
+
+/* --- employee profile panel ----------------------------------------------- */
+
+.org-drawer {
   position: absolute;
-  inset: -6px;
-  border-radius: 14px;
-  border: 1px solid var(--color-primary);
-  opacity: 0;
-  pointer-events: none;
-  animation: org-transmit 4.5s var(--ease-out) infinite;
+  z-index: 5;
+  top: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  width: 21rem;
+  max-width: calc(100% - 1.5rem);
+  padding: 1rem 1.1rem 1.25rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-popover);
+  animation: org-drawer-in var(--dur-slow) var(--ease-out);
 }
 
-@keyframes org-transmit {
-  0% {
-    opacity: 0.5;
-    transform: scale(0.96);
-  }
-  70%,
-  100% {
-    opacity: 0;
-    transform: scale(1.12);
-  }
+.org-drawer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-button.org-node:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-raised);
+.org-drawer-eyebrow {
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.org-node-dept[aria-expanded="true"] {
-  box-shadow: var(--shadow-raised);
-  background: linear-gradient(180deg, var(--color-primary-soft), transparent), var(--color-surface-raised);
+.org-drawer-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* Expanding a department: its list settles in, employees arrive in order. */
-.org-employees {
-  animation: org-grow var(--dur-slow) var(--ease-out) backwards;
+.org-drawer-names {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
 }
 
-.org-employee {
+.org-drawer-names h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.org-drawer-names h3:focus {
+  outline: none;
+}
+
+.org-drawer-title {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+}
+
+.org-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-active-bg);
+  color: var(--color-active-text);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-strong);
+}
+
+.org-status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.org-drawer-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin: 0;
+}
+
+.org-drawer-facts dt {
+  margin-bottom: 0.2rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+}
+
+.org-drawer-facts dd {
+  margin: 0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.org-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.org-email:hover {
+  text-decoration: underline;
+}
+
+.org-reports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.org-person-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem 0.2rem 0.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-label);
+  cursor: pointer;
   transition:
-    transform var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out),
-    border-color var(--dur-base) var(--ease-out);
-  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
-  animation-delay: calc(var(--i, 0) * 40ms);
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
 }
 
-.org-employee:hover {
-  transform: translateY(-2px);
-  border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-raised);
+.org-person-link .org-avatar-xs {
+  box-shadow: none;
 }
+
+.org-person-link:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.org-person-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+/* --- motion ----------------------------------------------------------------- */
 
 @keyframes org-grow {
   from {
@@ -442,35 +907,145 @@ button.org-node:hover {
   }
 }
 
-/* A signal travelling down each open department's line — the chart reads as
-   a live network. One tiny dot per open branch; still under reduced motion. */
-@media (min-width: 721px) {
-  .org-employees::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: calc(50% - 3px);
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--color-primary);
-    box-shadow: 0 0 8px var(--color-primary);
-    pointer-events: none;
-    animation: org-signal 3.6s var(--ease-in-out) infinite;
+@keyframes org-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
-@keyframes org-signal {
-  0% {
-    top: 0;
-    opacity: 0;
+/* --- compact vertical, drill-down tree on narrow screens ------------------- */
+
+@media (max-width: 720px) {
+  .org-card {
+    --org-spine: 0.7rem;
   }
-  15%,
-  85% {
-    opacity: 0.9;
+
+  .org-search {
+    flex-basis: 100%;
+    max-width: none;
   }
-  100% {
-    top: calc(100% - 1.2rem);
-    opacity: 0;
+
+  /* the vertical tree fits the screen: no zoom or fit to manage */
+  .org-zoom-controls {
+    display: none;
+  }
+
+  .org-chart-scroll,
+  .org-stage-with-drawer .org-chart-scroll {
+    max-height: none;
+    padding: 1rem 0.9rem 1.25rem;
+    cursor: auto;
+  }
+
+  .org-chart {
+    align-items: stretch;
+    width: auto;
+    min-width: 0;
+    zoom: 1 !important;
+  }
+
+  .org-node-root {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .org-level {
+    flex-direction: column;
+    align-items: stretch;
+    margin-left: 1rem;
+    padding: 0.25rem 0 0;
+    border-left: 1.5px solid var(--org-line);
+  }
+
+  .org-level::before {
+    display: none;
+  }
+
+  .org-branch,
+  .org-branch:only-child {
+    align-items: stretch;
+    padding: 0.75rem 0 0 0.9rem;
+  }
+
+  /* a short tick from the vertical line to each department */
+  .org-branch::before,
+  .org-branch:first-child::before,
+  .org-branch:last-child::before,
+  .org-branch:only-child::before {
+    display: block;
+    top: 2.2rem;
+    right: auto;
+    left: 0;
+    width: 0.9rem;
+    height: 0;
+    border-top: 1.5px solid var(--org-line);
+    border-right: 0;
+    border-radius: 0;
+  }
+
+  .org-branch::after,
+  .org-branch:only-child::after {
+    display: none;
+  }
+
+  .org-node-dept,
+  .org-employees {
+    width: auto;
+  }
+
+  .org-employees {
+    padding-left: calc(var(--org-spine) + 0.85rem);
+  }
+
+  /* the profile becomes a bottom sheet */
+  .org-drawer {
+    position: fixed;
+    z-index: 60;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    max-height: 78vh;
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    animation-name: org-sheet-in;
+  }
+
+  @keyframes org-sheet-in {
+    from {
+      transform: translateY(24px);
+      opacity: 0;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .org-node,
+  .org-employee-card,
+  .org-dept-chevron {
+    transition: none;
+  }
+
+  .org-employees,
+  .org-employee,
+  .org-drawer {
+    animation: none;
+  }
+
+  button.org-node-dept:hover,
+  .org-employee-card:hover,
+  .org-employee-card[aria-pressed="true"] {
+    transform: none;
   }
 }

@@ -121,6 +121,15 @@ services:
         value: gemini-2.5-flash
       - key: GEMINI_SCREENING_THINKING_BUDGET
         value: "0"
+      # Groq — the primary resume screening provider, with Gemini above as
+      # the single fallback attempt (docs/ai-screening.md). Set GROQ_API_KEY
+      # in the Render dashboard only; it is a backend-only secret.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_SCREENING_MODEL
+        value: openai/gpt-oss-120b
+      - key: AI_SCREENING_PROVIDER
+        value: groq
       # Read by the candidate-intake migration (b4c5d6e7f8a9) when it
       # normalizes *existing* production phone numbers to E.164, as well as at
       # runtime. A data migration must not depend on an implicit default:

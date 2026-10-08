@@ -15,7 +15,8 @@ export interface ScreeningSummary {
   total_runs: number;
   completed: number;
   failed: number;
-  average_score: number | null;
+  /** 0 when no completed run carries a score. */
+  average_score: number;
 }
 
 export interface AssessmentSummaryStats {

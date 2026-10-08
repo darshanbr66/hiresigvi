@@ -20,17 +20,16 @@ from app.db.rls import set_tenant_context
 from app.db.session import get_db
 from app.models.organization import Organization
 from app.schemas.public import (
+    ApplicantProfilePrefill,
+    ApplicantStatus,
+    ApplicantStatusQuery,
     EmailVerificationConfirm,
     EmailVerificationConfirmed,
     EmailVerificationRequest,
     EmailVerificationRequested,
     PublicOrganizationSummary,
 )
-from app.services import (
-    email_verification_service,
-    organization_service,
-    public_application_service,
-)
+from app.services import organization_service, public_application_service
 
 router = APIRouter(prefix="/organizations/{slug}", tags=["public-candidate-intake"])
 
@@ -90,12 +89,36 @@ async def request_email_verification(
 ) -> EmailVerificationRequested:
     enforce(limiters.otp_request, request)
     organization = await resolve_organization(db, slug)
-    sent = await email_verification_service.request_code(
-        db, organization=organization, email=str(payload.email)
+    sent = await public_application_service.request_applicant_code(
+        db, organization=organization, email=str(payload.email), job_id=payload.job_id
     )
     return EmailVerificationRequested(
         expires_in_seconds=sent.expires_in_seconds,
         resend_available_in_seconds=sent.resend_available_in_seconds,
+    )
+
+
+@router.post("/applicant-status", response_model=ApplicantStatus)
+async def get_applicant_status(
+    slug: str,
+    payload: ApplicantStatusQuery,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limiters: CandidateIntakeRateLimiters = Depends(get_candidate_intake_rate_limiters),
+) -> ApplicantStatus:
+    """The apply form's early check: has this email / mobile number already
+    applied (with no reapply permission)? Only a yes/no — see
+    public_application_service.has_already_applied."""
+    enforce(limiters.otp_verify, request)
+    organization = await resolve_organization(db, slug)
+    return ApplicantStatus(
+        already_applied=await public_application_service.has_already_applied(
+            db,
+            organization=organization,
+            email=str(payload.email) if payload.email else None,
+            phone=payload.phone,
+            job_id=payload.job_id,
+        )
     )
 
 
@@ -109,9 +132,26 @@ async def verify_email(
 ) -> EmailVerificationConfirmed:
     enforce(limiters.otp_verify, request)
     organization = await resolve_organization(db, slug)
-    issued = await public_application_service.verify_applicant_email(
-        db, organization=organization, email=str(payload.email), code=payload.code
+    verified = await public_application_service.verify_applicant_email(
+        db,
+        organization=organization,
+        email=str(payload.email),
+        code=payload.code,
+        job_id=payload.job_id,
     )
+    return verified_response(verified)
+
+
+def verified_response(
+    verified: public_application_service.VerifiedApplicant,
+) -> EmailVerificationConfirmed:
+    """The verify endpoints' response: the token, plus the returning
+    candidate's own stored profile (only ever after the code checked out)."""
+    existing = verified.existing_candidate
     return EmailVerificationConfirmed(
-        verification_token=issued.token, expires_at=issued.expires_at
+        verification_token=verified.issued.token,
+        expires_at=verified.issued.expires_at,
+        existing_profile=(
+            ApplicantProfilePrefill.model_validate(existing) if existing is not None else None
+        ),
     )

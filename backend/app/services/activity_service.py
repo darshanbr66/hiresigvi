@@ -20,6 +20,19 @@ from app.models.user import User
 logger = get_logger(__name__)
 
 
+#: Activity.entity_label's column length.
+_ENTITY_LABEL_MAX = 255
+
+
+def _clip_label(label: str | None) -> str | None:
+    """A label is a display snapshot built from user-entered names, and a
+    candidate's full name has no length limit — so a long one is shortened
+    to fit rather than failing the action it records."""
+    if label is None or len(label) <= _ENTITY_LABEL_MAX:
+        return label
+    return label[: _ENTITY_LABEL_MAX - 1] + "…"
+
+
 async def record_activity(
     db: AsyncSession,
     *,
@@ -39,7 +52,7 @@ async def record_activity(
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
-        entity_label=entity_label,
+        entity_label=_clip_label(entity_label),
         description=description,
         reason=reason,
     )

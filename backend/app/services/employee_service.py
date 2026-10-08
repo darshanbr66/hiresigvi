@@ -1,15 +1,18 @@
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
-from sqlalchemy import ColumnElement, func, select, text
+from sqlalchemy import ColumnElement, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
 from app.models.team_hierarchy import Department, Employee, EmploymentStatus
 from app.models.user import User
 from app.schemas.team_hierarchy import EmployeeCreateRequest, EmployeeUpdateRequest
-from app.services import activity_service
+from app.services import activity_service, user_service
+
+_ORG_ADMIN_ROLE = "ORG_ADMIN"
 
 # --- display order ---------------------------------------------------------
 #
@@ -274,6 +277,68 @@ async def reactivate_employee(db: AsyncSession, employee: Employee, *, actor: Us
         entity_id=employee.id,
         entity_label=employee.full_name,
         description=f"Employee {employee.full_name} was reactivated.",
+    )
+    return employee
+
+
+async def delete_employee(
+    db: AsyncSession,
+    employee: Employee,
+    *,
+    actor: User,
+    reason: str | None,
+    can_manage_admins: bool,
+) -> Employee:
+    """Removes someone who left the company: a soft delete (`deleted_at`),
+    the same archive-in-place lifecycle departments use. Every employee list,
+    department count and the org chart already exclude deleted rows, so the
+    person disappears from the hierarchy at once — while the row, and
+    everything that references it, stays intact for history and the audit
+    trail (Activities keep the actor and the name).
+
+    The record linked to the caller's own portal account can't be removed by
+    the caller, and one linked to an Org Admin's account needs
+    `user.manage_admins` (ORG_ADMIN) — the same boundary as account
+    management (app/services/user_service.py). The linked portal account
+    itself is untouched: it is deactivated separately, from Team → Accounts.
+
+    Anyone who reported to the removed employee loses that manager link
+    (what `ON DELETE SET NULL` would do on a hard delete), so a departed
+    person never shows up as somebody's current manager.
+    """
+    if employee.deleted_at is not None:
+        raise ConflictError("This employee has already been removed.")
+    if employee.user_id is not None:
+        if employee.user_id == actor.id:
+            raise ForbiddenError("You cannot remove your own employee record.")
+        if not can_manage_admins and _ORG_ADMIN_ROLE in await user_service.get_user_role_names(
+            db, employee.user_id
+        ):
+            raise ForbiddenError("Only an Org Admin can remove an Org Admin's employee record.")
+
+    employee.deleted_at = datetime.now(UTC)
+    employee.deleted_by_user_id = actor.id
+    employee.deletion_reason = reason
+    await db.execute(
+        update(Employee)
+        .where(
+            Employee.organization_id == employee.organization_id,
+            Employee.manager_id == employee.id,
+        )
+        .values(manager_id=None)
+    )
+    await db.flush()
+
+    await activity_service.record_activity(
+        db,
+        organization_id=employee.organization_id,
+        actor=actor,
+        action="EMPLOYEE_DELETED",
+        entity_type="employee",
+        entity_id=employee.id,
+        entity_label=f"{employee.full_name} ({employee.email})",
+        description=f"Employee {employee.full_name} was removed.",
+        reason=reason,
     )
     return employee
 

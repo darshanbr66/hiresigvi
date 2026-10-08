@@ -159,9 +159,11 @@ async def test_super_admin_role_is_not_assignable_via_tenant_endpoint(
     assert response.status_code == 422
 
 
-async def test_recruiter_role_cannot_create_users(client: AsyncClient, super_admin: User) -> None:
-    """RECRUITER is not granted `user.create` (see the Phase 2 migration's
-    role_permissions seed) — only ORG_ADMIN is.
+async def test_hiring_manager_role_cannot_create_users(
+    client: AsyncClient, super_admin: User
+) -> None:
+    """Only ORG_ADMIN and HR (RECRUITER, migration d7e8f9a0b1c2) hold
+    `user.create`; HIRING_MANAGER does not.
     """
     org = await _bootstrap_org(client, "reg-no-permission")
     admin_headers = await _org_admin_headers(client, org)
@@ -172,7 +174,7 @@ async def test_recruiter_role_cannot_create_users(client: AsyncClient, super_adm
             "email": "plain-recruiter@reg-no-permission.dev",
             "password": "RecruiterPass1",
             "full_name": "Plain Recruiter",
-            "role": "RECRUITER",
+            "role": "HIRING_MANAGER",
         },
         headers=admin_headers,
     )

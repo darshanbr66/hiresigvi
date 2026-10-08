@@ -2,9 +2,10 @@
 into the recruiting pipeline (CLAUDE.md § 1: "public career site... entry
 point into candidate apply flow").
 
-Every field is mandatory and validated here, server-side, regardless of what
-the React form enforces; the email must have been verified with a one-time
-code (the `email_verification_token` from
+Every field is mandatory — except the LinkedIn/GitHub profile URLs and the
+10th marks percentage and marks card, which are optional — and validated
+here, server-side, regardless of what the React form enforces; the email
+must have been verified with a one-time code (the `email_verification_token` from
 `POST .../email-verification/verify`); the resume must be a real PDF. The
 orchestration (identity check, AI screening, welcome email) lives in
 app/services/public_application_service.py.
@@ -16,9 +17,10 @@ link (app/api/v1/public/campus_drives.py) takes exactly the same fields.
 import uuid
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from pydantic import EmailStr, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,8 +37,9 @@ from app.db.session import get_db
 from app.integrations.storage import ResumeStorage, get_resume_storage
 from app.models.candidate import CandidateType
 from app.schemas.candidate import PublicApplicantProfile
-from app.schemas.public import PublicApplicationResult
-from app.services import public_application_service
+from app.schemas.public import ApplicantPrecheck, PublicApplicationResult
+from app.services import candidate_document_service, public_application_service
+from app.services.candidate_document_service import MarksCardUpload
 
 # The schema's `location` is the form's `current_location`.
 _FIELD_ALIASES = {"location": "current_location"}
@@ -58,11 +61,15 @@ class ApplicantSubmission:
     profile: PublicApplicantProfile
     resume_filename: str
     resume_bytes: bytes
+    #: The optional 10th marks card, already validated (type, signature,
+    #: size); None = not uploaded.
+    marks_card: MarksCardUpload | None = None
 
 
 async def applicant_submission(
     request: Request,
-    full_name: str = Form(..., min_length=1, max_length=255),
+    # Required, deliberately without a length limit.
+    full_name: str = Form(..., min_length=1),
     email: EmailStr = Form(...),
     email_verification_token: str = Form(..., min_length=1, max_length=200),
     phone: str = Form(..., min_length=1, max_length=32),
@@ -79,13 +86,15 @@ async def applicant_submission(
     current_location: str = Form(..., min_length=1, max_length=255),
     preferred_location: str = Form(..., min_length=1, max_length=255),
     qualification: str = Form(..., min_length=1, max_length=255),
-    linkedin_url: str = Form(..., min_length=1, max_length=500),
-    github_url: str = Form(..., min_length=1, max_length=500),
+    linkedin_url: str | None = Form(default=None, max_length=500),
+    github_url: str | None = Form(default=None, max_length=500),
+    tenth_marks_percentage: Decimal | None = Form(default=None),
     resume: UploadFile = File(...),
+    tenth_marks_card: UploadFile | None = File(default=None),
     limiters: CandidateIntakeRateLimiters = Depends(get_candidate_intake_rate_limiters),
 ) -> ApplicantSubmission:
-    """The complete, mandatory self-service application form, validated.
-    The per-IP apply budget is spent first, before any validation work."""
+    """The complete self-service application form, validated. The per-IP
+    apply budget is spent first, before any validation work."""
     enforce(limiters.apply, request)
 
     # Cross-field rules (EXPERIENCED needs experience/role/notice period,
@@ -110,6 +119,7 @@ async def applicant_submission(
             qualification=qualification,
             linkedin_url=linkedin_url,
             github_url=github_url,
+            tenth_marks_percentage=tenth_marks_percentage,
         )
     except ValidationError as exc:
         raise RequestValidationError(_as_request_errors(exc)) from exc
@@ -130,10 +140,50 @@ async def applicant_submission(
         profile=profile,
         resume_filename=resume.filename or "resume.pdf",
         resume_bytes=resume_bytes,
+        marks_card=await _read_marks_card(tenth_marks_card),
+    )
+
+
+async def _read_marks_card(upload: UploadFile | None) -> MarksCardUpload | None:
+    """The optional marks card: absent (or an empty file part with no name,
+    as a browser sends for an untouched file input) = not uploaded. Read at
+    most one byte past the limit, like the resume."""
+    if upload is None or (not upload.filename and upload.size in (None, 0)):
+        return None
+    max_bytes = get_settings().max_marks_card_size_mb * 1024 * 1024
+    content = await upload.read(max_bytes + 1)
+    return candidate_document_service.validate_marks_card(
+        filename=upload.filename or "", content=content
     )
 
 
 router = APIRouter(prefix="/organizations/{slug}/jobs", tags=["public-applications"])
+
+
+@router.post("/{job_id}/apply/precheck", status_code=204)
+async def precheck_application(
+    slug: str,
+    job_id: uuid.UUID,
+    payload: ApplicantPrecheck,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limiters: CandidateIntakeRateLimiters = Depends(get_candidate_intake_rate_limiters),
+) -> Response:
+    """The submission's identity checks (mobile number, one application per
+    job, reapply window) for a verified email, before the resume step.
+    204 = nothing stands in the way; conflicts are the same 409s a
+    submission would return."""
+    enforce(limiters.otp_verify, request)
+    organization = await resolve_organization(db, slug)
+    await public_application_service.precheck_applicant(
+        db,
+        organization=organization,
+        job_id=job_id,
+        email=str(payload.email),
+        verification_token=payload.email_verification_token,
+        phone=payload.phone,
+    )
+    return Response(status_code=204)
 
 
 @router.post("/{job_id}/apply", response_model=PublicApplicationResult, status_code=201)
@@ -156,6 +206,7 @@ async def apply_to_job(
         resume_filename=submission.resume_filename,
         resume_content_type="application/pdf",
         resume_bytes=submission.resume_bytes,
+        marks_card=submission.marks_card,
     )
 
     return PublicApplicationResult(

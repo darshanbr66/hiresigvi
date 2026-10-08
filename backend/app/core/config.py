@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     resume_storage_dir: str = "uploads/resumes"
     max_resume_size_mb: int = 10
     allowed_resume_extensions: tuple[str, ...] = (".pdf", ".doc", ".docx")
+    # The optional 10th marks card on the self-service form (PDF or a
+    # PNG/JPEG photo/scan), stored through the same storage abstraction as
+    # resumes (app/services/candidate_document_service.py).
+    max_marks_card_size_mb: int = 5
 
     # Resume *file bytes* storage backend (CLAUDE.md § 2: "Resume storage !=
     # DB blob") — see app/integrations/storage. "local" keeps the existing
@@ -145,6 +149,27 @@ class Settings(BaseSettings):
     gemini_screening_model: str = "gemini-2.5-flash"
     gemini_screening_thinking_budget: int | None = 0
 
+    # Groq resume screening (OpenAI-compatible API) — the PRIMARY screening
+    # provider when its key is set, with Gemini above as the fallback
+    # (app/integrations/ai/__init__.py `get_llm_provider`). SecretStr so the
+    # key never leaks through a repr/log of Settings; backend-only.
+    # Model: openai/gpt-oss-120b — a Groq *production* (not preview) model,
+    # 131k context, and one of the few that support strict json_schema
+    # structured outputs (constrained decoding of the verdict). Checked
+    # against console.groq.com/docs/models + /structured-outputs, 2026-10.
+    groq_api_key: SecretStr | None = None
+    groq_screening_model: str = "openai/gpt-oss-120b"
+    # gpt-oss is a reasoning model: "low" keeps its hidden reasoning short.
+    # Set it empty to send no reasoning parameters, for a model that rejects
+    # them (e.g. llama-3.3-70b-versatile).
+    groq_screening_reasoning_effort: str | None = "low"
+    # Groq is fast (a verdict takes a few seconds); a short budget leaves
+    # room for the Gemini fallback within the same request.
+    groq_request_timeout_seconds: float = 30.0
+    # Which of Groq / Gemini is tried first when both keys are set; the
+    # other is the single fallback attempt. Ignored when only one is set.
+    ai_screening_provider: Literal["groq", "gemini"] = "groq"
+
     # Candidate application flow (public careers site).
     # Region assumed for a mobile number typed without a "+<country code>"
     # prefix (ISO 3166-1 alpha-2). Numbers with an explicit prefix are always
@@ -170,10 +195,13 @@ class Settings(BaseSettings):
     # Talk to Admin: longest message body accepted, in characters.
     admin_message_max_length: int = 4000
 
-    @field_validator("gemini_screening_thinking_budget", mode="before")
+    @field_validator(
+        "gemini_screening_thinking_budget", "groq_screening_reasoning_effort", mode="before"
+    )
     @classmethod
     def _blank_thinking_budget_means_none(cls, value: object) -> object:
-        # An empty env var means "send no thinkingConfig", not a parse error.
+        # An empty env var means "send no thinkingConfig" / "no reasoning
+        # parameters", not a parse error.
         return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")

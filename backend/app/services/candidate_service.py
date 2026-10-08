@@ -121,18 +121,21 @@ async def get_candidate_by_email(
 
 
 async def find_identity_matches(
-    db: AsyncSession, *, organization_id: uuid.UUID, email: str, phone: str | None
+    db: AsyncSession, *, organization_id: uuid.UUID, email: str | None, phone: str | None
 ) -> tuple[Candidate | None, Candidate | None]:
     """The candidates (soft-deleted included) owning this email
     (case-insensitively) and this normalized mobile number — separately, so
     the self-service flow can tell "the same person returning" (email match,
-    mobile theirs or new) from "someone else's mobile number"."""
-    by_email = await db.scalar(
-        select(Candidate).where(
-            Candidate.organization_id == organization_id,
-            func.lower(Candidate.email) == email.lower(),
+    mobile theirs or new) from "someone else's mobile number". Either may be
+    None (not looked up)."""
+    by_email = None
+    if email:
+        by_email = await db.scalar(
+            select(Candidate).where(
+                Candidate.organization_id == organization_id,
+                func.lower(Candidate.email) == email.lower(),
+            )
         )
-    )
     by_phone = None
     if phone:
         by_phone = await db.scalar(

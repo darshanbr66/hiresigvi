@@ -331,16 +331,125 @@
 }
 
 .apply-fieldset {
-  margin: 0 0 1.25rem;
+  margin: 0 0 1.5rem;
   padding: 0;
   border: 0;
   min-width: 0;
 }
 
+/* Section headings: a small muted label over a hairline, instead of a
+   heavy heading per block. */
 .apply-fieldset legend {
-  margin-bottom: 0.75rem;
+  display: block;
+  width: 100%;
+  margin-bottom: 0.9rem;
+  padding: 0 0 0.45rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
   font-weight: 600;
-  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Compact controls in the application form. */
+.apply-card .field {
+  gap: 0.25rem;
+  margin-bottom: 0.85rem;
+}
+
+.apply-card .field-row {
+  gap: 0 1rem;
+}
+
+.apply-card .field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.apply-card .field select {
+  min-height: 2.4rem;
+  padding: 0.45rem 0.7rem;
+}
+
+.field-label {
+  font-weight: 500;
+}
+
+.optional-mark {
+  margin-left: 0.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+/* An inline message directly below a control (e.g. "You have already
+   applied." under Email). */
+.field-message {
+  margin: 0.1rem 0 0;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.apply-card .field input[aria-invalid="true"] {
+  border-color: var(--color-danger-text);
+}
+
+/* File inputs: keep the native, accessible control, styled to match. */
+.apply-card .field input[type="file"] {
+  width: 100%;
+  padding: 0.3rem;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+
+.apply-card .field input[type="file"]::file-selector-button {
+  margin-right: 0.6rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.apply-card .field input[type="file"]:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+.file-selected {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.4rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.85rem;
+}
+
+.file-selected-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-selected-size {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
 }
 
 .field-inline {
@@ -365,17 +474,136 @@
   margin-top: 0.5rem;
 }
 
-.language-chips {
+.apply-actions-end {
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+/* "Languages known": chips inside the control + a compact listbox popover
+   (LanguagesInput). */
+.lang-select {
+  position: relative;
+}
+
+.lang-control {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0 0 0.4rem;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.4rem;
+  padding: 0.3rem 2rem 0.3rem 0.45rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: text;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.lang-control:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+.lang-control-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.lang-chips {
+  display: contents;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.language-chips .chip {
+.lang-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.2rem 0.15rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
   color: var(--color-text);
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* The search box inside the control: borderless, so the control is the
+   visible field. Beats the generic `.field input` rule. */
+.field .lang-control input.lang-search {
+  flex: 1 0 7rem;
+  width: auto;
+  min-width: 7rem;
+  min-height: 0;
+  padding: 0.2rem 0.25rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lang-caret {
+  position: absolute;
+  top: 50%;
+  right: 0.6rem;
+  color: var(--color-text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.lang-control-open .lang-caret {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.lang-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  left: 0;
+  max-height: 14rem;
+  margin: 0;
+  padding: 0.3rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-raised);
+  list-style: none;
+}
+
+.lang-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.lang-option-active {
+  background: var(--color-bg-subtle);
+}
+
+.lang-option-selected {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.lang-option[aria-disabled="true"] {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.lang-empty {
+  padding: 0.4rem 0.6rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
 }
 
 .chip-remove {
@@ -393,11 +621,6 @@
 .chip-remove:focus-visible {
   color: var(--color-danger-text);
   background: var(--color-danger-bg);
-}
-
-.language-entry {
-  display: flex;
-  gap: 0.5rem;
 }
 
 .verify-status {

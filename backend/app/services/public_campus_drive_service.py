@@ -30,10 +30,10 @@ from app.schemas.public import PublicApplicationOutcome
 from app.services import (
     application_service,
     assessment_service,
-    email_verification_service,
     public_application_service,
 )
-from app.services.email_verification_service import CodeSent, IssuedToken
+from app.services.candidate_document_service import MarksCardUpload
+from app.services.email_verification_service import CodeSent
 
 _INVALID_MESSAGE = "This campus drive link is no longer valid."
 
@@ -78,23 +78,65 @@ async def request_email_code(
     db: AsyncSession, *, token: str, email: str
 ) -> CodeSent:
     """Same one-time-code flow (and the same per-email limits) as the careers
-    site, scoped to the drive's organization."""
+    site, scoped to the drive's organization — including no code for a
+    candidate who already applied."""
     drive = await get_drive_by_token(db, token)
     _require_active(drive)
     organization = await get_organization(db, drive)
-    return await email_verification_service.request_code(
-        db, organization=organization, email=email
+    return await public_application_service.request_applicant_code(
+        db, organization=organization, email=email, job_id=drive.job_id, campus_drive=drive
+    )
+
+
+async def has_already_applied(
+    db: AsyncSession, *, token: str, email: str | None, phone: str | None
+) -> bool:
+    """The careers site's early check, for the drive's own job."""
+    drive = await get_drive_by_token(db, token)
+    _require_active(drive)
+    organization = await get_organization(db, drive)
+    return await public_application_service.has_already_applied(
+        db,
+        organization=organization,
+        email=email,
+        phone=phone,
+        job_id=drive.job_id,
+        campus_drive=drive,
     )
 
 
 async def verify_email_code(
     db: AsyncSession, *, token: str, email: str, code: str
-) -> IssuedToken:
+) -> public_application_service.VerifiedApplicant:
+    """The drive's own job is the one being applied for, so a returning
+    candidate who already applied for it is stopped here."""
     drive = await get_drive_by_token(db, token)
     _require_active(drive)
     organization = await get_organization(db, drive)
     return await public_application_service.verify_applicant_email(
-        db, organization=organization, email=email, code=code
+        db,
+        organization=organization,
+        email=email,
+        code=code,
+        job_id=drive.job_id,
+        campus_drive=drive,
+    )
+
+
+async def precheck_applicant(
+    db: AsyncSession, *, token: str, email: str, verification_token: str, phone: str
+) -> None:
+    drive = await get_drive_by_token(db, token)
+    _require_active(drive)
+    organization = await get_organization(db, drive)
+    await public_application_service.precheck_applicant(
+        db,
+        organization=organization,
+        job_id=drive.job_id,
+        email=email,
+        verification_token=verification_token,
+        phone=phone,
+        campus_drive=drive,
     )
 
 
@@ -115,6 +157,7 @@ async def apply_to_drive(
     profile: PublicApplicantProfile,
     resume_filename: str,
     resume_bytes: bytes,
+    marks_card: MarksCardUpload | None = None,
 ) -> DriveSubmissionResult:
     drive = await get_drive_by_token(db, token)
     _require_active(drive)
@@ -131,6 +174,7 @@ async def apply_to_drive(
         resume_filename=resume_filename,
         resume_content_type="application/pdf",
         resume_bytes=resume_bytes,
+        marks_card=marks_card,
         campus_drive=drive,
     )
 

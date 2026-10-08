@@ -15,7 +15,7 @@ let mockOrganizationName: string | null = "Acme Corp";
 vi.mock("../../auth/AuthContext", () => ({
   useAuth: () => ({
     accessToken: "test-token",
-    user: { roles: mockRoles, organization_name: mockOrganizationName },
+    user: { id: "user-me", roles: mockRoles, organization_name: mockOrganizationName },
   }),
 }));
 
@@ -128,8 +128,24 @@ describe("DepartmentsHierarchy", () => {
     expect(screen.getByRole("button", { name: "+ New department" })).toBeInTheDocument();
   });
 
-  it("hides manage controls for non-ORG_ADMIN roles", async () => {
+  it("gives HR (RECRUITER) the same manage controls as an admin", async () => {
     mockRoles = ["RECRUITER"];
+    vi.spyOn(teamApi, "listDepartments").mockResolvedValue(departments);
+    vi.spyOn(teamApi, "listEmployees").mockResolvedValue(employees);
+
+    renderComponent();
+
+    await screen.findByText("Software Engineering", { selector: "strong" });
+    expect(screen.getByRole("button", { name: "+ New department" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Software Engineering", { selector: "strong" }));
+    await screen.findByText("Sam Engineer", { selector: "td" });
+    expect(screen.getAllByRole("button", { name: "Edit" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "+ Add employee" })).toBeInTheDocument();
+  });
+
+  it("hides manage controls for read-only roles", async () => {
+    mockRoles = ["HIRING_MANAGER"];
     vi.spyOn(teamApi, "listDepartments").mockResolvedValue(departments);
     vi.spyOn(teamApi, "listEmployees").mockResolvedValue(employees);
 
@@ -142,6 +158,7 @@ describe("DepartmentsHierarchy", () => {
     await screen.findByText("Sam Engineer", { selector: "td" });
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "+ Add employee" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
   });
 });
 
@@ -362,6 +379,91 @@ describe("Organization chart", () => {
 
     await waitFor(() => expect(chart.queryByText("Sam Engineer")).not.toBeInTheDocument());
     expect(chart.getByLabelText("Software Engineering, 0 employees")).toBeInTheDocument();
+  });
+
+  it.each(["ORG_ADMIN", "RECRUITER"])(
+    "lets %s remove an employee who left, after confirming, and they disappear everywhere",
+    async (role) => {
+      mockRoles = [role];
+      const removed = { ...employees[0], deleted_at: NOW };
+      const listDepartments = vi.spyOn(teamApi, "listDepartments").mockResolvedValue(departments);
+      const listEmployees = vi.spyOn(teamApi, "listEmployees").mockResolvedValue(employees);
+      const remove = vi.spyOn(teamApi, "deleteEmployee").mockResolvedValue(removed);
+
+      renderComponent();
+      const chart = await findChart();
+      expect(chart.getByText("Sam Engineer")).toBeInTheDocument();
+      fireEvent.click(await screen.findByText("Software Engineering", { selector: "strong" }));
+
+      fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+      const dialog = within(await screen.findByRole("dialog"));
+      expect(dialog.getByText(/has left the company/)).toBeInTheDocument();
+      expect(remove).not.toHaveBeenCalled(); // nothing happens before confirming
+
+      fireEvent.change(dialog.getByRole("textbox"), { target: { value: "Resigned" } });
+      listEmployees.mockResolvedValue([]);
+      listDepartments.mockResolvedValue([{ ...software, employee_count: 0 }]);
+      fireEvent.click(dialog.getByRole("button", { name: "Remove employee" }));
+
+      await waitFor(() =>
+        expect(remove).toHaveBeenCalledWith("emp-1", { reason: "Resigned" }, "test-token"),
+      );
+      await waitFor(() => expect(chart.queryByText("Sam Engineer")).not.toBeInTheDocument());
+      expect(screen.queryByText("Sam Engineer", { selector: "td" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(chart.getByLabelText("Software Engineering, 0 employees")).toBeInTheDocument();
+    },
+  );
+
+  it("cancelling the confirmation removes nobody", async () => {
+    vi.spyOn(teamApi, "listDepartments").mockResolvedValue(departments);
+    vi.spyOn(teamApi, "listEmployees").mockResolvedValue(employees);
+    const remove = vi.spyOn(teamApi, "deleteEmployee");
+
+    renderComponent();
+    fireEvent.click(await screen.findByText("Software Engineering", { selector: "strong" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(remove).not.toHaveBeenCalled();
+    expect(screen.getByText("Sam Engineer", { selector: "td" })).toBeInTheDocument();
+  });
+
+  it("shows the server's refusal (e.g. an Org Admin's record) and keeps the employee", async () => {
+    mockRoles = ["RECRUITER"];
+    vi.spyOn(teamApi, "listDepartments").mockResolvedValue(departments);
+    vi.spyOn(teamApi, "listEmployees").mockResolvedValue(employees);
+    vi.spyOn(teamApi, "deleteEmployee").mockRejectedValue(
+      new ApiError("Only an Org Admin can remove an Org Admin's employee record.", 403, "forbidden"),
+    );
+
+    renderComponent();
+    fireEvent.click(await screen.findByText("Software Engineering", { selector: "strong" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: "Remove employee" }));
+
+    expect(
+      await dialog.findByText("Only an Org Admin can remove an Org Admin's employee record."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Sam Engineer", { selector: "td" })).toBeInTheDocument();
+  });
+
+  it("offers no Remove action for the signed-in user's own employee record", async () => {
+    mockRoles = ["RECRUITER"];
+    vi.spyOn(teamApi, "listDepartments").mockResolvedValue(departments);
+    vi.spyOn(teamApi, "listEmployees").mockResolvedValue([
+      makeEmployee("emp-me", "Me Myself", software, { user_id: "user-me" }),
+    ]);
+
+    renderComponent();
+    fireEvent.click(await screen.findByText("Software Engineering", { selector: "strong" }));
+    await screen.findByText("Me Myself", { selector: "td" });
+
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
   });
 
   it("uses a compact vertical layout on narrow screens instead of a wide diagram", () => {
@@ -620,7 +722,8 @@ describe("Organization chart ordering", () => {
     expect(reorder).not.toHaveBeenCalled();
   });
 
-  it("gives admins a drag handle on every employee", async () => {
+  it.each(["ORG_ADMIN", "RECRUITER"])("gives %s a drag handle on every employee", async (role) => {
+    mockRoles = [role];
     setup();
     const list = await findEmployeeList();
 
@@ -630,7 +733,7 @@ describe("Organization chart ordering", () => {
     }
   });
 
-  it.each(["RECRUITER", "HIRING_MANAGER"])(
+  it.each(["HIRING_MANAGER"])(
     "shows %s the persisted order without any reorder controls",
     async (role) => {
       mockRoles = [role];
@@ -651,4 +754,218 @@ describe("Organization chart ordering", () => {
       expect(reorder).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("Organization chart canvas", () => {
+  const design = makeDepartment("dept-2", "Design", 1);
+  const lead = makeEmployee("emp-lead", "Lena Lead", software, { designation: "Engineering Manager" });
+  const sam = makeEmployee("emp-1", "Sam Engineer", software, {
+    designation: "Software Engineer",
+    manager_id: "emp-lead",
+    manager_name: "Lena Lead",
+  });
+  const dee = makeEmployee("emp-2", "Dee Designer", design, { designation: "Product Designer" });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockRoles = ["ORG_ADMIN"];
+    mockOrganizationName = "Acme Corp";
+    vi.spyOn(teamApi, "listDepartments").mockResolvedValue([software, design]);
+    vi.spyOn(teamApi, "listEmployees").mockResolvedValue([lead, sam, dee]);
+  });
+
+  // By full text, so a search highlight (<mark>) splitting the name still matches.
+  const card = (chart: Awaited<ReturnType<typeof findChart>>, name: string) =>
+    chart
+      .getByText((_, element) => element?.classList.contains("org-node-title") === true && element.textContent === name)
+      .closest("[data-employee-card]") as HTMLElement;
+
+  it("renders the organization root as its own card with a summary", async () => {
+    renderComponent();
+    const chart = await findChart();
+    const root = chart.getByLabelText("Organization: Acme Corp");
+    expect(root).toHaveClass("org-node-root");
+    expect(within(root).getByText("Organization")).toBeInTheDocument();
+    expect(within(root).getByText("Acme Corp")).toBeInTheDocument();
+    expect(within(root).getByText("2 departments · 3 people")).toBeInTheDocument();
+  });
+
+  it("renders departments as branch cards and employees as cards with initials", async () => {
+    renderComponent();
+    const chart = await findChart();
+    const engineering = chart.getByRole("button", { name: "Software Engineering, 2 employees" });
+    expect(engineering).toHaveClass("org-node-dept");
+    expect(chart.getByRole("button", { name: "Design, 1 employee" })).toBeInTheDocument();
+
+    const samCard = card(chart, "Sam Engineer");
+    expect(within(samCard).getByText("SE")).toBeInTheDocument(); // initials avatar
+    expect(within(samCard).getByText("Software Engineer")).toBeInTheDocument();
+    // a collapsed department previews its people, still without names
+    fireEvent.click(engineering);
+    expect(within(engineering).getByText("LL")).toBeInTheDocument();
+    expect(chart.queryByText("Sam Engineer")).not.toBeInTheDocument();
+  });
+
+  it("opens a profile panel for the selected employee, with only existing details", async () => {
+    renderComponent();
+    const chart = await findChart();
+    expect(chart.queryByRole("dialog", { name: "Employee profile" })).not.toBeInTheDocument();
+
+    const samCard = card(chart, "Sam Engineer");
+    fireEvent.click(samCard);
+    expect(samCard).toHaveAttribute("aria-pressed", "true");
+    const profile = within(chart.getByRole("dialog", { name: "Employee profile" }));
+    expect(profile.getByRole("heading", { name: "Sam Engineer" })).toHaveFocus();
+    expect(profile.getByText("Software Engineer")).toBeInTheDocument();
+    expect(profile.getByText("Active")).toBeInTheDocument();
+    expect(profile.getByText("Software Engineering")).toBeInTheDocument();
+    expect(profile.getByRole("link", { name: /emp-1@private\.example/ })).toHaveAttribute(
+      "href",
+      "mailto:emp-1@private.example",
+    );
+    // never the phone number, and nothing made up
+    expect(profile.queryByText(/555-0100/)).not.toBeInTheDocument();
+    expect(profile.queryByText(/Direct reports/)).not.toBeInTheDocument();
+
+    // "Reports to" navigates to the manager, who lists Sam as a direct report
+    fireEvent.click(profile.getByRole("button", { name: /Lena Lead/ }));
+    const managerProfile = within(chart.getByRole("dialog", { name: "Employee profile" }));
+    expect(managerProfile.getByRole("heading", { name: "Lena Lead" })).toBeInTheDocument();
+    expect(managerProfile.getByText("Direct reports")).toBeInTheDocument();
+    expect(card(chart, "Lena Lead")).toHaveAttribute("aria-pressed", "true");
+    expect(card(chart, "Sam Engineer")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("closes the profile with the close button or Escape, returning focus to the card", async () => {
+    renderComponent();
+    const chart = await findChart();
+    const samCard = card(chart, "Sam Engineer");
+
+    fireEvent.click(samCard);
+    fireEvent.click(chart.getByRole("button", { name: "Close profile" }));
+    expect(chart.queryByRole("dialog", { name: "Employee profile" })).not.toBeInTheDocument();
+    expect(samCard).toHaveFocus();
+    expect(samCard).toHaveAttribute("aria-pressed", "false");
+
+    // keyboard: Enter selects, Escape closes
+    fireEvent.keyDown(samCard, { key: "Enter" });
+    expect(chart.getByRole("dialog", { name: "Employee profile" })).toBeInTheDocument();
+    fireEvent.keyDown(chart.getByRole("dialog", { name: "Employee profile" }), { key: "Escape" });
+    expect(chart.queryByRole("dialog", { name: "Employee profile" })).not.toBeInTheDocument();
+    expect(samCard).toHaveFocus();
+  });
+
+  it("selecting a card never starts a reorder, and the handle stays separate", async () => {
+    const reorder = vi.spyOn(teamApi, "reorderEmployees");
+    renderComponent();
+    const chart = await findChart();
+    fireEvent.click(card(chart, "Sam Engineer"));
+    expect(reorder).not.toHaveBeenCalled();
+    expect(chart.getByRole("button", { name: "Reorder Sam Engineer" })).toBeInTheDocument();
+  });
+
+  it("gives read-only roles the profile panel but no reorder controls", async () => {
+    mockRoles = ["HIRING_MANAGER"];
+    renderComponent();
+    const chart = await findChart();
+    fireEvent.click(card(chart, "Sam Engineer"));
+    expect(chart.getByRole("dialog", { name: "Employee profile" })).toBeInTheDocument();
+    expect(chart.queryByRole("button", { name: /^Reorder / })).not.toBeInTheDocument();
+    expect(chart.queryByText("Drag employees to reorder them")).not.toBeInTheDocument();
+  });
+
+  it("searches people and departments, highlighting matches and opening their branch", async () => {
+    renderComponent();
+    const chart = await findChart();
+    // start with everything collapsed: a match must open its department
+    fireEvent.click(chart.getByRole("button", { name: "Collapse all" }));
+    const search = chart.getByRole("searchbox", { name: "Search employees or departments" });
+
+    fireEvent.change(search, { target: { value: "design" } });
+    expect(chart.getByText("2 matches")).toBeInTheDocument(); // "Design" + "Dee Designer"
+    const designNode = chart.getByRole("button", { name: "Design, 1 employee" });
+    expect(designNode).toHaveClass("org-match");
+    expect(designNode).toHaveAttribute("aria-expanded", "true");
+    const deeItem = chart
+      .getByRole("list", { name: "Employees in Design" })
+      .querySelector("li") as HTMLElement;
+    expect(deeItem).toHaveClass("org-match");
+    expect(within(deeItem).getAllByText("Design", { selector: "mark" }).length).toBeGreaterThan(0);
+    expect(chart.getByRole("button", { name: "Software Engineering, 2 employees" })).toHaveClass("org-dim");
+
+    fireEvent.change(search, { target: { value: "sam" } });
+    expect(chart.getByText("1 match")).toBeInTheDocument();
+    expect(chart.getByRole("button", { name: "Software Engineering, 2 employees" })).toHaveClass("org-path");
+    expect(card(chart, "Sam Engineer").closest("li")).toHaveClass("org-match", "org-match-active");
+    expect(card(chart, "Lena Lead").closest("li")).toHaveClass("org-dim");
+
+    fireEvent.change(search, { target: { value: "nobody" } });
+    expect(chart.getByText("No matches")).toBeInTheDocument();
+
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(search).toHaveValue("");
+    expect(chart.queryByText("No matches")).not.toBeInTheDocument();
+  });
+
+  it("zooms in and out within limits, resets, and fits to the screen", async () => {
+    renderComponent();
+    const chart = await findChart();
+    const canvas = chart.getByLabelText("Organization: Acme Corp").parentElement as HTMLElement;
+    const level = () => chart.getByRole("button", { name: /^Zoom \d+%, reset to 100%$/ });
+
+    expect(level()).toHaveTextContent("100%");
+    fireEvent.click(chart.getByRole("button", { name: "Zoom in" }));
+    expect(level()).toHaveTextContent("110%");
+    expect(canvas.style.zoom).toBe("1.1");
+
+    for (let i = 0; i < 10; i += 1) fireEvent.click(chart.getByRole("button", { name: "Zoom out" }));
+    expect(level()).toHaveTextContent("50%");
+    expect(chart.getByRole("button", { name: "Zoom out" })).toBeDisabled();
+
+    fireEvent.click(level()); // reset
+    expect(level()).toHaveTextContent("100%");
+    fireEvent.click(chart.getByRole("button", { name: "Fit to screen" }));
+    // jsdom has no layout to measure: fitting falls back to 100%
+    expect(level()).toHaveTextContent("100%");
+  });
+
+  it("offers Expand all / Collapse all only when they would change something", async () => {
+    renderComponent();
+    const chart = await findChart();
+    expect(chart.getByRole("button", { name: "Expand all" })).toBeDisabled();
+    fireEvent.click(chart.getByRole("button", { name: "Collapse all" }));
+    expect(chart.getByRole("button", { name: "Collapse all" })).toBeDisabled();
+    expect(chart.getByRole("button", { name: "Software Engineering, 2 employees" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    fireEvent.click(chart.getByRole("button", { name: "Expand all" }));
+    expect(chart.getByText("Sam Engineer")).toBeInTheDocument();
+  });
+
+  it("closes the profile when its employee leaves the chart", async () => {
+    const listEmployees = vi.spyOn(teamApi, "listEmployees").mockResolvedValue([lead, sam, dee]);
+    vi.spyOn(teamApi, "deactivateEmployee").mockResolvedValue({ ...dee, employment_status: "INACTIVE" });
+    renderComponent();
+    const chart = await findChart();
+    fireEvent.click(card(chart, "Dee Designer"));
+    expect(chart.getByRole("dialog", { name: "Employee profile" })).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByText("Design", { selector: "strong" }));
+    listEmployees.mockResolvedValue([lead, sam, { ...dee, employment_status: "INACTIVE" }]);
+    fireEvent.click(await screen.findByRole("button", { name: "Deactivate" }));
+    await waitFor(() =>
+      expect(chart.queryByRole("dialog", { name: "Employee profile" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("styles the chart with theme tokens only, with a bottom-sheet profile on phones", () => {
+    // Every colour comes from styles/tokens.css, so light and dark both work.
+    expect(orgChartCss).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(orgChartCss).not.toMatch(/\brgba?\(\s*\d/);
+    const narrow = orgChartCss.slice(orgChartCss.indexOf("@media (max-width: 720px)"));
+    expect(narrow).toMatch(/\.org-drawer\s*\{[^}]*position:\s*fixed/);
+    expect(narrow).toMatch(/\.org-zoom-controls\s*\{[^}]*display:\s*none/);
+    expect(orgChartCss).toContain("@media (prefers-reduced-motion: reduce)");
+  });
 });

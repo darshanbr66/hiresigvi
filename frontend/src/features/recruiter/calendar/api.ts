@@ -47,7 +47,7 @@ export function deleteEvent(eventId: string, accessToken: string) {
 }
 
 /** People the caller may invite to an event. Distinct from the Team
- * directory (`/recruiter/users`, `user.read` — ORG_ADMIN only): anyone who
+ * directory (`/recruiter/users`, `user.read` — ORG_ADMIN and HR only): anyone who
  * can see the calendar can pick attendees. */
 export function listAttendeeOptions(accessToken: string) {
   return apiClient.get<CalendarAttendeeOption[]>(

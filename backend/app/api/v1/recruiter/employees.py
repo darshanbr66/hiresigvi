@@ -9,7 +9,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_permission
+from app.api.deps import granted_permission_codes, require_permission
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.models.team_hierarchy import Employee
@@ -17,12 +17,13 @@ from app.models.user import User
 from app.schemas.team_hierarchy import (
     EmployeeCreateRequest,
     EmployeeDeactivateRequest,
+    EmployeeDeleteRequest,
     EmployeeMoveRequest,
     EmployeeReorderRequest,
     EmployeeResponse,
     EmployeeUpdateRequest,
 )
-from app.services import employee_service
+from app.services import employee_service, user_service
 
 router = APIRouter(prefix="/employees", tags=["recruiter-employees"])
 
@@ -157,3 +158,29 @@ async def reactivate_employee(
         raise NotFoundError("Employee not found.")
     reactivated = await employee_service.reactivate_employee(db, employee, actor=current_user)
     return (await _to_responses(db, [reactivated]))[0]
+
+
+@router.post("/{employee_id}/delete", response_model=EmployeeResponse)
+async def delete_employee(
+    employee_id: uuid.UUID,
+    payload: EmployeeDeleteRequest,
+    current_user: User = Depends(require_permission("employee.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EmployeeResponse:
+    """Remove an employee who left (soft delete — see
+    employee_service.delete_employee). Another organization's employee is
+    invisible under RLS, so it is a 404 like a missing one."""
+    employee = await employee_service.get_employee(db, employee_id)
+    if employee is None or employee.deleted_at is not None:
+        raise NotFoundError("Employee not found.")
+    can_manage_admins = user_service.MANAGE_ADMINS_PERMISSION in await granted_permission_codes(
+        db, current_user
+    )
+    deleted = await employee_service.delete_employee(
+        db,
+        employee,
+        actor=current_user,
+        reason=payload.reason,
+        can_manage_admins=can_manage_admins,
+    )
+    return (await _to_responses(db, [deleted]))[0]

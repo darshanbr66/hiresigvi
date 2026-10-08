@@ -22,7 +22,7 @@ const overview: ReportOverview = {
   hired_candidates: 1,
   applications_by_status: [],
   applications_by_job: [],
-  screening: { total_runs: 0, completed: 0, failed: 0, average_score: null },
+  screening: { total_runs: 0, completed: 0, failed: 0, average_score: 0 },
   assessments: { total_invitations: 0, submitted: 0, passed: 0 },
   campus_drives: [],
 };

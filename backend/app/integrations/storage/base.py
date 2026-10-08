@@ -33,8 +33,11 @@ class ResumeFileMetadata:
 
 
 class ResumeStorage(ABC):
-    """One resume file per save; the caller owns the metadata row
-    (app/models/resume.py). `storage_path` is opaque to callers — only the
+    """One file per save; the caller owns the metadata row
+    (app/models/resume.py for a resume; the `tenth_marks_card_*` columns of
+    app/models/candidate.py for a 10th marks card). `document_kind` says
+    which ("resume" | "tenth_marks_card"); a candidate-level document has no
+    `application_id`. `storage_path` is opaque to callers — only the
     implementation that produced it knows how to resolve or read it back
     (a local relative path for `LocalResumeStorage`, a GridFS file id for
     `MongoGridFSResumeStorage` — see app/integrations/storage/__init__.py).
@@ -53,11 +56,12 @@ class ResumeStorage(ABC):
         *,
         organization_id: uuid.UUID,
         candidate_id: uuid.UUID,
-        application_id: uuid.UUID,
+        application_id: uuid.UUID | None,
         original_filename: str,
         content_type: str,
         content: bytes,
         uploaded_by_user_id: uuid.UUID | None = None,
+        document_kind: str = "resume",
     ) -> SavedFile: ...
 
     @abstractmethod

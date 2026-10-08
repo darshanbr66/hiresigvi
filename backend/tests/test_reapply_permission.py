@@ -48,17 +48,6 @@ def _ai_matches(monkeypatch: pytest.MonkeyPatch, otp_settings) -> None:
     otp_settings(email_otp_resend_cooldown_seconds=0, email_otp_max_sends_per_hour=50)
 
 
-async def _verify_outcome(client: AsyncClient, ctx: dict, email: str) -> Any:
-    """The verify step is where a returning candidate's reapply window is
-    checked (they have just proven who they are)."""
-    response, code = await request_code(client, ctx["slug"], email)
-    assert response.status_code == 202, response.text
-    return await client.post(
-        f"/api/v1/public/organizations/{ctx['slug']}/email-verification/verify",
-        json={"email": email, "code": code},
-    )
-
-
 def _grant_url(candidate_id: str) -> str:
     return f"/api/v1/recruiter/candidates/{candidate_id}/grant-reapply"
 
@@ -219,10 +208,10 @@ async def test_grant_clears_previous_application_data_and_the_same_person_applie
     bystander_before = await _snapshot(db_session, bystander_id)
     bystander_app_ids = [a.id for a in bystander_before["applications"]]
 
-    # Blocked by the 3-month rule.
-    locked = await _verify_outcome(client, ctx, "ana@example.com")
+    # Blocked by the 3-month rule, before any code is sent.
+    locked, _ = await request_code(client, ctx["slug"], "ana@example.com")
     assert locked.status_code == 409
-    assert locked.json()["error"]["code"] == "reapply_locked"
+    assert locked.json()["error"]["code"] == "already_applied"
 
     granted = await client.post(_grant_url(str(candidate_id)), headers=ctx["admin_headers"])
     assert granted.status_code == 200, granted.text
@@ -284,9 +273,9 @@ async def test_grant_clears_previous_application_data_and_the_same_person_applie
         assert candidate.phone == phone_for("ana@example.com")
 
     # And the reapply window starts over from the new application.
-    relocked = await _verify_outcome(client, ctx, "ana@example.com")
+    relocked, _ = await request_code(client, ctx["slug"], "ana@example.com")
     assert relocked.status_code == 409
-    assert relocked.json()["error"]["code"] == "reapply_locked"
+    assert relocked.json()["error"]["code"] == "already_applied"
 
 
 async def test_hr_matched_application_and_its_shared_resume_file_are_kept(

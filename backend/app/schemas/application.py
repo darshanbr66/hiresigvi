@@ -5,6 +5,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.application import ApplicationSource, ApplicationStatus
+from app.models.job import EmploymentType
 from app.schemas.screening import ScreeningRunResponse
 
 
@@ -64,6 +65,8 @@ class ApplicationResponse(BaseModel):
     candidate_phone: str | None = None
     job_id: uuid.UUID
     job_title: str
+    #: The job's current employment type (None for a program's carrier job).
+    job_employment_type: EmploymentType | None = None
     campus_drive_id: uuid.UUID | None = None
     status: ApplicationStatus
     source: ApplicationSource

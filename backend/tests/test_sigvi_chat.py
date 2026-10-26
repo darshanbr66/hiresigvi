@@ -130,7 +130,7 @@ async def _org_with_jobs(client: AsyncClient, slug: str, jobs: list[dict[str, An
             "title": spec["title"],
             "department": spec.get("department", "Engineering"),
             "location": spec.get("location", "Remote"),
-            "employment_type": spec.get("employment_type", "Full-time"),
+            "employment_type": spec.get("employment_type", "FULL_TIME"),
             "description": spec.get("description", "A great role."),
             "description_visible": spec.get("description_visible", True),
             "openings_count": 1,

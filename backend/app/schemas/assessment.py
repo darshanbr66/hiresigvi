@@ -2,9 +2,21 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.assessment import InvitationStatus, QuestionType
+from app.models.assessment import (
+    AssessmentStatus,
+    GradingMethod,
+    InvitationStatus,
+    QuestionType,
+    ResultGradingStatus,
+)
+from app.schemas.question_content import (
+    MAX_ACCEPTED_ANSWERS,
+    MAX_OPTIONS,
+    clean_accepted_answers,
+    validate_question_content,
+)
 
 
 class QuestionOptionCreate(BaseModel):
@@ -13,10 +25,45 @@ class QuestionOptionCreate(BaseModel):
 
 
 class QuestionCreate(BaseModel):
-    prompt: str = Field(min_length=1)
-    type: QuestionType
-    points: int = Field(default=1, ge=1)
-    options: list[QuestionOptionCreate] = Field(min_length=2)
+    """One question of an assessment — either written directly
+    (`prompt`/`type`/`options`/answer key), or taken from the question bank
+    (`bank_version_id`), in which case the server copies that exact version
+    (content *and* answer key) and ignores any content sent alongside it;
+    only `points` may be overridden for this test (docs/assessment.md § 10).
+    """
+
+    prompt: str = ""
+    type: QuestionType = QuestionType.MCQ_SINGLE
+    #: None = the default (1 for a written question, the bank version's own
+    #: marks for a bank question).
+    points: int | None = Field(default=None, ge=1, le=1000)
+    negative_points: int = Field(default=0, ge=0, le=1000)
+    options: list[QuestionOptionCreate] = Field(default_factory=list, max_length=MAX_OPTIONS)
+    accepted_answers: list[str] = Field(default_factory=list, max_length=MAX_ACCEPTED_ANSWERS)
+    case_sensitive: bool = False
+    grading_notes: str | None = Field(default=None, max_length=10000)
+    explanation: str | None = Field(default=None, max_length=10000)
+    bank_version_id: uuid.UUID | None = None
+
+    @field_validator("accepted_answers")
+    @classmethod
+    def _clean_answers(cls, value: list[str]) -> list[str]:
+        return clean_accepted_answers(value)
+
+    @model_validator(mode="after")
+    def _validate_content(self) -> "QuestionCreate":
+        if self.bank_version_id is not None:
+            return self
+        validate_question_content(
+            question_type=self.type,
+            prompt=self.prompt,
+            option_labels=[o.label for o in self.options],
+            correct_flags=[o.is_correct for o in self.options],
+            accepted_answers=self.accepted_answers,
+            points=self.points or 1,
+            negative_points=self.negative_points,
+        )
+        return self
 
 
 class AssessmentCreateRequest(BaseModel):
@@ -25,6 +72,9 @@ class AssessmentCreateRequest(BaseModel):
     duration_minutes: int = Field(default=30, ge=1, le=480)
     pass_score: int = Field(default=60, ge=0, le=100)
     questions: list[QuestionCreate] = Field(min_length=1)
+    #: PUBLISHED (the default, matching how assessments always behaved) can
+    #: be assigned right away; DRAFT is saved for later publishing.
+    status: AssessmentStatus = AssessmentStatus.PUBLISHED
 
 
 class ParsedQuestionsResponse(BaseModel):
@@ -47,13 +97,21 @@ class QuestionOptionResponse(BaseModel):
 
 
 class QuestionResponse(BaseModel):
+    """Recruiter-only: carries the answer key."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     prompt: str
     type: QuestionType
     points: int
+    negative_points: int = 0
     options: list[QuestionOptionResponse]
+    accepted_answers: list[str] = []
+    case_sensitive: bool = False
+    grading_notes: str | None = None
+    explanation: str | None = None
+    source_bank_version_id: uuid.UUID | None = None
 
 
 class AssessmentResponse(BaseModel):
@@ -64,6 +122,7 @@ class AssessmentResponse(BaseModel):
     instructions: str
     duration_minutes: int
     pass_score: int
+    status: AssessmentStatus = AssessmentStatus.PUBLISHED
     deleted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -84,6 +143,7 @@ class AssessmentSummary(BaseModel):
     duration_minutes: int
     pass_score: int
     question_count: int
+    status: AssessmentStatus = AssessmentStatus.PUBLISHED
     created_at: datetime
 
 
@@ -168,5 +228,61 @@ class AssessmentResultResponse(BaseModel):
     score: int
     max_score: int
     percentage: int
-    passed: bool
+    #: None while `grading_status` is PENDING_MANUAL_REVIEW.
+    passed: bool | None
+    grading_status: ResultGradingStatus = ResultGradingStatus.FINAL
     evaluated_at: datetime
+
+
+class AssessmentStatusChangeRequest(BaseModel):
+    status: AssessmentStatus
+
+
+class AttemptAnswerView(BaseModel):
+    """One question of a submitted attempt, for a recruiter/grader: the
+    candidate's answer next to the answer key, and its marks."""
+
+    question_id: uuid.UUID
+    order: int
+    prompt: str
+    type: QuestionType
+    points: int
+    negative_points: int
+    options: list[QuestionOptionResponse]
+    accepted_answers: list[str]
+    grading_notes: str | None
+    explanation: str | None
+    answer_id: uuid.UUID | None
+    selected_option_ids: list[uuid.UUID]
+    text_answer: str | None
+    is_correct: bool | None
+    awarded_points: int | None
+    grading_method: GradingMethod | None
+    needs_manual_grading: bool
+    #: A text answer a grader may (re-)grade; choice answers are automatic.
+    manually_gradable: bool = False
+    graded_by_name: str | None
+    graded_at: datetime | None
+    grader_comment: str | None
+
+
+class AttemptReviewResponse(BaseModel):
+    invitation_id: uuid.UUID
+    application_id: uuid.UUID
+    candidate_full_name: str
+    assessment_title: str
+    attempt_number: int
+    status: InvitationStatus
+    submitted_at: datetime | None
+    result: "AssessmentResultResponse | None"
+    answers: list[AttemptAnswerView]
+
+
+class GradeEntry(BaseModel):
+    question_id: uuid.UUID
+    awarded_points: int = Field(ge=0)
+    comment: str | None = Field(default=None, max_length=5000)
+
+
+class GradeAttemptRequest(BaseModel):
+    grades: list[GradeEntry] = Field(min_length=1, max_length=500)

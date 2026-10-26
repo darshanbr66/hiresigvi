@@ -261,7 +261,19 @@ candidate ends up invited to it (normal pipeline or campus drive).
 `AssessmentInvitation` is the secure, single-purpose bearer-token link to one
 `Application`; `CandidateAttempt` records one attempt at answering;
 `AssessmentEvaluation` records how it was scored (auto now, AI-assisted
-later); `AssessmentResult` is the durable scored outcome.
+later); `AssessmentResult` is the durable scored outcome. Questions can be
+reused through the organization's versioned question bank; a test holds an
+immutable copy of each bank version it uses, and objective answers are
+graded automatically while descriptive/coding answers are graded by staff.
+
+## 8a. Recruitment programs
+
+See `docs/programs.md`. A `RecruitmentProgram` (e.g. the MTech/PhD
+Scholarship & Paid Training Program) owns a carrier `Job`, so program
+applications are ordinary `Application`s with every existing identity and
+pipeline rule; `ProgramEnrollment` carries the program-specific state
+(eligibility, scholarship, training, offer, agreement, bond) under the
+transition tables in `app/workflows/program_workflow.py`.
 
 ## 9. Campus hiring
 
@@ -272,6 +284,9 @@ a candidate into a drive creates an `Application`
 "drive membership" table, since Application already models "this candidate,
 this opportunity, this status." Sending an assessment invitation is always an
 explicit recruiter action (bulk-capable), never a side effect of import.
+Each drive belongs to an `Institution` from the organization's registry and
+can require applicants' affiliation to be verified (email domain, student
+list or manual review).
 
 ## 10. Reporting
 

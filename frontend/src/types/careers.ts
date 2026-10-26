@@ -1,6 +1,6 @@
 /** Mirrors backend/app/schemas/public.py. */
 
-import type { CandidateType } from "./recruitment";
+import type { CandidateType, EmploymentDetails, EmploymentType } from "./recruitment";
 
 export interface PublicOrganizationSummary {
   name: string;
@@ -9,17 +9,30 @@ export interface PublicOrganizationSummary {
   careers_contact_email: string | null;
 }
 
-export interface PublicJobSummary {
+export interface PublicJobSummary
+  extends Partial<
+    Pick<
+      EmploymentDetails,
+      | "work_mode"
+      | "duration_months"
+      | "is_paid"
+      | "compensation_min"
+      | "compensation_max"
+      | "compensation_currency"
+      | "compensation_period"
+      | "hours_per_week"
+    >
+  > {
   id: string;
   title: string;
   department: string | null;
   location: string | null;
-  employment_type: string | null;
+  employment_type: EmploymentType | null;
   openings_count: number;
   created_at: string;
 }
 
-export interface PublicJobDetail extends PublicJobSummary {
+export interface PublicJobDetail extends PublicJobSummary, Partial<EmploymentDetails> {
   /** null when the recruiter has hidden the JD from the public page. */
   description: string | null;
   organization: PublicOrganizationSummary;

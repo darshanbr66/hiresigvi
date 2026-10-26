@@ -5,16 +5,21 @@ import { Alert } from "../../shared/components/Alert";
 import { Icon } from "../../shared/components/Icon";
 import { Spinner } from "../../shared/components/Spinner";
 import type { ApplicantProfilePrefill, JobApplicationFormValues } from "../../types/careers";
+import type { ProgramDeclaration } from "../../types/program";
 import type { CandidateType } from "../../types/recruitment";
 import {
   applyToCampusDrive,
   applyToJob,
+  applyToProgram,
   checkApplicantStatus,
   checkCampusApplicantStatus,
+  checkProgramApplicantStatus,
   requestCampusEmailCode,
   requestEmailCode,
+  requestProgramEmailCode,
   verifyCampusEmailCode,
   verifyEmailCode,
+  verifyProgramEmailCode,
 } from "./api";
 import {
   AlreadyRegistered,
@@ -262,13 +267,21 @@ function Stepper({ current }: { current: Step }) {
  * verified email, duplicates, the AI screening) — the checks here only spare
  * the candidate a round trip. A candidate can apply once.
  *
- * Used for a careers-site job (`slug` + `jobId`) and for a campus drive's
- * public link (`campusToken`): both follow the same candidate identity rules.
+ * Used for a careers-site job (`slug` + `jobId`), for a campus drive's
+ * public link (`campusToken`) and for a recruitment program (`program`, whose
+ * education declaration and terms acceptance the program page collects):
+ * all follow the same candidate identity rules.
  */
 export function JobApplicationForm(
   props: { contactEmail?: string | null; title?: string } & (
-    | { slug: string; jobId: string; campusToken?: undefined }
-    | { campusToken: string; slug?: undefined; jobId?: undefined }
+    | { slug: string; jobId: string; campusToken?: undefined; program?: undefined }
+    | { campusToken: string; slug?: undefined; jobId?: undefined; program?: undefined }
+    | {
+        program: { id: string; declaration: ProgramDeclaration; ready: boolean };
+        slug?: undefined;
+        jobId?: undefined;
+        campusToken?: undefined;
+      }
   ),
 ) {
   const { contactEmail = null, title = "Apply for this role" } = props;
@@ -327,8 +340,11 @@ export function JobApplicationForm(
     looksLikeMobile(values.phone) ? values.phone.trim() : "",
     STATUS_CHECK_DEBOUNCE_MS,
   );
-  const statusScope = props.campusToken ?? `${props.slug}/${props.jobId}`;
+  const statusScope = props.program
+    ? `program/${props.program.id}`
+    : (props.campusToken ?? `${props.slug}/${props.jobId}`);
   function checkStatus(query: { email: string } | { phone: string }) {
+    if (props.program) return checkProgramApplicantStatus(props.program.id, query);
     return props.campusToken !== undefined
       ? checkCampusApplicantStatus(props.campusToken, query)
       : checkApplicantStatus(props.slug, { ...query, job_id: props.jobId });
@@ -402,9 +418,11 @@ export function JobApplicationForm(
 
   const sendCodeMutation = useMutation({
     mutationFn: () =>
-      props.campusToken !== undefined
-        ? requestCampusEmailCode(props.campusToken, values.email.trim())
-        : requestEmailCode(props.slug, values.email.trim(), props.jobId),
+      props.program
+        ? requestProgramEmailCode(props.program.id, values.email.trim())
+        : props.campusToken !== undefined
+          ? requestCampusEmailCode(props.campusToken, values.email.trim())
+          : requestEmailCode(props.slug, values.email.trim(), props.jobId),
     onSuccess: (data) => {
       setCodeSentTo(values.email.trim().toLowerCase());
       setCode("");
@@ -420,9 +438,11 @@ export function JobApplicationForm(
 
   const verifyMutation = useMutation({
     mutationFn: () =>
-      props.campusToken !== undefined
-        ? verifyCampusEmailCode(props.campusToken, values.email.trim(), code.trim())
-        : verifyEmailCode(props.slug, values.email.trim(), code.trim(), props.jobId),
+      props.program
+        ? verifyProgramEmailCode(props.program.id, values.email.trim(), code.trim())
+        : props.campusToken !== undefined
+          ? verifyCampusEmailCode(props.campusToken, values.email.trim(), code.trim())
+          : verifyEmailCode(props.slug, values.email.trim(), code.trim(), props.jobId),
     // A valid code moves straight on to the resume — there is no separate
     // "verified" screen to click through. An invalid/expired code stays on
     // this step with the backend's message.
@@ -446,6 +466,17 @@ export function JobApplicationForm(
         throw new Error("The application is incomplete.");
       }
       const complete = { ...values, candidate_type: values.candidate_type };
+      if (props.program) {
+        if (!props.program.ready) throw new Error("Complete the program details and accept the terms.");
+        return applyToProgram(
+          props.program.id,
+          complete,
+          resume,
+          verification.token,
+          marksCard,
+          props.program.declaration,
+        );
+      }
       return props.campusToken !== undefined
         ? applyToCampusDrive(props.campusToken, complete, resume, verification.token, marksCard)
         : applyToJob(props.slug, props.jobId, complete, resume, verification.token, marksCard);
@@ -891,6 +922,9 @@ export function JobApplicationForm(
             </p>
           )}
           {formError && <Alert>{formError}</Alert>}
+          {props.program && !props.program.ready && (
+            <Alert>Complete the program details above and accept the program terms to submit.</Alert>
+          )}
           <div className="apply-actions">
             <button type="button" className="btn btn-ghost" onClick={() => goTo("resume")} disabled={busy}>
               Back
@@ -902,7 +936,7 @@ export function JobApplicationForm(
                 setFormError(null);
                 submitMutation.mutate();
               }}
-              disabled={busy || !emailIsVerified || !resume}
+              disabled={busy || !emailIsVerified || !resume || (props.program !== undefined && !props.program.ready)}
             >
               {submitMutation.isPending ? <Spinner label="Submitting…" /> : "Submit application"}
             </button>

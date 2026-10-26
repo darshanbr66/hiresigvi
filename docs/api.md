@@ -38,7 +38,12 @@ POST /api/v1/public/organizations/{org_slug}/email-verification/verify      -- {
 GET  /api/v1/public/organizations/{org_slug}/jobs
 GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}
 POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply             (multipart)
+GET  /api/v1/public/organizations/{org_slug}/programs                       -- published recruitment programs
+GET  /api/v1/public/programs/{program_id}                                   -- approved disclosures, eligibility, terms
+POST /api/v1/public/programs/{program_id}/applicant-status | email-verification/request | email-verification/verify
+POST /api/v1/public/programs/{program_id}/apply/precheck | apply             (multipart: careers form + education declaration + terms)
 ```
+Programs: `docs/programs.md` § 3.
 `apply` needs `email_verification_token` (from `verify`), `full_name`,
 `email`, `phone`, `date_of_birth`, `place_of_birth`, `languages` (1–15),
 `candidate_type` (`FRESHER`|`EXPERIENCED`), `current_location`,
@@ -227,6 +232,19 @@ in the **`X-Total-Count`** response header (exposed through CORS).
 All filters combine with AND. Deleted applications are never returned. Rows
 also carry `candidate_phone`. Results are always scoped to the caller's
 organization (query + RLS).
+
+Added with campus institutions, the question bank and programs (details
+in the linked docs):
+
+```
+/api/v1/recruiter/institutions[/{id}]                         -- docs/campus-hiring.md § 1a
+/api/v1/recruiter/campus-drives/report, /{id}/verifications, /{id}/roster   -- § 3a, § 5
+/api/v1/recruiter/applications?campus_drive_id=&institution_id=
+/api/v1/recruiter/question-bank/{categories,tags,questions}   -- docs/assessment.md § 10
+/api/v1/recruiter/assessments/{id}/status | /{id}/preview | /pending-review
+/api/v1/recruiter/assessments/attempts/{invitation_id}/review | /grades     -- § 6
+/api/v1/recruiter/programs[/{id}] , /{id}/status, /{id}/report, /{id}/enrollments[/{eid}/<action>]  -- docs/programs.md
+```
 
 All resolve `organization_id` from the authenticated principal — never from
 a path/query/body parameter — and enforce the specific permission for the

@@ -101,6 +101,10 @@ class ApplicationFilters:
     candidate_id: uuid.UUID | None = None
     status: ApplicationStatus | None = None
     campus_drive_id: uuid.UUID | None = None
+    #: Applications that came through any campus drive of this institution.
+    institution_id: uuid.UUID | None = None
+    #: Applications to this recruitment program.
+    program_id: uuid.UUID | None = None
     source: ApplicationSource | None = None
     search: str | None = None
     candidate_type: CandidateType | None = None
@@ -184,6 +188,29 @@ def _filter_conditions(
         conditions.append(Application.status == filters.status)
     if filters.campus_drive_id is not None:
         conditions.append(Application.campus_drive_id == filters.campus_drive_id)
+    if filters.institution_id is not None:
+        # Local imports: both models sit downstream of applications.
+        from app.models.campus_drive import CampusDrive
+
+        conditions.append(
+            Application.campus_drive_id.in_(
+                select(CampusDrive.id).where(
+                    CampusDrive.organization_id == organization_id,
+                    CampusDrive.institution_id == filters.institution_id,
+                )
+            )
+        )
+    if filters.program_id is not None:
+        from app.models.program import ProgramEnrollment
+
+        conditions.append(
+            Application.id.in_(
+                select(ProgramEnrollment.application_id).where(
+                    ProgramEnrollment.organization_id == organization_id,
+                    ProgramEnrollment.program_id == filters.program_id,
+                )
+            )
+        )
     if filters.source is not None:
         conditions.append(Application.source == filters.source)
     if filters.candidate_type is not None:
@@ -302,6 +329,11 @@ async def change_status(
     actor_user_id: uuid.UUID | None,
     reason: str | None = None,
 ) -> Application:
+    # Local import: the program workflow reads assessment/program models
+    # that themselves sit downstream of applications.
+    from app.workflows import program_workflow
+
+    await program_workflow.check_application_transition(db, application, to_status)
     return await application_workflow.transition(
         db, application, to_status=to_status, actor_user_id=actor_user_id, reason=reason
     )

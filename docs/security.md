@@ -204,6 +204,32 @@ properties, all implemented in `app/services/email_verification_service.py`:
   records, notes or calendar events (`RESTRICT`) is refused with 409
   `user_has_history` and stays deactivated, so that history keeps its
   author. The deletion is recorded in Activities (`USER_DELETED`).
+- Assessments: correct options, accepted answers, grading notes,
+  explanations, per-answer marks and grader comments exist only in recruiter
+  schemas. Candidate assessment responses (`app/schemas/public_assessment.py`)
+  have no field for any of them, before, during or after an attempt, and the
+  question bank's answer keys are separate tables
+  (`docs/assessment.md` § 2, § 10). Draft tests and draft/archived bank
+  questions are never reachable by a candidate; only published tests can be
+  invited to.
+- Question bank, institutions, programs: every id is resolved inside the
+  caller's organization (explicit filter + RLS), so another organization's
+  question, version, institution, assessment or program behaves exactly like
+  an unknown id (404 / refused), including when referenced from a test,
+  drive or program. Permissions: `question_bank.read/manage`,
+  `assessment.grade`, `campus_drive.read/manage` (institutions, affiliation),
+  `program.read/manage/finance.manage` (`docs/programs.md` § 7). Finance
+  records are omitted from responses for callers without
+  `program.finance.manage`.
+- Campus affiliation evidence (verification records, student lists) is
+  recruiter-only (`campus_drive.read` to view, `.manage` to change); no proof
+  documents are collected. Signed program agreements are stored through the
+  storage abstraction; the path is never returned, and downloading needs
+  `program.finance.manage`. No card or bank credentials are collected for
+  program fees.
+- Question import files (`docs/assessment.md` § 10a): size-, row-, page- and
+  archive-size-bounded, content checked against the extension, parsed in
+  memory, never stored or sent to an external service, staff-only.
 - Error responses never include stack traces, ORM/SQL error text, or
   internal file paths — mapped to safe, generic messages with a
   `request_id` for support/log correlation.

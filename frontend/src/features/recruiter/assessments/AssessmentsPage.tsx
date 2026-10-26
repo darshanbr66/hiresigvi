@@ -11,7 +11,7 @@ import { useToast } from "../../../shared/components/ToastContext";
 import type { AssessmentCreateRequest, AssessmentSummary } from "../../../types/assessment";
 import { useAuth } from "../../auth/AuthContext";
 import { AssessmentForm, emptyAssessmentFormValue } from "./AssessmentForm";
-import { createAssessment, deleteAssessment, listAssessments } from "./api";
+import { createAssessment, deleteAssessment, listAssessments, listPendingReview } from "./api";
 
 const ASSESSMENTS_QUERY_KEY = ["recruiter", "assessments"];
 
@@ -27,6 +27,12 @@ export function AssessmentsPage() {
     enabled: accessToken !== null,
   });
 
+  const pendingQuery = useQuery({
+    queryKey: [...ASSESSMENTS_QUERY_KEY, "pending-review"],
+    queryFn: () => listPendingReview(token),
+    enabled: accessToken !== null,
+  });
+
   const [showForm, setShowForm] = useState(false);
   const [formValue, setFormValue] = useState<AssessmentCreateRequest>(emptyAssessmentFormValue());
   const [formError, setFormError] = useState<string | null>(null);
@@ -35,9 +41,14 @@ export function AssessmentsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const createMutation = useMutation({
-    mutationFn: () => createAssessment(formValue, token),
-    onSuccess: () => {
-      showToast("Assessment created.", "success");
+    mutationFn: (status: "DRAFT" | "PUBLISHED") => createAssessment({ ...formValue, status }, token),
+    onSuccess: (created) => {
+      showToast(
+        created.status === "DRAFT"
+          ? "Draft saved. Publish it when it's ready to send."
+          : "Assessment created and published.",
+        "success",
+      );
       setFormValue(emptyAssessmentFormValue());
       setFormError(null);
       setShowForm(false);
@@ -50,7 +61,8 @@ export function AssessmentsPage() {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    createMutation.mutate();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    createMutation.mutate(submitter?.value === "DRAFT" ? "DRAFT" : "PUBLISHED");
   }
 
   function openCreateForm() {
@@ -107,7 +119,10 @@ export function AssessmentsPage() {
       <div className="page-header">
         <div>
           <h1>Assessments</h1>
-          <p className="muted">Reusable skills tests you can send to any candidate.</p>
+          <p className="muted">
+            Reusable tests for campus drives, regular hiring and programs — build them from the{" "}
+            <Link to="/recruiter/question-bank">question bank</Link> or write questions directly.
+          </p>
         </div>
         {canManage && (
           <button type="button" className="btn btn-primary" onClick={openCreateForm}>
@@ -115,6 +130,25 @@ export function AssessmentsPage() {
           </button>
         )}
       </div>
+
+      {pendingQuery.isSuccess && pendingQuery.data.length > 0 && (
+        <section className="card stack-sm" aria-label="Answers awaiting grading">
+          <h2>Answers awaiting grading ({pendingQuery.data.length})</h2>
+          <ul className="stack-sm" style={{ margin: 0, paddingLeft: "1.1rem" }}>
+            {pendingQuery.data.map((entry) => (
+              <li key={entry.invitation_id}>
+                <Link to={`/recruiter/assessments/attempts/${entry.invitation_id}`}>
+                  {entry.candidate_full_name} — {entry.assessment_title}
+                </Link>{" "}
+                <span className="muted">
+                  (attempt {entry.attempt_number}
+                  {entry.submitted_at ? `, submitted ${new Date(entry.submitted_at).toLocaleDateString()}` : ""})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {assessmentsQuery.isPending && <SkeletonTable columns={6} />}
       {assessmentsQuery.isError && !canManage && (
@@ -136,6 +170,7 @@ export function AssessmentsPage() {
                   <th>Questions</th>
                   <th>Duration</th>
                   <th>Pass score</th>
+                  <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -149,6 +184,11 @@ export function AssessmentsPage() {
                     <td>{a.question_count}</td>
                     <td>{a.duration_minutes} min</td>
                     <td>{a.pass_score}%</td>
+                    <td>
+                      <span className={`badge ${a.status === "DRAFT" ? "badge-inactive" : "badge-active"}`}>
+                        {a.status === "DRAFT" ? "Draft" : "Published"}
+                      </span>
+                    </td>
                     <td>
                       <div className="btn-group">
                         <Link to={`/recruiter/assessments/${a.id}`} className="btn btn-ghost btn-sm">
@@ -185,8 +225,16 @@ export function AssessmentsPage() {
             {formError && <Alert>{formError}</Alert>}
 
             <div className="btn-group" style={{ marginTop: "1.5rem" }}>
-              <button type="submit" className="btn btn-primary" disabled={createMutation.isPending}>
-                {createMutation.isPending ? <Spinner label="Creating…" /> : "Create assessment"}
+              <button
+                type="submit"
+                value="PUBLISHED"
+                className="btn btn-primary"
+                disabled={createMutation.isPending}
+              >
+                {createMutation.isPending ? <Spinner label="Saving…" /> : "Create & publish"}
+              </button>
+              <button type="submit" value="DRAFT" className="btn btn-ghost" disabled={createMutation.isPending}>
+                Save as draft
               </button>
               <button
                 type="button"

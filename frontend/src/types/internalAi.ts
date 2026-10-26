@@ -67,13 +67,26 @@ export interface MatchCard {
   disclaimer: string;
 }
 
+export interface TopJobStat {
+  title: string;
+  application_count: number;
+}
+
+/** Org-wide counts returned for a pipeline-summary question. */
+export interface PipelineStats {
+  /** ApplicationStatus value -> count (only statuses with >= 1 application). */
+  applications_by_status: Record<string, number>;
+  open_jobs: number;
+  top_jobs_by_applications: TopJobStat[];
+}
+
 export interface InternalAIQueryResponse {
   conversation_id: string;
   message: string;
   candidates: CandidateCard[];
   jobs: JobCard[];
   matches: MatchCard[];
-  pipeline_stats: Record<string, unknown> | null;
+  pipeline_stats: PipelineStats | null;
   disclaimer: string;
 }
 

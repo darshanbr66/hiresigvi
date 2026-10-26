@@ -8,8 +8,8 @@ export function Alert({
   children: ReactNode;
 }) {
   return (
-    <p className={`alert alert-${variant}`} role={variant === "error" ? "alert" : "status"}>
+    <div className={`alert alert-${variant}`} role={variant === "error" ? "alert" : "status"}>
       {children}
-    </p>
+    </div>
   );
 }

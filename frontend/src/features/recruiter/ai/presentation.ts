@@ -128,3 +128,65 @@ export function normalizeMatchResponse(candidateName: string, jobTitle: string, 
     categories,
   };
 }
+
+export interface StatusCount {
+  status: string;
+  count: number;
+}
+
+export interface JobCount {
+  title: string;
+  count: number;
+}
+
+/** Pipeline stats after validation. A `null` section means the field was
+ * missing or malformed, so the panel omits it rather than guessing. */
+export interface NormalizedPipelineStats {
+  statusCounts: StatusCount[] | null;
+  totalApplications: number | null;
+  openJobs: number | null;
+  topJobs: JobCount[] | null;
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Validates the `pipeline_stats` payload at the render boundary. The API
+ * sends real JSON objects (see backend PipelineStats), but this still guards
+ * against a shape drift so a bad entry is dropped instead of being dumped as
+ * raw JSON. Returns `null` when nothing usable remains. */
+export function normalizePipelineStats(raw: unknown): NormalizedPipelineStats | null {
+  if (!isPlainObject(raw)) return null;
+
+  let statusCounts: StatusCount[] | null = null;
+  if (isPlainObject(raw.applications_by_status)) {
+    statusCounts = Object.entries(raw.applications_by_status)
+      .filter((entry): entry is [string, number] => entry[0] !== "" && isCount(entry[1]))
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status));
+  }
+
+  let topJobs: JobCount[] | null = null;
+  if (Array.isArray(raw.top_jobs_by_applications)) {
+    topJobs = raw.top_jobs_by_applications.flatMap((job: unknown) =>
+      isPlainObject(job) && typeof job.title === "string" && job.title.trim() !== "" && isCount(job.application_count)
+        ? [{ title: job.title, count: job.application_count }]
+        : [],
+    );
+  }
+
+  const openJobs = isCount(raw.open_jobs) ? raw.open_jobs : null;
+  if (statusCounts === null && topJobs === null && openJobs === null) return null;
+
+  return {
+    statusCounts,
+    totalApplications: statusCounts ? statusCounts.reduce((sum, s) => sum + s.count, 0) : null,
+    openJobs,
+    topJobs,
+  };
+}

@@ -210,7 +210,7 @@ async def test_status_changes_do_not_send_email(
 # --- 13. templates --------------------------------------------------------
 
 
-async def test_template_listing_exposes_the_six_templates_and_their_fields(
+async def test_template_listing_exposes_every_template_and_their_fields(
     client: AsyncClient, super_admin: User
 ) -> None:
     ctx = await _bootstrap_org_with_open_job(client, "wf-template-list")
@@ -225,6 +225,8 @@ async def test_template_listing_exposes_the_six_templates_and_their_fields(
         "ASSESSMENT_INVITATION",
         "NEXT_STEPS",
         "REJECTION",
+        "SCHOLARSHIP_UPDATE",
+        "TRAINING_ENROLLMENT",
         "GENERAL",
     }
     interview_fields = {f["key"]: f for f in templates["INTERVIEW_INVITATION"]["fields"]}

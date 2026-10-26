@@ -116,10 +116,13 @@ organization) notifies no one.
 Assessments are a reusable domain, independent of *why* a candidate was
 invited (normal recruitment or campus drive) and, longer-term, independent
 of *what kind* of question is being asked (MCQ now; aptitude, technical,
-coding, subjective/AI-evaluated later). The initial build only implements
-MCQ (single and multi-select), but the schema's `type` discriminator on
-`Question` and `evaluator_type` on `AssessmentEvaluation` exist specifically
-so those future types are additive, not a redesign.
+coding, subjective/AI-evaluated later). Implemented question types:
+single- and multi-select MCQ, true/false, short answer, descriptive, and
+coding (stored as text and graded by a person — **there is no code
+execution engine**; running candidate code would need a separately
+approved, sandboxed integration). The same assessments are used by normal
+jobs, campus drives (`default_assessment_id`) and recruitment programs
+(`docs/programs.md`) — never coupled to any one of them.
 
 ## 2. Entities and their responsibilities
 
@@ -143,12 +146,23 @@ AssessmentInvitation   -- the secure, single-purpose link from ONE Application
 might be re-run or reviewed), `AssessmentResult` is the *current* scored
 outcome a recruiter/candidate actually reads.
 
-Questions belong directly to one `Assessment` (no shared question-bank
-abstraction) — the spec does not call for cross-assessment question reuse,
-and adding that layer now would be exactly the kind of premature abstraction
-`CLAUDE.md` § 5 rules out. If reuse becomes a real need, introducing a
-question bank later is additive (a new table + a nullable
-`source_question_id` on `Question`), not a breaking change.
+Questions belong to one `Assessment`; a test's question set is its own
+snapshot. Reuse goes through the question bank (§ 10): a bank question is
+*copied* into the test from one exact bank version, recorded in
+`Question.source_bank_version_id`, so editing the bank never changes a test
+or anyone's attempt.
+
+Private grading data is kept apart from what candidates receive:
+`QuestionOption.is_correct` and `QuestionAnswerKey` (accepted short
+answers, case sensitivity, grading notes, explanation) are never part of a
+candidate response schema (`app/schemas/public_assessment.py`).
+
+**Draft / published.** `Assessment.status` is DRAFT or PUBLISHED. Only a
+published assessment can be invited to, attached to a campus drive or used
+by a program; it needs at least one question to be published, and can go
+back to draft only while nobody has been invited. Once any invitation
+exists, the question structure is locked (title/instructions/duration/pass
+score stay editable); existing assessments were migrated as PUBLISHED.
 
 ## 3. Invitation lifecycle
 
@@ -202,17 +216,35 @@ or importing a candidate.
   trusted from client-side timers) — a submission arriving after the
   server-computed deadline is flagged, not silently accepted as on-time.
 
-## 6. Evaluation (initial: MCQ auto-scoring)
+## 6. Evaluation (automatic + manual grading)
 
-For each `CandidateAnswer` on an MCQ question, correctness is computed by
-comparing `selected_option_ids` against the `QuestionOption.is_correct` set;
-`score_awarded` follows `Question.points`. `AssessmentEvaluation
-(evaluator_type=AUTO)` and `AssessmentResult` (aggregate score, percentage,
-pass/fail against `Assessment.pass_score`) are written immediately on
-submission — no manual step required for MCQ-only assessments. This is the
-extension point where a future `evaluator_type=AI` path (for subjective/
-coding answers) plugs in without changing the `AssessmentResult` shape
-downstream consumers (reports, application workflow) already read.
+`app/services/assessment_grading_service.py`. On submission each answer is
+stored (`candidate_answers`: selected options or text) and graded if it can
+be decided automatically:
+
+- choice questions (MCQ, true/false): exact match against
+  `QuestionOption.is_correct`; option ids that don't belong to the question
+  are dropped, so a tampered payload can't earn marks;
+- short answer: match against the answer key's accepted answers
+  (case-insensitive unless the key is case-sensitive);
+- descriptive, coding, and short answers with no accepted answers: left for
+  a person (`awarded_points` NULL).
+
+Negative marks (`Question.negative_points`, at most the question's marks)
+apply only to automatically graded wrong answers; the total never drops
+below 0.
+
+`AssessmentResult` is written at submission. If anything awaits a person,
+`grading_status = PENDING_MANUAL_REVIEW` and `passed` is NULL — no pass/fail
+is shown or used (program gates treat it as "not passed yet"). Graders
+(`assessment.grade`: ORG_ADMIN, RECRUITER, HIRING_MANAGER) use the attempt
+review page (`GET /recruiter/assessments/attempts/{invitation_id}/review`,
+`POST .../grades`; queue at `GET /recruiter/assessments/pending-review`) to
+award 0..points per answer — the server refuses more — with an optional
+staff-only comment. Grader, method (AUTO/MANUAL) and time are kept per
+answer. When the last answer is graded the result becomes FINAL and
+pass/fail is computed against `pass_score`. Candidates never see per-answer
+marks, comments or keys.
 
 ## 7. Interaction with the application workflow
 
@@ -273,7 +305,128 @@ fabricated answer.
   for multi-select. Optional `type` and `points` columns.
 - **PDF/DOCX**: numbered questions ("1. ...") with lettered options
   ("A) ..."), where the correct option is marked either with a trailing `*`
-  or an explicit `Answer: B` / `Correct: B, C` line.
+  or an explicit `Answer: B` / `Correct: B, C` line. In DOCX, Word's
+  automatic list numbering counts the same as typed numbers (a numbered
+  list for questions, a lettered list for options). Each option must be on
+  its own line; options written side by side on one line are not split, so
+  that question is skipped with a warning.
 
 Malformed files (wrong type, missing required columns/structure) raise a
-clear `QuestionImportError` rather than returning empty or guessed data.
+clear `QuestionImportError` rather than returning empty or guessed data. The same upload limits and content checks as the bank import apply
+(§ 10a "Safety"), and short-answer/descriptive rows (via the `type` column)
+can be imported here too.
+
+## 10. Question bank and test builder
+
+**Model** (`app/models/question_bank.py`, migration `2b3c4d5e6f70`), all
+tenant-scoped with RLS:
+
+```
+QuestionCategory          -- subject / topic tree (parent_id), unique name among siblings,
+                             deactivated not deleted. "Programming / Python",
+                             "Mechanical / Robotics", ... — data, not code.
+QuestionTag               -- free tags, unique per org (normalized)
+QuestionBankItem          -- the reusable question: category, difficulty (EASY/MEDIUM/HARD),
+                             status DRAFT / PUBLISHED / ARCHIVED, current_version_number,
+                             created_by / updated_by
+  └─ QuestionBankItemVersion   -- IMMUTABLE content: type, prompt, marks, negative marks,
+                                  options (key + label)
+       └─ QuestionBankAnswerKey -- private: correct option keys, accepted answers,
+                                  case sensitivity, grading notes, explanation
+QuestionBankItemTag       -- item <-> tag
+```
+
+Editing content creates a new version with its own answer key; metadata
+(category, difficulty, tags) edits don't. Old versions are never changed.
+Status moves follow `QUESTION_BANK_TRANSITIONS`; archived items are hidden
+from search unless asked for.
+
+**API** (`/api/v1/recruiter/question-bank`; `question_bank.read` to view —
+ORG_ADMIN, RECRUITER, HIRING_MANAGER; `question_bank.manage` to change —
+ORG_ADMIN, RECRUITER):
+
+```
+GET/POST   /categories, PATCH /categories/{id}
+GET/POST   /tags
+GET        /questions?q=&category_id=&type=&difficulty=&status=&tag_id=&include_archived=&limit=&offset=
+POST       /questions
+GET/PATCH  /questions/{id}
+GET        /questions/{id}/versions
+GET        /questions/{id}/preview     -- the candidate's view only (no keys, notes)
+POST       /questions/{id}/status
+```
+
+Search is server-side and paginated (total in `X-Total-Count`).
+
+**Test builder.** The assessment form (Assessments -> New / Edit) mixes
+written questions with questions picked from the bank (filter by subject,
+type, difficulty, tag, text), reorders them and overrides marks per test.
+The picker lists only PUBLISHED items and always refetches when it opens
+and when the window regains focus (plus a manual Refresh), so questions
+published in the Question Bank — typically in another tab — appear
+without reloading the page.
+A bank question is sent as `bank_version_id` (+ optional `points`); the
+server copies that exact version's content and answer key and ignores any
+content sent with it. Only the *current* version of a *published* item from
+the caller's organization can be added (another organization's id behaves
+as unknown); a version already in the test may be kept when the test is
+re-saved even if the bank has moved on. "Preview" shows the test exactly as
+a candidate would see it (`GET /recruiter/assessments/{id}/preview`, no
+answers). There is no random question selection: every candidate of a test
+gets its fixed, ordered question set, so each attempt is auditable from the
+test's snapshot.
+
+**Not implemented:** AI-generated questions (when added, generated
+questions must land as DRAFT bank items for HR review), random selection
+from a pool, and code execution.
+
+## 10a. Importing questions into the bank
+
+Question Bank → **Import questions** (`QuestionImportDialog`). Same parser
+as the assessment form's import (§ 9,
+`app/integrations/documents/question_import.py`), extended with optional
+columns; service `app/services/question_bank_import_service.py`.
+Needs `question_bank.manage`.
+
+```
+GET  /api/v1/recruiter/question-bank/import/template   -- CSV template (UTF-8 with BOM, opens in Excel)
+POST /api/v1/recruiter/question-bank/import/preview    -- multipart file -> what was read; saves nothing
+POST /api/v1/recruiter/question-bank/import            -- {items, status: DRAFT|PUBLISHED} -> all saved, or none
+```
+
+**Formats**
+
+| Format | Rules |
+|---|---|
+| CSV / XLSX | header row; `question` (required); `option_1`, `option_2`, … (or `a`, `b`, …); `correct` by number (`2`), letter (`B`), exact option text, or several separated by commas (`A,C`). Optional: `type` (`single`, `multiple`, `true_false`, `short_answer`, `descriptive`), `difficulty` (easy/medium/hard), `subject`, `topic`, `marks` (or `points`, 1–1000), `tags` (`;`-separated), `explanation`. `short_answer`: `correct` lists accepted answers separated by `\|`. `descriptive`: no options or answer. First sheet only for XLSX. |
+| PDF / DOCX | numbered questions (`1.` / `1)`, or Word's automatic numbering), lettered options (`A)` / `A.`, or an automatic lettered list), one option per line, the correct option marked with a trailing `*` or an `Answer: B` / `Correct: A, C` line; `[2 marks]` after the question sets marks. Choice questions only. |
+
+**Review step.** The preview lists every question read with its source
+(`Row 4`, `Question 2`), its answer key, the subject/topic it will be filed
+under (and whether that category will be created), and flags:
+
+- **Not imported** — rows/questions that couldn't be read, each with the
+  reason (no answer given, answer names a missing option, fewer than two
+  options, bad marks/difficulty/type). Nothing is guessed.
+- **Can't import** — read, but rejected by the bank's content rules (e.g.
+  a single-choice question with two correct answers); the checkbox is
+  disabled until the file is fixed.
+- **Possible duplicates** — same text (ignoring case and spacing) as an
+  existing bank question in the organization, or as an earlier row of the
+  file. Shown unticked; HR may tick them deliberately.
+
+HR chooses which questions to keep and whether they're saved as draft or
+published. The import request is validated as a whole and saved in one
+transaction: one invalid item rejects the request and nothing is stored.
+Missing subjects/topics are created as categories (subject = top-level
+category, topic = its child). One activity entry records the import.
+
+**Safety.** 5 MB file limit (read bounded on the server), content must match
+the extension (PDF magic bytes; DOCX/XLSX zip containing the expected part;
+CSV text without binary content), at most 500 questions and 100 PDF pages
+per file, DOCX/XLSX archives refused if they expand past 50 MB, encrypted
+PDFs refused, macros never run, errors never include library exception
+text. Files are parsed in memory and not stored; nothing is sent to an AI
+or other external service; parsed answer keys only go back to the staff
+user who uploaded the file. The template has no cell starting with
+`=`, `+`, `-` or `@`.

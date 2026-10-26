@@ -37,6 +37,9 @@ class Resume(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
         UUID(as_uuid=True),
         ForeignKey("applications.id", ondelete="RESTRICT"),
         nullable=False,
+        # One resume per application — migration a5afbdf6f1b5 created this
+        # index as unique.
+        unique=True,
         index=True,
     )
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)

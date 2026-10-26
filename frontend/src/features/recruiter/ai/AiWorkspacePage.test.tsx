@@ -25,7 +25,7 @@ const sampleJob: JobResponse = {
   title: "Full Stack Developer",
   department: "Engineering",
   location: "Bengaluru",
-  employment_type: "Full-time",
+  employment_type: "FULL_TIME",
   description: "React, Node.js, MongoDB required.",
   description_visible: true,
   status: "OPEN",
@@ -189,6 +189,38 @@ describe("AiWorkspacePage", () => {
     await waitFor(() => expect(querySpy).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(response.message)).toBeInTheDocument();
     expect(await screen.findByText("95%")).toBeInTheDocument();
+  });
+
+  it("renders a pipeline summary's stats as structured UI instead of raw JSON", async () => {
+    const response: InternalAIQueryResponse = {
+      conversation_id: "conv-2",
+      message: "Your organization currently has 2 application(s) across 1 open job(s).",
+      candidates: [],
+      jobs: [],
+      matches: [],
+      pipeline_stats: {
+        applications_by_status: { APPLIED: 1, SCREENING: 1 },
+        open_jobs: 1,
+        top_jobs_by_applications: [{ title: "Data Analyst", application_count: 2 }],
+      },
+      disclaimer: "AI-generated assessment. Final hiring decision remains with the recruitment team.",
+    };
+    vi.spyOn(aiApi, "queryInternalAi").mockResolvedValue(response);
+
+    renderWorkspace();
+    fireEvent.change(screen.getByPlaceholderText(/ask about a candidate/i), {
+      target: { value: "Give me a summary of the current recruitment pipeline." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(await screen.findByText(response.message)).toBeInTheDocument();
+    const panel = await screen.findByLabelText("Pipeline summary");
+    expect(panel).toHaveTextContent("Applied");
+    expect(panel).toHaveTextContent("Screening");
+    expect(panel).toHaveTextContent("Data Analyst");
+    expect(panel).toHaveTextContent("2 applications");
+    expect(panel.textContent).not.toContain('{"APPLIED"');
+    expect(panel.textContent).not.toContain("application_count");
   });
 
   it("shows a friendly error and keeps the conversation usable when the query fails", async () => {

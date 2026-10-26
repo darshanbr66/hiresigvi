@@ -39,6 +39,8 @@ describe("parseListState / serializeListState", () => {
         appliedFrom: "2026-09-01",
         appliedTo: "2026-09-21",
         source: "REFERRAL",
+        campusDrive: "5b0c6d0e-1f2a-4b3c-8d4e-5f6a7b8c9d0e",
+        institution: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
       },
       sort: "name_asc",
       page: 3,
@@ -193,5 +195,26 @@ describe("activeFilterChips / hasActiveCriteria", () => {
 
   it("falls back gracefully for a job that is not in the list", () => {
     expect(activeFilterChips({ ...EMPTY_FILTERS, job: "gone" }, jobs)[0].label).toBe("Job: Selected job");
+  });
+
+  it("names the campus drive and institution filters, and scopes the API query by them", () => {
+    const driveId = "5b0c6d0e-1f2a-4b3c-8d4e-5f6a7b8c9d0e";
+    const institutionId = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const filters = { ...EMPTY_FILTERS, campusDrive: driveId, institution: institutionId };
+    const labels = activeFilterChips(filters, [], {
+      campusDrives: [{ id: driveId, name: "IIT Drive 2026" }],
+      institutions: [{ id: institutionId, name: "IIT Bombay" }],
+    }).map((chip) => chip.label);
+    expect(labels).toEqual(["Campus drive: IIT Drive 2026", "Institution: IIT Bombay"]);
+
+    const query = new URLSearchParams(toApiQuery({ ...DEFAULT_LIST_STATE, filters }));
+    expect(query.get("campus_drive_id")).toBe(driveId);
+    expect(query.get("institution_id")).toBe(institutionId);
+  });
+
+  it("drops a campus drive or institution id that is not a UUID", () => {
+    const state = parse("drive=not-a-uuid&institution=1%3B%20drop");
+    expect(state.filters.campusDrive).toBe("");
+    expect(state.filters.institution).toBe("");
   });
 });

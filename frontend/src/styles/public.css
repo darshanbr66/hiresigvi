@@ -58,7 +58,10 @@
 
 .public-hero h1 {
   margin-bottom: 0.4rem;
-  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  font-size: var(--text-headline);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-headline);
+  letter-spacing: var(--tracking-headline);
 }
 
 .public-hero p {

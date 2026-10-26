@@ -54,6 +54,7 @@ const submittedInvitation: AssessmentInvitationResponse = {
     max_score: 3,
     percentage: 100,
     passed: true,
+    grading_status: "FINAL",
     evaluated_at: new Date().toISOString(),
   },
   invitation_link: null,

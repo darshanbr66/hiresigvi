@@ -54,6 +54,11 @@ async def test_overview_reflects_real_data(client: AsyncClient, super_admin: Use
         "hired_candidates": 0,
         "applications_by_status": [],
         "applications_by_job": [],
+        "by_employment_type": [
+            {"employment_type": "INTERNSHIP", "jobs": 0, "applications": 0},
+            {"employment_type": "PART_TIME", "jobs": 0, "applications": 0},
+            {"employment_type": "FULL_TIME", "jobs": 0, "applications": 0},
+        ],
         "screening": {"total_runs": 0, "completed": 0, "failed": 0, "average_score": 0.0},
         "assessments": {"total_invitations": 0, "submitted": 0, "passed": 0},
         "campus_drives": [],
@@ -93,7 +98,12 @@ async def test_overview_reflects_real_data(client: AsyncClient, super_admin: Use
     assert report["total_applications"] == 1
     assert report["applications_by_status"] == [{"status": "APPLIED", "count": 1}]
     assert report["applications_by_job"] == [
-        {"job_id": job["id"], "job_title": "Backend Engineer", "count": 1}
+        {"job_id": job["id"], "job_title": "Backend Engineer", "employment_type": "FULL_TIME", "count": 1}
+    ]
+    assert report["by_employment_type"] == [
+        {"employment_type": "INTERNSHIP", "jobs": 0, "applications": 0},
+        {"employment_type": "PART_TIME", "jobs": 0, "applications": 0},
+        {"employment_type": "FULL_TIME", "jobs": 1, "applications": 1},
     ]
 
 
@@ -118,7 +128,13 @@ async def test_overview_includes_campus_drive_breakdown(client: AsyncClient, sup
 
     report = (await client.get("/api/v1/recruiter/reports/overview", headers=headers)).json()
     assert report["campus_drives"] == [
-        {"drive_id": drive["id"], "drive_name": "Fall Drive", "application_count": 0}
+        {
+            "drive_id": drive["id"],
+            "drive_name": "Fall Drive",
+            "institution_id": drive["institution_id"],
+            "institution_name": "MIT",
+            "application_count": 0,
+        }
     ]
 
 

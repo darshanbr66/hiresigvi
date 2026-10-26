@@ -7,6 +7,25 @@ import type { ReactNode } from "react";
  * an icon stands alone with no adjacent text.
  */
 const PATHS = {
+  institution: (
+    <>
+      <path d="M3 9.5 12 4l9 5.5" />
+      <path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18" />
+    </>
+  ),
+  program: (
+    <>
+      <path d="M2.5 9 12 4.5 21.5 9 12 13.5 2.5 9Z" />
+      <path d="M6.5 11v4.5c0 1.4 2.5 3 5.5 3s5.5-1.6 5.5-3V11M21.5 9v5" />
+    </>
+  ),
+  questionBank: (
+    <>
+      <rect x="4" y="3" width="13" height="16" rx="2" />
+      <path d="M7 21h12a1 1 0 0 0 1-1V7" />
+      <path d="M8.5 8.5a2 2 0 1 1 2.6 1.9c-.5.2-.6.5-.6 1v.3M10.5 14.5v.01" />
+    </>
+  ),
   overview: (
     <>
       <rect x="3" y="3" width="7" height="8" rx="1.5" />

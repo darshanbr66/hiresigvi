@@ -1,22 +1,10 @@
-import type { IconName } from "../../shared/components/Icon";
-
-/** Starting points drawn from what the site actually offers. The label is sent
- * verbatim as the visitor's message. */
-export const SIGVI_SUGGESTIONS: { label: string; icon: IconName }[] = [
-  { label: "Show me current openings", icon: "jobs" },
-  { label: "How do I apply?", icon: "applications" },
-  { label: "How does the hiring process work?", icon: "graph" },
-  { label: "Tell me about SIGVITAS", icon: "sparkles" },
-  { label: "How does the assessment work?", icon: "assessments" },
-];
-
-/** What Sigvi can help with, as shown on the welcome screen. */
-export const SIGVI_CAPABILITIES = [
-  "Current job openings",
-  "How to apply",
-  "The hiring process",
-  "Campus opportunities",
-  "Assessments",
-  "SIGVITAS and career questions",
-  "General questions",
-];
+/** Starting points drawn from what the site actually offers. Kept to a few
+ * that cover the most common visitor questions; anything else is one typed
+ * question away. The chip shows the short `label`; picking it sends the full
+ * `question` as the visitor's message, so the conversation reads naturally. */
+export const SIGVI_SUGGESTIONS = [
+  { label: "View open positions", question: "What positions are open right now?" },
+  { label: "How do I apply?", question: "How do I apply?" },
+  { label: "Campus opportunities", question: "What campus opportunities do you offer?" },
+  { label: "Hiring process", question: "How does the hiring process work?" },
+] as const;

@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,11 +12,15 @@ from app.core.security import generate_opaque_token, hash_opaque_token
 from app.integrations.documents.question_import import parse_questions as _parse_questions
 from app.models.application import ApplicationStatus
 from app.models.assessment import (
+    CHOICE_QUESTION_TYPES,
+    TEXT_QUESTION_TYPES,
     Assessment,
     AssessmentInvitation,
     AssessmentMonitoringEvent,
+    AssessmentStatus,
     InvitationStatus,
     Question,
+    QuestionAnswerKey,
     QuestionOption,
 )
 from app.models.user import User
@@ -38,21 +43,118 @@ def parse_import_file(*, content: bytes, filename: str) -> ParsedQuestionsRespon
     app/integrations/documents/question_import.py for the parsing rules).
     """
     result = _parse_questions(content=content, filename=filename)
-    return ParsedQuestionsResponse(
-        questions=[
-            QuestionCreate(
-                prompt=q.prompt,
-                type=q.type,
-                points=q.points,
-                options=[
-                    QuestionOptionCreateSchema(label=o.label, is_correct=o.is_correct)
-                    for o in q.options
-                ],
+    questions: list[QuestionCreate] = []
+    warnings = list(result.warnings)
+    for number, q in enumerate(result.questions, start=1):
+        try:
+            questions.append(
+                QuestionCreate(
+                    prompt=q.prompt,
+                    type=q.type,
+                    points=q.points,
+                    options=[
+                        QuestionOptionCreateSchema(label=o.label, is_correct=o.is_correct)
+                        for o in q.options
+                    ],
+                    accepted_answers=q.accepted_answers,
+                    explanation=q.explanation,
+                )
             )
-            for q in result.questions
-        ],
-        warnings=result.warnings,
-    )
+        except ValidationError as exc:
+            # Never include a question the shared rules reject (e.g. a
+            # single-choice question marked with two correct answers).
+            reason = exc.errors()[0]["msg"].removeprefix("Value error, ")
+            warnings.append(f"{q.source or f'Question {number}'} was skipped: {reason}")
+    return ParsedQuestionsResponse(questions=questions, warnings=warnings)
+
+
+async def _add_questions(
+    db: AsyncSession,
+    assessment: Assessment,
+    questions: list[QuestionCreate],
+    *,
+    existing_versions: frozenset[uuid.UUID] = frozenset(),
+) -> None:
+    """Inserts the question set in order. A bank question is copied from the
+    exact bank version (content and answer key) — never from what the
+    client sent — and must belong to the assessment's own organization.
+    `existing_versions` are the bank versions the assessment held before an
+    edit; those may be kept even if the bank item has a newer version."""
+    # Local import: question_bank_service imports from the assessment models.
+    from app.services import question_bank_service
+
+    for order_index, payload in enumerate(questions):
+        if payload.bank_version_id is not None:
+            version = await question_bank_service.require_snapshot_source(
+                db,
+                assessment.organization_id,
+                payload.bank_version_id,
+                already_in_test=payload.bank_version_id in existing_versions,
+            )
+            key = version.answer_key
+            correct = set(key.correct_option_keys)
+            question = Question(
+                assessment_id=assessment.id,
+                prompt=version.prompt,
+                type=version.type,
+                points=payload.points or version.points,
+                negative_points=min(version.negative_points, payload.points or version.points),
+                order_index=order_index,
+                source_bank_version_id=version.id,
+            )
+            options = [(o["label"], o["key"] in correct) for o in version.options]
+            accepted, case_sensitive = list(key.accepted_answers), key.case_sensitive
+            grading_notes, explanation = key.grading_notes, key.explanation
+        else:
+            question = Question(
+                assessment_id=assessment.id,
+                prompt=payload.prompt.strip(),
+                type=payload.type,
+                points=payload.points or 1,
+                negative_points=payload.negative_points,
+                order_index=order_index,
+            )
+            options = (
+                [(o.label.strip(), o.is_correct) for o in payload.options]
+                if payload.type in CHOICE_QUESTION_TYPES
+                else []
+            )
+            accepted, case_sensitive = payload.accepted_answers, payload.case_sensitive
+            grading_notes, explanation = payload.grading_notes, payload.explanation
+        db.add(question)
+        await db.flush()
+
+        for option_order, (label, is_correct) in enumerate(options):
+            db.add(
+                QuestionOption(
+                    question_id=question.id,
+                    label=label,
+                    is_correct=is_correct,
+                    order_index=option_order,
+                )
+            )
+        if question.type in TEXT_QUESTION_TYPES or grading_notes or explanation:
+            db.add(
+                QuestionAnswerKey(
+                    question_id=question.id,
+                    accepted_answers=accepted if question.type in TEXT_QUESTION_TYPES else [],
+                    case_sensitive=case_sensitive,
+                    grading_notes=grading_notes,
+                    explanation=explanation,
+                )
+            )
+    await db.flush()
+
+
+def require_published(assessment: Assessment) -> None:
+    """Only a PUBLISHED, non-archived assessment can be sent to anyone."""
+    if assessment.deleted_at is not None:
+        raise NotFoundError("Assessment not found.")
+    if assessment.status != AssessmentStatus.PUBLISHED:
+        raise ConflictError(
+            f'"{assessment.title}" is still a draft. Publish it before assigning it.',
+            code="assessment_not_published",
+        )
 
 
 async def create_assessment(
@@ -65,32 +167,12 @@ async def create_assessment(
         instructions=payload.instructions,
         duration_minutes=payload.duration_minutes,
         pass_score=payload.pass_score,
+        status=payload.status,
         created_by=created_by,
     )
     db.add(assessment)
     await db.flush()
-
-    for order_index, question_payload in enumerate(payload.questions):
-        question = Question(
-            assessment_id=assessment.id,
-            prompt=question_payload.prompt,
-            type=question_payload.type,
-            points=question_payload.points,
-            order_index=order_index,
-        )
-        db.add(question)
-        await db.flush()
-
-        for option_order, option_payload in enumerate(question_payload.options):
-            db.add(
-                QuestionOption(
-                    question_id=question.id,
-                    label=option_payload.label,
-                    is_correct=option_payload.is_correct,
-                    order_index=option_order,
-                )
-            )
-    await db.flush()
+    await _add_questions(db, assessment, payload.questions)
 
     await activity_service.record_activity(
         db,
@@ -100,7 +182,10 @@ async def create_assessment(
         entity_type="assessment",
         entity_id=assessment.id,
         entity_label=assessment.title,
-        description=f"Assessment \"{assessment.title}\" was created with {len(payload.questions)} question(s).",
+        description=(
+            f"Assessment \"{assessment.title}\" was created with {len(payload.questions)} "
+            f"question(s) ({assessment.status.value.lower()})."
+        ),
     )
 
     reloaded = await get_assessment(db, assessment.id)
@@ -139,6 +224,20 @@ async def delete_assessment(db: AsyncSession, assessment: Assessment, *, actor: 
         raise ConflictError(
             f"This assessment is set as the default for campus drive \"{dependent_drive.name}\". "
             "Change that drive's default assessment before deleting this one."
+        )
+
+    from app.models.program import ProgramStatus, RecruitmentProgram
+
+    dependent_program = await db.scalar(
+        select(RecruitmentProgram).where(
+            RecruitmentProgram.assessment_id == assessment.id,
+            RecruitmentProgram.status != ProgramStatus.ARCHIVED,
+        )
+    )
+    if dependent_program is not None:
+        raise ConflictError(
+            f"This assessment is the selection test of the program \"{dependent_program.title}\". "
+            "Change that program's assessment before deleting this one."
         )
 
     assessment.deleted_at = datetime.now(UTC)
@@ -199,32 +298,20 @@ async def update_assessment(
 
     if replacing_questions:
         assert payload.questions is not None
-        existing_questions = await db.execute(
-            select(Question).where(Question.assessment_id == assessment.id)
+        existing_questions = list(
+            (
+                await db.execute(select(Question).where(Question.assessment_id == assessment.id))
+            ).scalars().all()
         )
-        for question in existing_questions.scalars().all():
+        existing_versions = frozenset(
+            q.source_bank_version_id for q in existing_questions if q.source_bank_version_id
+        )
+        for question in existing_questions:
             await db.delete(question)
         await db.flush()
-
-        for order_index, question_payload in enumerate(payload.questions):
-            question = Question(
-                assessment_id=assessment.id,
-                prompt=question_payload.prompt,
-                type=question_payload.type,
-                points=question_payload.points,
-                order_index=order_index,
-            )
-            db.add(question)
-            await db.flush()
-            for option_order, option_payload in enumerate(question_payload.options):
-                db.add(
-                    QuestionOption(
-                        question_id=question.id,
-                        label=option_payload.label,
-                        is_correct=option_payload.is_correct,
-                        order_index=option_order,
-                    )
-                )
+        await _add_questions(
+            db, assessment, payload.questions, existing_versions=existing_versions
+        )
 
         # `assessment.questions` (viewonly, selectin-loaded) was already
         # populated by the caller's earlier `get_assessment` — an eager
@@ -255,9 +342,46 @@ async def get_assessment(db: AsyncSession, assessment_id: uuid.UUID) -> Assessme
     result = await db.execute(
         select(Assessment)
         .where(Assessment.id == assessment_id)
-        .options(selectinload(Assessment.questions).selectinload(Question.options))
+        .options(
+            selectinload(Assessment.questions).selectinload(Question.options),
+            selectinload(Assessment.questions).selectinload(Question.answer_key),
+        )
     )
     return result.unique().scalar_one_or_none()
+
+
+async def change_status(
+    db: AsyncSession, assessment: Assessment, status: AssessmentStatus, *, actor: User
+) -> Assessment:
+    """DRAFT -> PUBLISHED makes it assignable. PUBLISHED -> DRAFT is allowed
+    only while nobody has been invited — afterwards it would strand the
+    invitations that already point at it."""
+    if assessment.deleted_at is not None:
+        raise NotFoundError("Assessment not found.")
+    if status == assessment.status:
+        return assessment
+    if status == AssessmentStatus.PUBLISHED and not assessment.questions:
+        raise ConflictError("Add at least one question before publishing.")
+    if status == AssessmentStatus.DRAFT and await assessment_has_invitations(db, assessment.id):
+        raise ConflictError(
+            "This assessment has already been sent to candidates, so it can't go back to draft.",
+            code="assessment_in_use",
+        )
+    assessment.status = status
+    await db.flush()
+    await activity_service.record_activity(
+        db,
+        organization_id=assessment.organization_id,
+        actor=actor,
+        action="ASSESSMENT_PUBLISHED" if status == AssessmentStatus.PUBLISHED else "ASSESSMENT_UNPUBLISHED",
+        entity_type="assessment",
+        entity_id=assessment.id,
+        entity_label=assessment.title,
+        description=f'Assessment "{assessment.title}" is now {status.value.lower()}.',
+    )
+    reloaded = await get_assessment(db, assessment.id)
+    assert reloaded is not None
+    return reloaded
 
 
 async def invite_candidate(
@@ -271,6 +395,7 @@ async def invite_candidate(
     assessment = await get_assessment(db, assessment_id)
     if assessment is None or assessment.deleted_at is not None:
         raise NotFoundError("Assessment not found.")
+    require_published(assessment)
 
     application = await application_service.get_application(db, application_id)
     if application is None:
@@ -418,6 +543,7 @@ async def create_retest(
         chosen_assessment = await get_assessment(db, assessment_id)
         if chosen_assessment is None or chosen_assessment.deleted_at is not None:
             raise NotFoundError("Assessment not found.")
+        require_published(chosen_assessment)
     elif assessment_choice == RetestAssessmentChoice.NEW:
         assert new_assessment is not None
         chosen_assessment = await create_assessment(
@@ -429,6 +555,8 @@ async def create_retest(
         )
     else:
         chosen_assessment = latest.assessment
+    if assessment_choice == RetestAssessmentChoice.NEW:
+        require_published(chosen_assessment)
 
     raw_token = generate_opaque_token()
     invitation = AssessmentInvitation(

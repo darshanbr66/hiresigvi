@@ -15,8 +15,7 @@ Render/Vercel resources, secrets, or DNS records have been created.
 - **Frontend**: React 19 + Vite (`frontend/`), a single-page app using
   `react-router-dom`'s `BrowserRouter`.
 - **Database**: PostgreSQL. The schema uses native enums, Postgres
-  Row-Level Security, and (architecturally, not yet by any migration —
-  see § 6) pgvector.
+  Row-Level Security, and pgvector (`resume_chunks.embedding`, see § 2).
 
 ---
 
@@ -43,18 +42,26 @@ Render/Vercel resources, secrets, or DNS records have been created.
 
 ## 2. Enable the pgvector extension
 
-No current migration creates or uses pgvector — the schema doesn't have any
-embedding columns yet (`docs/architecture.md` defers that to a later
-phase; see `app/models/screening.py`'s docstring). It is **not required**
-for `alembic upgrade head` to succeed today. Enable it anyway, since it's
-part of the fixed tech stack (CLAUDE.md § 3) and Render's managed Postgres
-supports it natively:
+pgvector is **required**. Migration `c4d5e6f7a8b9` (internal AI matching
+engine) runs `CREATE EXTENSION IF NOT EXISTS vector` and creates
+`resume_chunks.embedding` as `vector(768)` (Gemini `gemini-embedding-001`
+dimensions); the ORM model (`app/models/resume_chunk.py`) maps the same
+column. `alembic upgrade head` fails on a server where the extension is not
+available. No HNSW/IVFFlat index exists yet.
 
-Connect with `psql` (using the External Database URL) and run:
+Render's managed Postgres ships pgvector, and the database owner Render
+creates can enable it, so the migration enables it itself — no manual step
+is needed. To confirm before migrating (with `psql` over the External
+Database URL):
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS vector;
+SELECT default_version FROM pg_available_extensions WHERE name = 'vector';
 ```
+
+After migrating, `SELECT extversion FROM pg_extension WHERE extname =
+'vector';` should return a version. Minor version differences between
+environments (e.g. 0.8.6 locally, 0.8.7 on Render) are compatible with this
+schema.
 
 ## 3. Configure Render environment variables
 
@@ -66,7 +73,7 @@ nothing sensitive is stored in the Blueprint file itself.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | Yes | Render's connection string, rewritten to `postgresql+psycopg://` (§ 1). |
+| `DATABASE_URL` | Yes | Render's connection string, rewritten to `postgresql+psycopg://` (§ 1). Internal vs External form and the required `sslmode=require&channel_binding=disable` parameters: § 3.1. |
 | `JWT_SECRET_KEY` | Yes | Generate with `python -c "import secrets; print(secrets.token_urlsafe(64))"`. Never reuse the local dev value. |
 | `JWT_ALGORITHM` | No (default `HS256`) | |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No (default `15`) | |
@@ -111,6 +118,57 @@ campus drive link.
 None of the optional integrations block startup if left unset. This is
 enforced in code (`app/integrations/email`, `app/integrations/ai`), not just
 a deployment convention.
+
+### 3.1 `DATABASE_URL` and `MONGODB_URI` — connection settings
+
+Both values are secrets: set them only in the Render dashboard (`sync:
+false` in `render.yaml`) or a local, gitignored `.env`. Never paste them into
+`render.yaml`, docs, commit messages, or logs.
+
+**`DATABASE_URL`** — one of two forms, depending on where the web service
+runs relative to the database:
+
+- **Same Render region as the database**: use the **Internal Database
+  URL** (private network, no public hop), rewritten to the app's scheme:
+
+  ```
+  postgresql+psycopg://<user>:<password>@<internal-host>/<database>
+  ```
+
+- **Different region, or connecting from your own machine** (Alembic, psql):
+  use the **External Database URL** with TLS required and channel binding
+  disabled:
+
+  ```
+  postgresql+psycopg://<user>:<password>@<host>.<region>-postgres.render.com:5432/<database>?sslmode=require&channel_binding=disable
+  ```
+
+  `channel_binding=disable` is needed for Render's external endpoint:
+  libpq's default (`prefer`) fails there with `SCRAM channel binding check
+  failed`, because the endpoint terminates TLS in front of Postgres. TLS
+  itself stays mandatory (`sslmode=require`). The query parameters are
+  passed through SQLAlchemy to psycopg unchanged, so the same URL works for
+  the app (`app/db/session.py`) and for Alembic (`alembic/env.py`).
+
+The region is part of the external host name (e.g. `…-a.singapore-postgres.render.com`).
+An Internal URL only works from a service in the same region. `render.yaml`
+does not pin a `region`, and Render's default region is Oregon. A web service
+in Oregon talking to a database in Singapore must use the External URL form
+and pays cross-region latency on every query. Check the service's region in
+the dashboard before choosing a form.
+
+URL-encode reserved characters in the password (`@` → `%40`, `:` → `%3A`,
+`/` → `%2F`, `%` → `%25`). `alembic/env.py` already escapes `%` for
+configparser.
+
+**`MONGODB_URI`** — the resume file bytes (GridFS bucket `resumes`) are not
+in Postgres (§ 11). Postgres `resumes.storage_path` holds only GridFS
+ObjectIds, so after switching `DATABASE_URL` to a database that was copied
+from another environment, `MONGODB_URI` and `MONGODB_DATABASE` must point at
+the **same** MongoDB deployment and database that wrote those files, or every
+resume download for the copied rows fails. Use the Atlas SRV or
+replica-set string with TLS on (`mongodb+srv://…` or `…?ssl=true`), and allow
+network access from Render in Atlas.
 
 ## 4. Run Alembic migrations against the production database
 

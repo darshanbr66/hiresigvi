@@ -20,7 +20,8 @@ export function Modal({
   title: string;
   onClose: () => void;
   children: ReactNode;
-  wide?: boolean;
+  /** true = 640px; "extra" = 960px, for dialogs that hold a review table. */
+  wide?: boolean | "extra";
 }) {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -33,7 +34,9 @@ export function Modal({
   return createPortal(
     <div className="dialog-overlay" role="presentation" onClick={onClose}>
       <div
-        className={wide ? "dialog-card dialog-card-wide" : "dialog-card"}
+        className={
+          wide === "extra" ? "dialog-card dialog-card-xwide" : wide ? "dialog-card dialog-card-wide" : "dialog-card"
+        }
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"

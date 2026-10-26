@@ -12,7 +12,7 @@ const baseJob: PublicJobDetail = {
   title: "Backend Engineer",
   department: "Engineering",
   location: "Remote",
-  employment_type: "Full-time",
+  employment_type: "FULL_TIME",
   openings_count: 1,
   created_at: new Date().toISOString(),
   description: "Own the recruitment platform's backend.",

@@ -20,6 +20,12 @@ import type {
   PublicCampusDriveApplicationResult,
   PublicCampusDriveResult,
 } from "../../types/publicCampusDrive";
+import type {
+  ProgramDeclaration,
+  PublicProgramApplicationResult,
+  PublicProgramResult,
+  PublicProgramSummary,
+} from "../../types/program";
 
 export function listOpenJobs(slug: string) {
   return apiClient.get<PublicJobSummary[]>(`/api/v1/public/organizations/${slug}/jobs`);
@@ -167,4 +173,71 @@ export function applyToCampusDrive(
     `/api/v1/public/campus-drive/${token}/apply`,
     buildApplicationFormData(values, resume, verificationToken, marksCard),
   );
+}
+
+// --- Recruitment programs (same identity rules as the careers site) ---
+
+export function listPublicPrograms(slug: string) {
+  return apiClient.get<PublicProgramSummary[]>(`/api/v1/public/organizations/${slug}/programs`);
+}
+
+export function getPublicProgram(programId: string) {
+  return apiClient.get<PublicProgramResult>(`/api/v1/public/programs/${programId}`);
+}
+
+export function checkProgramApplicantStatus(programId: string, query: ApplicantStatusQuery) {
+  return apiClient.post<ApplicantStatus>(`/api/v1/public/programs/${programId}/applicant-status`, query);
+}
+
+export function requestProgramEmailCode(programId: string, email: string) {
+  return apiClient.post<EmailVerificationRequested>(
+    `/api/v1/public/programs/${programId}/email-verification/request`,
+    { email },
+  );
+}
+
+export function verifyProgramEmailCode(programId: string, email: string, code: string) {
+  return apiClient.post<EmailVerificationConfirmed>(
+    `/api/v1/public/programs/${programId}/email-verification/verify`,
+    { email, code },
+  );
+}
+
+/** The careers-site form plus the program's education declaration and
+ * terms acceptance. Returned in the careers-site result shape so the same
+ * confirmation screen is shown. */
+export async function applyToProgram(
+  programId: string,
+  values: JobApplicationFormValues,
+  resume: File,
+  verificationToken: string,
+  marksCard: File | null,
+  declaration: ProgramDeclaration,
+): Promise<PublicApplicationResult> {
+  const formData = buildApplicationFormData(values, resume, verificationToken, marksCard);
+  formData.append("education_level", declaration.education_level);
+  if (declaration.study_year.trim()) formData.append("study_year", declaration.study_year.trim());
+  formData.append("specialization", declaration.specialization.trim());
+  if (declaration.institution_id) {
+    formData.append("institution_id", declaration.institution_id);
+  } else if (declaration.institution_name.trim()) {
+    formData.append("institution_name", declaration.institution_name.trim());
+  }
+  if (declaration.expected_completion_date) {
+    formData.append("expected_completion_date", declaration.expected_completion_date);
+  }
+  formData.append("terms_version", declaration.terms_version);
+  formData.append("terms_accepted", declaration.terms_accepted ? "true" : "false");
+  const result = await apiClient.postForm<PublicProgramApplicationResult>(
+    `/api/v1/public/programs/${programId}/apply`,
+    formData,
+  );
+  return {
+    id: result.id,
+    job_title: result.program_title,
+    candidate_email: result.candidate_email,
+    confirmation_email_sent: result.confirmation_email_sent,
+    careers_contact_email: result.careers_contact_email,
+    submitted_at: result.submitted_at,
+  };
 }

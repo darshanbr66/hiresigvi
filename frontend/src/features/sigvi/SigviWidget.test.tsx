@@ -63,15 +63,13 @@ describe("opening and closing", () => {
     openPanel();
 
     const dialog = screen.getByRole("dialog", { name: /sigvi/i });
-    expect(within(dialog).getByText(/hi, i'm sigvi/i)).toBeInTheDocument();
-    expect(within(dialog).getByText(/your ai assistant for sigvitas/i)).toBeInTheDocument();
-    expect(within(dialog).getByText(/i can help you explore/i)).toBeInTheDocument();
+    expect(within(dialog).getByText("Hi! How can I help?")).toBeInTheDocument();
+    expect(within(dialog).getByText("Ask me about careers at SIGVITAS.")).toBeInTheDocument();
     for (const suggestion of [
-      "Show me current openings",
+      "View open positions",
       "How do I apply?",
-      "How does the hiring process work?",
-      "Tell me about SIGVITAS",
-      "How does the assessment work?",
+      "Campus opportunities",
+      "Hiring process",
     ]) {
       expect(within(dialog).getByRole("button", { name: suggestion })).toBeInTheDocument();
     }
@@ -621,7 +619,7 @@ describe("accessibility", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Try later");
   });
 
-  it("marks decorative avatars and emoji as hidden from assistive tech", () => {
+  it("marks decorative avatars as hidden from assistive tech", () => {
     renderWidget();
     openPanel();
 
@@ -633,7 +631,6 @@ describe("accessibility", () => {
       const named = svg.getAttribute("role") === "img" && !!svg.getAttribute("aria-label");
       expect(decorative || named).toBe(true);
     });
-    expect(screen.getByText("👋")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("tells people it is an AI that can be wrong", () => {

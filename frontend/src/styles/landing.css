@@ -46,9 +46,9 @@
 
 .landing-brand-name {
   font-family: var(--font-display);
-  font-size: 0.95rem;
+  font-size: 0.9375rem;
   font-weight: var(--weight-strong);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
 }
 
 .landing-nav-links {
@@ -242,36 +242,35 @@
 }
 
 .hero-eyebrow {
-  margin: 0 0 1.1rem;
-  color: var(--color-primary);
-  font-size: 0.78rem;
-  letter-spacing: 0.14em;
+  margin: 0 0 1rem;
+  font-size: var(--text-meta);
+  letter-spacing: var(--tracking-caps);
 }
 
 .hero-title {
   margin: 0 0 1.25rem;
-  /* Bahnschrift ships with Windows 10/11 — a cleaner, more geometric face than
-     the default display stack at this size, with the same advance width so
-     the line breaks don't move. No webfont is loaded; anywhere it isn't
-     installed the heading falls back to the existing display stack. */
-  font-family: "Bahnschrift", var(--font-display);
+  /* The same family as the rest of the product, in the medium weight, with
+     open leading and only slight tightening — size alone carries it. */
   font-size: var(--text-display);
-  font-weight: var(--weight-strong);
-  line-height: 1.02;
-  letter-spacing: -0.035em;
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
+  text-wrap: balance;
 }
 
+/* The second phrase starts its own line; it is not recoloured — one ink
+   colour for the headline, the brand blue stays on the actions. */
 .hero-accent {
   display: block;
-  color: var(--color-primary);
 }
 
 .hero-sub {
-  max-width: 32rem;
+  max-width: 34rem;
   margin: 0;
   color: var(--color-text-muted);
-  font-size: clamp(1.02rem, 1.4vw, 1.2rem);
-  line-height: 1.6;
+  font-size: var(--text-lead);
+  line-height: var(--leading-lead);
+  text-wrap: pretty;
 }
 
 .hero-actions {
@@ -359,7 +358,10 @@
 
 .hero-legend {
   position: absolute;
-  right: clamp(1rem, 4vw, 2.5rem);
+  /* Clear of the fixed "Ask Sigvi" launcher in the bottom-right corner
+     (about 9rem wide plus its 1.25rem gap), which used to sit on top of the
+     last legend items. */
+  right: 12rem;
   bottom: 1.75rem;
   display: flex;
   flex-wrap: wrap;
@@ -464,25 +466,28 @@
 
 .section-eyebrow {
   margin: 0 0 0.6rem;
-  color: var(--color-primary);
-  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
   font-weight: var(--weight-strong);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
 .landing-section-title {
   margin: 0 0 0.8rem;
-  font-size: clamp(1.75rem, 3.4vw, 2.5rem);
-  line-height: 1.1;
-  letter-spacing: -0.03em;
+  font-size: var(--text-headline);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-headline);
+  letter-spacing: var(--tracking-headline);
 }
 
 .landing-section-sub {
-  max-width: 46rem;
+  max-width: 44rem;
   margin: 0;
   color: var(--color-text-muted);
-  font-size: 1.05rem;
+  font-size: var(--text-lead);
+  line-height: var(--leading-lead);
+  text-wrap: pretty;
 }
 
 .landing-more {
@@ -758,14 +763,16 @@
 
 .landing-final-inner h2 {
   margin: 0 0 0.6rem;
-  font-size: clamp(2rem, 4.4vw, 3.1rem);
-  letter-spacing: -0.035em;
+  font-size: var(--text-headline);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-headline);
+  letter-spacing: var(--tracking-headline);
 }
 
 .landing-final-inner p {
   margin: 0 0 1.75rem;
   color: var(--color-text-muted);
-  font-size: 1.1rem;
+  font-size: var(--text-lead);
 }
 
 .landing-footer {

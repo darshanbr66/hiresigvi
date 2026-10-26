@@ -5,7 +5,11 @@ composes an existing `Job` (or creates one inline), and participation is
 exactly `Application.campus_drive_id` with no separate membership table,
 per § 2 below. Each drive has its own public, no-login application link
 (§ 3). Campus reporting (§ 5) is real, computed from live data — both the
-per-drive funnel endpoint and the reports overview breakdown.
+per-drive funnel endpoint and the reports overview breakdown. Every drive
+belongs to an institution from the organization's institution registry
+(§ 1a), and a drive can require applicants' affiliation to be verified
+(§ 3a); the cross-drive campus report (§ 5) breaks results down by drive
+and institution.
 
 Not implemented: `eligibility_criteria` (jsonb filtering), `candidate_limit`
 enforcement, and recruiter-side bulk/CSV candidate import — candidates
@@ -21,7 +25,10 @@ CampusDrive
   job_id                  -- the opportunity being hired for (existing job,
                              or one created inline at drive-creation time —
                              see "job source" below)
-  college_name
+  institution_id          -- the drive's institution (§ 1a), NOT NULL
+  college_name            -- display snapshot of the institution's name
+  affiliation_verification_method -- NONE / EMAIL_DOMAIN / STUDENT_LIST /
+                             MANUAL (§ 3a), default NONE
   description
   batch_year / start_date / end_date / registration_deadline
   default_assessment_id   -- optional; if set, a candidate who applies is
@@ -43,6 +50,15 @@ never both, never neither. This avoids the recruiter having to leave the
 campus-drive flow to first create a job, without ever creating a duplicate
 job behind the scenes.
 
+**Institution source.** Creating a drive takes exactly one of
+`institution_id` (an active institution from the registry),
+`new_institution` (registers it in the same request), or — for older
+clients — `college_name`, which is matched to (or registered as) an
+institution by normalized name. A drive's institution can be changed only
+while it has no applications; after that, a new drive is needed.
+EMAIL_DOMAIN verification can only be chosen for an institution that has an
+official email domain on record.
+
 **Status lifecycle** (`CAMPUS_DRIVE_TRANSITIONS` in
 `app/models/campus_drive.py`, enforced server-side, not just hidden in the
 UI):
@@ -61,6 +77,23 @@ just further transitions, so closed drives stay in the recruiter's history
 and their applications remain intact. Only `ACTIVE` drives accept new
 public applications (§ 3); `DRAFT` drives 404 on their public link so an
 unfinished drive can't be applied to before it's ready.
+
+## 1a. Institution registry
+
+`Institution` (`app/models/institution.py`, `app/services/institution_service.py`,
+`/api/v1/recruiter/institutions`, Institutions page) is the organization's
+list of colleges/universities — campus drives, program eligibility
+(`docs/programs.md`) and candidate education declarations all point at it
+instead of repeating free-text college names. Fields: name (unique per
+organization after case/whitespace normalization), optional type
+(UNIVERSITY, COLLEGE, INSTITUTE, OTHER), city/state/country, website,
+official student email domain(s) — **optional; many institutions have
+none** — placement contact name/email/phone, notes, active flag.
+Institutions are deactivated, never deleted, so history stays intact.
+
+Migration `1a2b3c4d5e6f` registered one institution per distinct existing
+`college_name` and linked every existing drive to it; `college_name` was
+left unchanged.
 
 ## 2. Candidates in a drive
 
@@ -123,10 +156,44 @@ An `AI_SCREENED_OUT` application is kept but never fast-tracked; HR decides
 (override or reject). If the drive has no assessment attached, the
 application stays at `APPLIED` for a recruiter to review.
 
+**The drive comes from the link, never from the form.** The backend
+resolves the drive (and therefore its institution) from the hashed link
+token only. No apply request field can set or change the drive or the
+institution — a tampered `campus_drive_id` / `institution_id` in the form is
+ignored — so the `Application.campus_drive_id` and the affiliation record
+always describe the drive the link belongs to. The same person can apply
+through several permitted drives with one candidate profile, subject to the
+usual one-application-per-job and reapply rules.
+
 **Import/add never sends an assessment invitation** unless the drive was
 explicitly configured with one — this is a hard requirement, not a
 default-off setting: a recruiter adding a candidate one at a time never
 gets a surprise auto-invite.
+
+## 3a. Affiliation verification
+
+Opening a campus link proves nothing about whether the applicant actually
+studies at the institution. A drive's `affiliation_verification_method`
+decides what happens (`app/services/campus_affiliation_service.py`):
+
+| Method | On apply | Auto-verified when |
+|---|---|---|
+| NONE | nothing recorded (verification not required — **not** "verified") | — |
+| EMAIL_DOMAIN | `CampusAffiliationVerification` PENDING | the candidate's *verified* email is on one of the institution's domains (exact or subdomain; `notcollege.edu` ≠ `college.edu`) |
+| STUDENT_LIST | PENDING | the verified email is on the drive's college-provided student list (`campus_drive_roster_entries`); adding the list later verifies pending matches |
+| MANUAL | PENDING | never — HR decides |
+
+Whatever the method, HR (`campus_drive.manage`) can verify or reject any
+record with a note; each record keeps status (PENDING / VERIFIED /
+REJECTED), method, reviewer and time, and every change is written to the
+activity log. The institution on the record is always the drive's.
+Verification status is visible on the drive's Verification panel, in the
+drive funnel and in the campus report. It does not block the application
+pipeline by itself — HR decides what to do with a rejected record.
+
+Not implemented, deliberately: uploading a student-ID or other proof
+document. The three methods above avoid collecting identity documents; a
+document method would need an approved retention policy first.
 
 ## 4. Recruiter-side management
 
@@ -137,7 +204,21 @@ GET    /api/v1/recruiter/campus-drives/{id}                -- detail
 PATCH  /api/v1/recruiter/campus-drives/{id}                -- edit fields and/or status
 GET    /api/v1/recruiter/campus-drives/{id}/funnel          -- real counts, see § 5
 POST   /api/v1/recruiter/campus-drives/{id}/regenerate-link -- invalidates the old link
+GET    /api/v1/recruiter/campus-drives/report[?institution_id=] -- cross-drive report, § 5
+GET    /api/v1/recruiter/campus-drives/{id}/verifications  -- affiliation records, § 3a
+POST   /api/v1/recruiter/campus-drives/{id}/verifications/{verification_id}/review -- verify/reject
+GET    /api/v1/recruiter/campus-drives/{id}/roster         -- student list
+POST   /api/v1/recruiter/campus-drives/{id}/roster         -- add students (email, roll no., name)
+DELETE /api/v1/recruiter/campus-drives/{id}/roster/{entry_id}
+GET    /api/v1/recruiter/campus-drives?institution_id=     -- list filtered by institution
+
+GET    /api/v1/recruiter/institutions[?q=&active_only=]    -- registry, § 1a
+POST   /api/v1/recruiter/institutions
+GET    /api/v1/recruiter/institutions/{id}
+PATCH  /api/v1/recruiter/institutions/{id}                 -- edit / deactivate
 ```
+
+Reading needs `campus_drive.read`; every change needs `campus_drive.manage`.
 
 ## 5. Campus reporting
 
@@ -159,8 +240,18 @@ real (never hardcoded) views are available:
   assessment_invited, assessment_completed, shortlisted, interview,
   selected, rejected, hired.
 - **Cross-drive comparison** (`GET /api/v1/recruiter/reports/overview`,
-  `campus_drives` field): total application count per drive, for the
-  Reports page's "Campus drives" chart.
+  `campus_drives` field): total application count per drive (with its
+  institution), for the Reports page's "Campus drives" chart.
+- **Campus report** (`GET /campus-drives/report`, optionally
+  `?institution_id=`; table on the Campus Drives page): one row per drive —
+  institution, job, applications, verification pending/verified/rejected,
+  assessment invited/completed/passed/failed/awaiting grading, interview,
+  selected, hired, rejected. All live counts.
+- The per-drive funnel also carries the verification counts.
+
+The Applications list can be filtered by campus drive and by institution
+(`campus_drive_id`, `institution_id` query parameters; both are filters in
+the Applications page's Filters panel).
 
 Downstream of `apply`, campus applications flow through the exact same
 application workflow (`docs/recruitment-workflow.md`) as any other

@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel
 
+from app.models.job import EmploymentType
+
 
 class StatusCount(BaseModel):
     status: str
@@ -11,7 +13,19 @@ class StatusCount(BaseModel):
 class JobApplicationCount(BaseModel):
     job_id: uuid.UUID
     job_title: str
+    #: None for a recruitment program's carrier job (or a deleted job).
+    employment_type: EmploymentType | None = None
     count: int
+
+
+class EmploymentTypeCount(BaseModel):
+    """Jobs and applications per employment type. `employment_type` None
+    groups recruitment-program applications, which are not an internship,
+    part-time or full-time job."""
+
+    employment_type: EmploymentType | None
+    jobs: int
+    applications: int
 
 
 class ScreeningSummary(BaseModel):
@@ -31,6 +45,8 @@ class AssessmentSummaryStats(BaseModel):
 class CampusDriveCount(BaseModel):
     drive_id: uuid.UUID
     drive_name: str
+    institution_id: uuid.UUID | None = None
+    institution_name: str | None = None
     application_count: int
 
 
@@ -52,6 +68,7 @@ class ReportOverview(BaseModel):
     hired_candidates: int
     applications_by_status: list[StatusCount]
     applications_by_job: list[JobApplicationCount]
+    by_employment_type: list[EmploymentTypeCount]
     screening: ScreeningSummary
     assessments: AssessmentSummaryStats
     campus_drives: list[CampusDriveCount]

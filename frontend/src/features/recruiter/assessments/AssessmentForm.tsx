@@ -4,8 +4,16 @@ import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
-import type { AssessmentCreateRequest, ParsedQuestionsResponse, QuestionCreate, QuestionType } from "../../../types/assessment";
+import {
+  QUESTION_TYPE_LABELS,
+  isChoiceType,
+  type AssessmentCreateRequest,
+  type ParsedQuestionsResponse,
+  type QuestionCreate,
+} from "../../../types/assessment";
 import { parseImportQuestions } from "./api";
+import { BankQuestionPicker } from "./BankQuestionPicker";
+import { isBlankQuestion, QuestionEditor } from "./QuestionEditor";
 
 const TEMPLATE_CSV =
   "question,option_1,option_2,option_3,option_4,correct,type,points\n" +
@@ -17,19 +25,17 @@ export function emptyQuestion(): QuestionCreate {
     prompt: "",
     type: "MCQ_SINGLE",
     points: 1,
+    negative_points: 0,
     options: [
       { label: "", is_correct: true },
       { label: "", is_correct: false },
     ],
+    accepted_answers: [],
   };
 }
 
 export function emptyAssessmentFormValue(): AssessmentCreateRequest {
   return { title: "", instructions: "", duration_minutes: 30, pass_score: 60, questions: [emptyQuestion()] };
-}
-
-function isBlankQuestion(q: QuestionCreate): boolean {
-  return q.prompt.trim() === "" && q.options.every((o) => o.label.trim() === "");
 }
 
 function downloadTemplate() {
@@ -73,6 +79,7 @@ export function AssessmentForm({
   const [preview, setPreview] = useState<ParsedQuestionsResponse | null>(null);
   const [selected, setSelected] = useState<boolean[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const { title, instructions, duration_minutes: durationMinutes, pass_score: passScore, questions } = value;
   const questionsDisabled = disabled || questionsLocked;
@@ -121,44 +128,19 @@ export function AssessmentForm({
     showToast(`Added ${chosen.length} question(s) to the assessment.`, "success");
   }
 
-  function updateQuestion(index: number, fields: Partial<QuestionCreate>) {
-    patch({ questions: questions.map((q, i) => (i === index ? { ...q, ...fields } : q)) });
-  }
-
-  function updateQuestionType(index: number, type: QuestionType) {
-    patch({
-      questions: questions.map((q, i) => {
-        if (i !== index) return q;
-        if (type === "MCQ_SINGLE") {
-          let picked = false;
-          const options = q.options.map((o) => {
-            const isCorrect = !picked && o.is_correct;
-            if (isCorrect) picked = true;
-            return { ...o, is_correct: isCorrect };
-          });
-          if (!picked && options.length > 0) options[0].is_correct = true;
-          return { ...q, type, options };
-        }
-        return { ...q, type };
-      }),
-    });
-  }
-
-  function updateOption(qIndex: number, oIndex: number, fields: { label?: string; is_correct?: boolean }) {
-    patch({
-      questions: questions.map((q, i) => {
-        if (i !== qIndex) return q;
-        const options = q.options.map((o, j) => (j === oIndex ? { ...o, ...fields } : o));
-        if (fields.is_correct && q.type === "MCQ_SINGLE") {
-          return { ...q, options: options.map((o, j) => ({ ...o, is_correct: j === oIndex })) };
-        }
-        return { ...q, options };
-      }),
-    });
+  function replaceQuestion(index: number, question: QuestionCreate) {
+    patch({ questions: questions.map((q, i) => (i === index ? question : q)) });
   }
 
   function addQuestion() {
     patch({ questions: [...questions, emptyQuestion()] });
+  }
+
+  function addBankQuestions(chosen: QuestionCreate[]) {
+    const base = questions.length === 1 && isBlankQuestion(questions[0]) ? [] : questions;
+    patch({ questions: [...base, ...chosen] });
+    setPickerOpen(false);
+    showToast(`Added ${chosen.length} question(s) from the question bank.`, "success");
   }
 
   function removeQuestion(index: number) {
@@ -173,21 +155,12 @@ export function AssessmentForm({
     patch({ questions: next });
   }
 
-  function addOption(qIndex: number) {
-    patch({
-      questions: questions.map((q, i) =>
-        i === qIndex ? { ...q, options: [...q.options, { label: "", is_correct: false }] } : q,
-      ),
-    });
-  }
-
-  function removeOption(qIndex: number, oIndex: number) {
-    patch({
-      questions: questions.map((q, i) =>
-        i === qIndex ? { ...q, options: q.options.filter((_, j) => j !== oIndex) } : q,
-      ),
-    });
-  }
+  const totalMarks = questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
+  const manualCount = questions.filter(
+    (q) => q.type === "DESCRIPTIVE" || q.type === "CODING" ||
+      (q.type === "SHORT_ANSWER" && (q.accepted_answers?.length ?? 0) === 0),
+  ).length;
+  const bankVersionIds = questions.flatMap((q) => (q.bank_version_id ? [q.bank_version_id] : []));
 
   return (
     <div className="stack-lg" style={{ gap: "1.25rem" }}>
@@ -347,86 +320,53 @@ export function AssessmentForm({
 
       <div>
         <h3>Questions</h3>
+        <p className="muted" style={{ marginBottom: "0.75rem" }}>
+          {questions.length} question(s) · {totalMarks} mark(s) in total
+          {manualCount > 0 ? ` · ${manualCount} graded manually` : ""}
+          {bankVersionIds.length > 0 ? ` · ${bankVersionIds.length} from the question bank` : ""}
+        </p>
         <div className="stack-lg" style={{ gap: "1rem" }}>
           {questions.map((question, qIndex) => (
             <div key={qIndex} className="card" style={{ background: "var(--color-bg)" }}>
-              <div className="field-row">
-                <label className="field" style={{ gridColumn: "1 / -1" }}>
-                  <span>Question {qIndex + 1}</span>
-                  <input
-                    required
-                    value={question.prompt}
-                    onChange={(e) => updateQuestion(qIndex, { prompt: e.target.value })}
-                    disabled={questionsDisabled}
-                  />
-                </label>
-              </div>
-              <div className="field-row">
-                <label className="field">
-                  <span>Type</span>
-                  <select
-                    value={question.type}
-                    onChange={(e) => updateQuestionType(qIndex, e.target.value as QuestionType)}
-                    disabled={questionsDisabled}
-                  >
-                    <option value="MCQ_SINGLE">Single choice</option>
-                    <option value="MCQ_MULTI">Multiple choice</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Points</span>
-                  <input
-                    required
-                    type="number"
-                    min={1}
-                    value={question.points}
-                    onChange={(e) => updateQuestion(qIndex, { points: Number(e.target.value) })}
-                    disabled={questionsDisabled}
-                  />
-                </label>
-              </div>
-
-              <div className="stack-lg" style={{ gap: "0.4rem" }}>
-                {question.options.map((option, oIndex) => (
-                  <div key={oIndex} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <input
-                      type={question.type === "MCQ_SINGLE" ? "radio" : "checkbox"}
-                      name={`correct-${qIndex}`}
-                      checked={option.is_correct}
-                      onChange={(e) => updateOption(qIndex, oIndex, { is_correct: e.target.checked })}
-                      title="Correct answer"
-                      disabled={questionsDisabled}
-                    />
+              {question.bank_version_id ? (
+                <div className="stack-sm">
+                  <p>
+                    <strong>
+                      Question {qIndex + 1}. {question.prompt}
+                    </strong>{" "}
+                    <span className="badge badge-active">From question bank</span>
+                  </p>
+                  <p className="muted">
+                    {QUESTION_TYPE_LABELS[question.type]}
+                    {isChoiceType(question.type)
+                      ? ` · ${question.options.map((o) => (o.is_correct ? `${o.label} ✓` : o.label)).join(" · ")}`
+                      : ""}
+                  </p>
+                  <label className="field" style={{ maxWidth: "10rem" }}>
+                    <span>Marks in this test</span>
                     <input
                       required
-                      placeholder={`Option ${oIndex + 1}`}
-                      value={option.label}
-                      onChange={(e) => updateOption(qIndex, oIndex, { label: e.target.value })}
-                      style={{ flex: 1 }}
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={question.points}
+                      onChange={(e) => replaceQuestion(qIndex, { ...question, points: Number(e.target.value) })}
                       disabled={questionsDisabled}
                     />
-                    {question.options.length > 2 && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => removeOption(qIndex, oIndex)}
-                        disabled={questionsDisabled}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => addOption(qIndex)}
-                  style={{ alignSelf: "flex-start" }}
+                  </label>
+                  <span className="field-hint">
+                    The exact bank version is copied into this test — later edits in the question
+                    bank never change it.
+                  </span>
+                </div>
+              ) : (
+                <QuestionEditor
+                  heading={`Question ${qIndex + 1}`}
+                  value={question}
+                  onChange={(next) => replaceQuestion(qIndex, next)}
                   disabled={questionsDisabled}
-                >
-                  + Add option
-                </button>
-              </div>
+                />
+              )}
 
               <div className="btn-group" style={{ marginTop: "0.75rem" }}>
                 <button
@@ -461,17 +401,30 @@ export function AssessmentForm({
         </div>
 
         {!questionsLocked && (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ marginTop: "1rem" }}
-            onClick={addQuestion}
-            disabled={disabled}
-          >
-            + Add question
-          </button>
+          <div className="btn-group" style={{ marginTop: "1rem" }}>
+            <button type="button" className="btn btn-ghost" onClick={addQuestion} disabled={disabled}>
+              + Add question
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setPickerOpen(true)}
+              disabled={disabled}
+            >
+              + Add from question bank
+            </button>
+          </div>
         )}
       </div>
+
+      {pickerOpen && (
+        <BankQuestionPicker
+          accessToken={accessToken}
+          alreadySelected={bankVersionIds}
+          onAdd={addBankQuestions}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

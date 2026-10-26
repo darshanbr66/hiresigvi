@@ -31,8 +31,8 @@ class CandidateResumeProfile(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMi
         UUID(as_uuid=True),
         ForeignKey("candidates.id", ondelete="CASCADE"),
         nullable=False,
+        # A unique *constraint* (uq_…), as migration c4d5e6f7a8b9 created it.
         unique=True,
-        index=True,
     )
     source_resume_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="SET NULL"), nullable=True

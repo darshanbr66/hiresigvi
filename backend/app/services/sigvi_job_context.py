@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.rls import set_tenant_context
 from app.knowledge.keyword_retriever import tokenize
-from app.models.job import JobStatus
+from app.models.job import EMPLOYMENT_TYPE_LABELS, JobStatus
 from app.schemas.sigvi import ChatHistoryMessage, ChatJobCard
 from app.services import job_service, organization_service
 
@@ -57,7 +57,9 @@ async def load_public_jobs(db: AsyncSession, slug: str) -> list[PublicJob]:
             title=job.title,
             department=job.department,
             location=job.location,
-            employment_type=job.employment_type,
+            employment_type=(
+                EMPLOYMENT_TYPE_LABELS[job.employment_type] if job.employment_type else None
+            ),
             openings_count=job.openings_count,
             description=job.description if job.description_visible else None,
         )

@@ -27,6 +27,10 @@ class EmailTemplateKey(StrEnum):
     ASSESSMENT_INVITATION = "ASSESSMENT_INVITATION"
     NEXT_STEPS = "NEXT_STEPS"
     REJECTION = "REJECTION"
+    # Recruitment programs (docs/programs.md § 6). Sent manually, like every
+    # other template; the wording carries no amounts or terms of its own.
+    SCHOLARSHIP_UPDATE = "SCHOLARSHIP_UPDATE"
+    TRAINING_ENROLLMENT = "TRAINING_ENROLLMENT"
     GENERAL = "GENERAL"
 
 
@@ -50,6 +54,9 @@ KNOWN_PLACEHOLDERS: frozenset[str] = frozenset(
         "assessment_deadline",
         "assessment_instructions",
         "additional_instructions",
+        "scholarship_update",
+        "training_start_date",
+        "training_duration",
     }
 )
 
@@ -291,6 +298,67 @@ After careful consideration, we have decided not to move forward with your appli
 We encourage you to apply for future openings that match your skills and experience, and we wish you every success in your career.
 
 {_SIGNATURE}""",
+    ),
+    EmailTemplate(
+        key=EmailTemplateKey.SCHOLARSHIP_UPDATE,
+        name="Scholarship update (programs)",
+        description="Tell a program participant about their scholarship status, in your own approved words.",
+        subject="Scholarship Update – {{job_title}}",
+        body=f"""Dear {{{{candidate_name}}}},
+
+We are writing with an update about the scholarship associated with the {{{{job_title}}}} at {{{{company_name}}}}.
+
+{{{{scholarship_update}}}}
+
+Any scholarship is subject to the company's approved terms and agreement. Please reply to this email if you have any questions.
+
+{_SIGNATURE}""",
+        fields=(
+            TemplateField(
+                "scholarship_update",
+                "Scholarship update",
+                input_type="textarea",
+                required=True,
+                placeholder="Only business-approved details: the decision and the next steps…",
+            ),
+        ),
+    ),
+    EmailTemplate(
+        key=EmailTemplateKey.TRAINING_ENROLLMENT,
+        name="Training enrollment (programs)",
+        description="Confirm a participant's training enrollment, start date and duration.",
+        subject="Training Enrollment – {{job_title}}",
+        body=f"""Dear {{{{candidate_name}}}},
+
+We are pleased to confirm your enrollment in the training for the {{{{job_title}}}} at {{{{company_name}}}}.
+
+Training details
+Start date: {{{{training_start_date}}}}
+Duration: {{{{training_duration}}}}
+
+{{{{additional_instructions}}}}
+
+Please reply to this email to confirm, or if you have any questions.
+
+{_SIGNATURE}""",
+        fields=(
+            TemplateField(
+                "training_start_date", "Training start date", input_type="date", required=True
+            ),
+            TemplateField(
+                "training_duration",
+                "Training duration",
+                input_type="select",
+                required=True,
+                options=("6 months", "12 months"),
+            ),
+            TemplateField(
+                "additional_instructions",
+                "Additional instructions",
+                input_type="textarea",
+                placeholder="Where to report, what to bring, fee-payment reminders…",
+            ),
+        ),
     ),
     EmailTemplate(
         key=EmailTemplateKey.GENERAL,

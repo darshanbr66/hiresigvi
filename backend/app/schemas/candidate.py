@@ -16,7 +16,7 @@ from pydantic import (
 )
 
 from app.core.phone import InvalidPhoneNumberError, canonical_phone_or_none, normalize_phone
-from app.models.candidate import CandidateSource, CandidateType
+from app.models.candidate import CandidateSource, CandidateType, EducationLevel
 
 
 def _blank_to_none(value: object) -> object:
@@ -304,6 +304,13 @@ class CandidateResponse(BaseModel):
     date_of_birth: date | None = None
     place_of_birth: str | None = None
     languages: list[str] = Field(default_factory=list)
+    # Self-declared current education (recruitment-program applications).
+    education_level: EducationLevel | None = None
+    current_study_year: int | None = None
+    specialization: str | None = None
+    institution_id: uuid.UUID | None = None
+    institution_name: str | None = None
+    expected_completion_date: date | None = None
     email_verified_at: datetime | None = None
     source: CandidateSource
     is_active: bool

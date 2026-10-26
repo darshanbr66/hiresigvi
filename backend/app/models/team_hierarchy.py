@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from enum import StrEnum
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -66,6 +66,15 @@ class Employee(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     __tablename__ = "employees"
     __table_args__ = (
         Index("ix_employees_org_dept_display_order", "organization_id", "department_id", "display_order"),
+        # One active record per email; a removed (soft-deleted) employee's
+        # email can be reused (migration e8f9a0b1c2d3).
+        Index(
+            "uq_employees_org_email",
+            "organization_id",
+            "email",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)

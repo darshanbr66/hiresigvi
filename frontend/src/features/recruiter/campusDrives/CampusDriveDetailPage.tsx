@@ -9,12 +9,16 @@ import { Modal } from "../../../shared/components/Modal";
 import { Pagination } from "../../../shared/components/Pagination";
 import { QrCode } from "../../../shared/components/QrCode";
 import { useToast } from "../../../shared/components/ToastContext";
-import type {
-  CampusDriveFunnelCounts,
-  CampusDriveResponse,
-  CampusDriveStatus,
+import {
+  VERIFICATION_METHOD_LABELS,
+  type AffiliationVerificationMethod,
+  type CampusDriveFunnelCounts,
+  type CampusDriveResponse,
+  type CampusDriveStatus,
 } from "../../../types/campusDrive";
 import { useAuth } from "../../auth/AuthContext";
+import { listInstitutions } from "../institutions/api";
+import { AffiliationVerificationPanel } from "./AffiliationVerificationPanel";
 import { listApplicationsPage } from "../applications/api";
 import {
   PAGE_SIZE,
@@ -65,9 +69,16 @@ const FUNNEL_STAGES: { key: keyof CampusDriveFunnelCounts; label: string }[] = [
   { key: "hired", label: "Hired" },
 ];
 
+const VERIFICATION_STAGES: { key: keyof CampusDriveFunnelCounts; label: string }[] = [
+  { key: "verification_pending", label: "Verification pending" },
+  { key: "verified", label: "Institution verified" },
+  { key: "verification_rejected", label: "Verification rejected" },
+];
+
 interface EditFormState {
   name: string;
-  collegeName: string;
+  institutionId: string;
+  verificationMethod: AffiliationVerificationMethod;
   description: string;
   registrationDeadline: string;
 }
@@ -75,7 +86,8 @@ interface EditFormState {
 function driveToEditForm(drive: CampusDriveResponse): EditFormState {
   return {
     name: drive.name,
-    collegeName: drive.college_name,
+    institutionId: drive.institution_id,
+    verificationMethod: drive.affiliation_verification_method,
     description: drive.description ?? "",
     registrationDeadline: drive.registration_deadline ?? "",
   };
@@ -106,6 +118,12 @@ export function CampusDriveDetailPage() {
     queryKey: ["recruiter", "campus-drives", driveId, "funnel"],
     queryFn: () => getCampusDriveFunnel(driveId, token),
     enabled: accessToken !== null,
+  });
+
+  const institutionsQuery = useQuery({
+    queryKey: ["recruiter", "institutions", "active"],
+    queryFn: () => listInstitutions(token, { activeOnly: true }),
+    enabled: accessToken !== null && showEditForm,
   });
 
   // Search, filters and page live in the URL and are applied by the server —
@@ -160,7 +178,10 @@ export function CampusDriveDetailPage() {
         driveId,
         {
           name: editForm.name,
-          college_name: editForm.collegeName,
+          ...(editForm.institutionId !== driveQuery.data?.institution_id
+            ? { institution_id: editForm.institutionId }
+            : {}),
+          affiliation_verification_method: editForm.verificationMethod,
           description: editForm.description || null,
           registration_deadline: editForm.registrationDeadline || null,
         },
@@ -232,7 +253,10 @@ export function CampusDriveDetailPage() {
         <div>
           <h1>{drive.name}</h1>
           <p className="muted">
-            {drive.job_title} · {drive.college_name}
+            {drive.job_title} · {drive.institution_name}
+          </p>
+          <p className="field-hint">
+            Institution verification: {VERIFICATION_METHOD_LABELS[drive.affiliation_verification_method]}
           </p>
           <span className={`badge ${STATUS_BADGE[drive.status]}`}>{drive.status}</span>
         </div>
@@ -326,7 +350,10 @@ export function CampusDriveDetailPage() {
         {funnelQuery.isPending && <p role="status">Loading funnel…</p>}
         {funnelQuery.isSuccess && (
           <div className="funnel-grid">
-            {FUNNEL_STAGES.map((stage) => (
+            {[
+              ...FUNNEL_STAGES,
+              ...(drive.affiliation_verification_method !== "NONE" ? VERIFICATION_STAGES : []),
+            ].map((stage) => (
               <div key={stage.key} className="funnel-stat">
                 <span className="funnel-stat-value">{funnelQuery.data[stage.key]}</span>
                 <span className="funnel-stat-label">{stage.label}</span>
@@ -335,6 +362,10 @@ export function CampusDriveDetailPage() {
           </div>
         )}
       </section>
+
+      {drive.affiliation_verification_method !== "NONE" && (
+        <AffiliationVerificationPanel drive={drive} accessToken={token} />
+      )}
 
       <section className="card">
         <h2>Candidates in this drive</h2>
@@ -441,13 +472,47 @@ export function CampusDriveDetailPage() {
               />
             </label>
             <label className="field">
-              <span>College / institution</span>
-              <input
+              <span>Institution</span>
+              <select
                 required
-                value={editForm.collegeName}
-                onChange={(e) => setEditForm({ ...editForm, collegeName: e.target.value })}
+                value={editForm.institutionId}
+                onChange={(e) => setEditForm({ ...editForm, institutionId: e.target.value })}
+                disabled={editMutation.isPending || drive.application_count > 0}
+              >
+                <option value={drive.institution_id}>{drive.institution_name}</option>
+                {institutionsQuery.data
+                  ?.filter((institution) => institution.id !== drive.institution_id)
+                  .map((institution) => (
+                    <option key={institution.id} value={institution.id}>
+                      {institution.name}
+                    </option>
+                  ))}
+              </select>
+              {drive.application_count > 0 && (
+                <span className="field-hint">
+                  This drive already has applications, so its institution can't change.
+                </span>
+              )}
+            </label>
+            <label className="field">
+              <span>Institution verification</span>
+              <select
+                value={editForm.verificationMethod}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    verificationMethod: e.target.value as AffiliationVerificationMethod,
+                  })
+                }
                 disabled={editMutation.isPending}
-              />
+              >
+                {(Object.keys(VERIFICATION_METHOD_LABELS) as AffiliationVerificationMethod[]).map((method) => (
+                  <option key={method} value={method}>
+                    {VERIFICATION_METHOD_LABELS[method]}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">Applies to applications received from now on.</span>
             </label>
             <label className="field">
               <span>Description</span>

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.assessment import Assessment
+from app.models.institution import AffiliationVerificationMethod, Institution
 from app.models.job import Job
 
 
@@ -46,7 +47,10 @@ class CampusDrive(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     Simplified from docs/campus-hiring.md: no `eligibility_criteria` jsonb
     filter and no `candidate_limit` enforcement — both real gaps, noted
     here rather than silently dropped, not blocking the core
-    create-drive -> share-link -> track-applications flow.
+    create-drive -> share-link -> track-applications flow. The drive's
+    institution comes from the registry (`institution_id`), and the
+    application's drive is always resolved server-side from the link token,
+    never from a candidate-submitted identifier.
     """
 
     __tablename__ = "campus_drives"
@@ -55,7 +59,26 @@ class CampusDrive(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="RESTRICT"), nullable=False, index=True
     )
+    # The drive's institution, from the organization's registry
+    # (app/models/institution.py). `college_name` is kept as a display
+    # snapshot of the institution's name (synchronized by
+    # campus_drive_service) so existing readers keep working; the FK is the
+    # source of truth for filtering and reporting.
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("institutions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     college_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # How applicants' membership of the institution is confirmed
+    # (docs/campus-hiring.md § 3a). NONE = not required for this drive.
+    affiliation_verification_method: Mapped[AffiliationVerificationMethod] = mapped_column(
+        Enum(AffiliationVerificationMethod, name="affiliation_verification_method", native_enum=True),
+        nullable=False,
+        default=AffiliationVerificationMethod.NONE,
+        server_default=AffiliationVerificationMethod.NONE.value,
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     batch_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -86,6 +109,7 @@ class CampusDrive(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     deletion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     job: Mapped[Job] = relationship(Job, lazy="raise", viewonly=True)
+    institution: Mapped[Institution] = relationship(Institution, lazy="raise", viewonly=True)
     default_assessment: Mapped[Assessment | None] = relationship(
         Assessment, lazy="raise", viewonly=True
     )

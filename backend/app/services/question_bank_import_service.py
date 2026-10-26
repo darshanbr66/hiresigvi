@@ -128,13 +128,19 @@ def _prompt_key(prompt: str) -> str:
 
 
 def _content(question: ParsedQuestion) -> BankQuestionContent:
-    return BankQuestionContent(
-        type=question.type,
-        prompt=question.prompt,
-        points=question.points,
-        options=[BankOptionInput(label=o.label, is_correct=o.is_correct) for o in question.options],
-        accepted_answers=question.accepted_answers,
-        explanation=question.explanation,
+    # model_validate so the parser's plain-string type is coerced to
+    # QuestionType by pydantic and a bad value still raises ValidationError.
+    return BankQuestionContent.model_validate(
+        {
+            "type": question.type,
+            "prompt": question.prompt,
+            "points": question.points,
+            "options": [
+                BankOptionInput(label=o.label, is_correct=o.is_correct) for o in question.options
+            ],
+            "accepted_answers": question.accepted_answers,
+            "explanation": question.explanation,
+        }
     )
 
 
@@ -168,7 +174,7 @@ def _resolve_preview_category(
         return (parent.name if parent else subject_name), parent is None, None
     topic_name = collapse_whitespace(topic)
     child = categories.find(parent.id, topic_name) if parent else None
-    if child is not None and not child.is_active:
+    if parent is not None and child is not None and not child.is_active:
         return f"{parent.name} › {child.name}", False, f'The topic "{child.name}" is inactive.'
     path = f"{parent.name if parent else subject_name} › {child.name if child else topic_name}"
     return path, child is None, None

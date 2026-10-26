@@ -82,7 +82,8 @@ async def _name_taken(
     )
     if exclude_id is not None:
         query = query.where(Institution.id != exclude_id)
-    return await db.scalar(query)
+    existing = await db.scalar(query)
+    return existing
 
 
 def _duplicate_error(existing: Institution) -> ConflictError:

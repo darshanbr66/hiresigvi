@@ -478,7 +478,7 @@ async def campus_report(
         )
         .group_by(Application.campus_drive_id)
     )
-    pending_review = dict(pending_review_rows.all())
+    pending_review: dict[uuid.UUID | None, int] = dict(pending_review_rows.tuples().all())
 
     rows: list[CampusDriveReportRow] = []
     for drive in drives:

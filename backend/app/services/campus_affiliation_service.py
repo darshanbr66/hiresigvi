@@ -115,12 +115,13 @@ async def open_verification(
 async def get_for_application(
     db: AsyncSession, organization_id: uuid.UUID, application_id: uuid.UUID
 ) -> CampusAffiliationVerification | None:
-    return await db.scalar(
+    record = await db.scalar(
         select(CampusAffiliationVerification).where(
             CampusAffiliationVerification.organization_id == organization_id,
             CampusAffiliationVerification.application_id == application_id,
         )
     )
+    return record
 
 
 @dataclass(frozen=True)

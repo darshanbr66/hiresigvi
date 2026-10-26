@@ -35,6 +35,7 @@ from app.models.user import User
 from app.schemas.question_bank import (
     BankItemCreateRequest,
     BankItemUpdateRequest,
+    BankOptionInput,
     BankQuestionContent,
     CategoryCreateRequest,
     CategoryUpdateRequest,
@@ -392,7 +393,7 @@ def content_of(version: QuestionBankItemVersion) -> BankQuestionContent:
         points=version.points,
         negative_points=version.negative_points,
         options=[
-            {"label": option["label"], "is_correct": option["key"] in correct}
+            BankOptionInput(label=option["label"], is_correct=option["key"] in correct)
             for option in version.options
         ],
         accepted_answers=list(key.accepted_answers),
@@ -650,7 +651,7 @@ async def require_snapshot_source(
     row = result.first()
     if row is None:
         raise NotFoundError("Question bank question not found.")
-    version, item = row
+    version, item = row.tuple()
     if already_in_test:
         return version
     if item.status != QuestionBankStatus.PUBLISHED:

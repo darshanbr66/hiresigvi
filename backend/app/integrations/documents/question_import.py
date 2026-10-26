@@ -37,6 +37,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass, field
+from typing import TypedDict
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -78,6 +79,17 @@ class ParsedQuestion:
     topic: str | None = None
     tags: list[str] = field(default_factory=list)
     explanation: str | None = None
+
+
+class _QuestionMetadata(TypedDict):
+    """The optional organising fields of a tabular row, passed to
+    `ParsedQuestion` as keyword arguments."""
+
+    difficulty: str | None
+    subject: str | None
+    topic: str | None
+    tags: list[str]
+    explanation: str | None
 
 
 @dataclass
@@ -429,7 +441,7 @@ def _parse_tabular(rows: list[list[str]]) -> QuestionImportResult:
             warnings.append(f"{source}: skipped — difficulty must be easy, medium or hard.")
             continue
 
-        metadata = {
+        metadata: _QuestionMetadata = {
             "difficulty": _DIFFICULTIES.get(difficulty_raw),
             "subject": cell(subject_idx) or None,
             "topic": cell(topic_idx) or None,

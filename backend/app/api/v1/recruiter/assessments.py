@@ -227,7 +227,7 @@ async def _attempt_review(db: AsyncSession, attempt: AssessmentInvitation) -> At
     graders: dict[uuid.UUID, str] = {}
     if grader_ids:
         rows = await db.execute(select(User.id, User.full_name).where(User.id.in_(grader_ids)))
-        graders = dict(rows.all())
+        graders = dict(rows.tuples().all())
     views: list[AttemptAnswerView] = []
     for question in attempt.assessment.questions:
         answer = answers.get(question.id)

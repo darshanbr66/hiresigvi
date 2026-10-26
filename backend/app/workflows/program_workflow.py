@@ -135,9 +135,10 @@ async def latest_result(db: AsyncSession, application_id: object) -> AssessmentR
     )
     if invitation is None:
         return None
-    return await db.scalar(
+    result = await db.scalar(
         select(AssessmentResult).where(AssessmentResult.invitation_id == invitation.id)
     )
+    return result
 
 
 async def check_application_transition(

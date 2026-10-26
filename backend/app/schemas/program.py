@@ -26,7 +26,7 @@ from app.schemas.institution import InstitutionSummary
 
 
 def _money() -> Decimal | None:
-    return Field(default=None, ge=0, max_digits=12, decimal_places=2)  # type: ignore[no-any-return]
+    return Field(default=None, ge=0, max_digits=12, decimal_places=2)
 
 
 def _currency(value: str | None) -> str | None:

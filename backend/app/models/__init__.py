@@ -15,10 +15,12 @@ from app.models.assessment import (
     AssessmentInvitation,
     AssessmentMonitoringEvent,
     AssessmentResult,
+    AssessmentStatus,
     CandidateAnswer,
     InvitationStatus,
     MonitoringEventType,
     Question,
+    QuestionAnswerKey,
     QuestionOption,
     QuestionType,
 )
@@ -29,16 +31,39 @@ from app.models.calendar_event import (
     CalendarEventType,
 )
 from app.models.campus_drive import CampusDrive, CampusDriveStatus
-from app.models.candidate import Candidate, CandidateSource
+from app.models.candidate import Candidate, CandidateSource, EducationLevel
 from app.models.candidate_reapply_grant import CandidateReapplyGrant
 from app.models.candidate_resume_profile import CandidateResumeProfile
 from app.models.email_verification import EmailVerification, EmailVerificationPurpose
+from app.models.institution import (
+    AffiliationStatus,
+    AffiliationVerificationMethod,
+    CampusAffiliationVerification,
+    CampusDriveRosterEntry,
+    Institution,
+)
 from app.models.job import Job, JobStatus
 from app.models.job_requirement import JobRequirement, RequirementCategory
 from app.models.match_result import AI_MATCH_DISCLAIMER, MatchResult, MatchStatus
 from app.models.note import Note, NoteVisibility
 from app.models.notification import Notification, NotificationType
 from app.models.organization import Organization
+from app.models.program import (
+    ProgramEnrollment,
+    ProgramFeePayment,
+    ProgramStatus,
+    RecruitmentProgram,
+    RecruitmentProgramInstitution,
+    ScholarshipDisbursement,
+)
+from app.models.question_bank import (
+    QuestionBankAnswerKey,
+    QuestionBankItem,
+    QuestionBankItemTag,
+    QuestionBankItemVersion,
+    QuestionCategory,
+    QuestionTag,
+)
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.resume import Resume
 from app.models.resume_chunk import EMBEDDING_DIMENSIONS, ResumeChunk
@@ -103,4 +128,24 @@ __all__ = [
     "CandidateReapplyGrant",
     "AdminConversation",
     "AdminMessage",
+    "AssessmentStatus",
+    "QuestionAnswerKey",
+    "EducationLevel",
+    "Institution",
+    "AffiliationStatus",
+    "AffiliationVerificationMethod",
+    "CampusAffiliationVerification",
+    "CampusDriveRosterEntry",
+    "QuestionCategory",
+    "QuestionTag",
+    "QuestionBankItem",
+    "QuestionBankItemTag",
+    "QuestionBankItemVersion",
+    "QuestionBankAnswerKey",
+    "RecruitmentProgram",
+    "RecruitmentProgramInstitution",
+    "ProgramEnrollment",
+    "ProgramStatus",
+    "ScholarshipDisbursement",
+    "ProgramFeePayment",
 ]

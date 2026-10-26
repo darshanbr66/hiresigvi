@@ -7,6 +7,7 @@ import { Skeleton, SkeletonCard } from "../../shared/components/Skeleton";
 import { PublicHeader } from "../public/PublicHeader";
 import { getOpenJob } from "./api";
 import { JobApplicationForm } from "./JobApplicationForm";
+import { jobChips, jobDetailFacts } from "./jobFacts";
 
 export function JobDetailPage() {
   const { slug = "", jobId = "" } = useParams<{ slug: string; jobId: string }>();
@@ -54,7 +55,11 @@ export function JobDetailPage() {
                     {jobQuery.data.location}
                   </span>
                 )}
-                {jobQuery.data.employment_type && <span className="chip">{jobQuery.data.employment_type}</span>}
+                {jobChips(jobQuery.data).map((chip) => (
+                  <span key={chip} className="chip">
+                    {chip}
+                  </span>
+                ))}
                 <span className="chip">{jobQuery.data.openings_count} opening(s)</span>
               </div>
               <a href="#apply" className="btn btn-primary job-hero-cta">
@@ -62,6 +67,20 @@ export function JobDetailPage() {
                 <Icon name="arrow-right" size={16} />
               </a>
             </header>
+
+            {jobDetailFacts(jobQuery.data).length > 0 && (
+              <section className="card">
+                <h2>Role details</h2>
+                <dl className="stack-sm" style={{ margin: 0 }}>
+                  {jobDetailFacts(jobQuery.data).map((fact) => (
+                    <div key={fact.label}>
+                      <dt className="muted">{fact.label}</dt>
+                      <dd style={{ margin: 0, whiteSpace: "pre-line" }}>{fact.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            )}
 
             {jobQuery.data.description && (
               <section className="card">

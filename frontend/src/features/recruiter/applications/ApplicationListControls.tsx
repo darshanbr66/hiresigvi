@@ -36,11 +36,18 @@ export type FilterField =
   | "notice"
   | "immediateJoiner"
   | "applied"
-  | "source";
+  | "source"
+  | "campusDrive"
+  | "institution";
 
 interface JobOption {
   id: string;
   title: string;
+}
+
+interface NamedOption {
+  id: string;
+  name: string;
 }
 
 /**
@@ -59,6 +66,8 @@ export function ApplicationListControls({
   onChange,
   fields,
   jobs = [],
+  campusDrives = [],
+  institutions = [],
   showSort = false,
   searchLabel,
   searchPlaceholder,
@@ -67,6 +76,8 @@ export function ApplicationListControls({
   onChange: (next: ApplicationListState) => void;
   fields: FilterField[];
   jobs?: JobOption[];
+  campusDrives?: NamedOption[];
+  institutions?: NamedOption[];
   showSort?: boolean;
   searchLabel: string;
   searchPlaceholder: string;
@@ -115,7 +126,7 @@ export function ApplicationListControls({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the serialized value
   }, [appliedKey]);
 
-  const chips = activeFilterChips(state.filters, jobs);
+  const chips = activeFilterChips(state.filters, jobs, { campusDrives, institutions });
   const draftError = validateFilters(draft);
 
   function togglePanel() {
@@ -299,6 +310,32 @@ export function ApplicationListControls({
               {APPLICATION_SOURCES.map((source) => (
                 <option key={source.value} value={source.value}>
                   {source.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {fields.includes("campusDrive") && (
+          <label className="field">
+            <span>Campus drive</span>
+            <select value={draft.campusDrive} onChange={(e) => setDraft({ ...draft, campusDrive: e.target.value })}>
+              <option value="">All drives</option>
+              {campusDrives.map((drive) => (
+                <option key={drive.id} value={drive.id}>
+                  {drive.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {fields.includes("institution") && (
+          <label className="field">
+            <span>Institution</span>
+            <select value={draft.institution} onChange={(e) => setDraft({ ...draft, institution: e.target.value })}>
+              <option value="">All institutions</option>
+              {institutions.map((institution) => (
+                <option key={institution.id} value={institution.id}>
+                  {institution.name}
                 </option>
               ))}
             </select>

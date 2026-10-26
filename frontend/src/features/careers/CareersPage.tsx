@@ -8,7 +8,8 @@ import { NetworkBackdrop } from "../../shared/components/NetworkBackdrop";
 import { Reveal } from "../../shared/components/Reveal";
 import { Skeleton } from "../../shared/components/Skeleton";
 import { PublicHeader } from "../public/PublicHeader";
-import { getPublicOrganization, listOpenJobs } from "./api";
+import { getPublicOrganization, listOpenJobs, listPublicPrograms } from "./api";
+import { jobChips } from "./jobFacts";
 import { displayNameFromSlug } from "./orgName";
 
 /** How applications are handled — the recruitment content that used to sit
@@ -68,6 +69,10 @@ export function CareersPage() {
   const organizationQuery = useQuery({
     queryKey: ["public", "organization", slug],
     queryFn: () => getPublicOrganization(slug),
+  });
+  const programsQuery = useQuery({
+    queryKey: ["public", "programs", slug],
+    queryFn: () => listPublicPrograms(slug),
   });
   const orgName = organizationQuery.data?.name ?? displayNameFromSlug(slug);
   const contactEmail = organizationQuery.data?.careers_contact_email ?? null;
@@ -130,7 +135,11 @@ export function CareersPage() {
                         {job.location}
                       </span>
                     )}
-                    {job.employment_type && <span className="chip">{job.employment_type}</span>}
+                    {jobChips(job).map((chip) => (
+                      <span key={chip} className="chip">
+                        {chip}
+                      </span>
+                    ))}
                   </span>
                   <span className="role-card-cta">
                     View role <Icon name="arrow-right" size={16} />
@@ -139,6 +148,36 @@ export function CareersPage() {
               </Reveal>
             ))}
           </div>
+        )}
+
+        {programsQuery.isSuccess && programsQuery.data.length > 0 && (
+          <section id="programs" className="careers-section" aria-labelledby="programs-title">
+            <p className="section-eyebrow">Programs</p>
+            <h2 id="programs-title">Scholarship &amp; training programs</h2>
+            <div className="role-list">
+              {programsQuery.data.map((program) => (
+                <Link key={program.id} to={`/programs/${program.id}`} className="role-card">
+                  <span className="role-card-title">{program.title}</span>
+                  <span className="role-card-meta">
+                    {program.training_duration_options.length > 0 && (
+                      <span className="chip">
+                        {program.training_duration_options.map((m) => `${m} months`).join(" / ")} training
+                      </span>
+                    )}
+                    {!program.accepting_applications && <span className="chip">Not accepting applications</span>}
+                    {program.application_closes_at && program.accepting_applications && (
+                      <span className="chip">
+                        Apply by {new Date(program.application_closes_at).toLocaleDateString()}
+                      </span>
+                    )}
+                  </span>
+                  <span className="role-card-cta">
+                    View program <Icon name="arrow-right" size={16} />
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
         )}
 
         <section id="how-we-review" className="careers-section" aria-labelledby="how-we-review-title">

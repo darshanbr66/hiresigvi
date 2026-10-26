@@ -7,7 +7,6 @@ import { AnimatedNumber } from "../../../shared/components/AnimatedNumber";
 import { BarList } from "../../../shared/components/BarList";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { Icon, type IconName } from "../../../shared/components/Icon";
-import { NetworkBackdrop } from "../../../shared/components/NetworkBackdrop";
 import { SkeletonCard, SkeletonList, SkeletonStatGrid } from "../../../shared/components/Skeleton";
 import {
   humanizeStatus,
@@ -102,7 +101,6 @@ export function OverviewPage() {
   return (
     <div className="stack-lg">
       <section className="command-header">
-        <NetworkBackdrop seed={5} count={34} />
         <div className="command-header-copy">
           <p className="eyebrow">{today}</p>
           <h1>Welcome back, {greetingName(user)}</h1>

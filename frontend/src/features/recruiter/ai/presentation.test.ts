@@ -7,6 +7,7 @@ import {
   matchStatusMessage,
   normalizeMatchCard,
   normalizeMatchResponse,
+  normalizePipelineStats,
 } from "./presentation";
 
 describe("alignmentToneClass", () => {
@@ -122,5 +123,80 @@ describe("normalizeMatchResponse", () => {
   it("never lets the deterministic score be overridden by anything AI-generated", () => {
     const normalized = normalizeMatchResponse("Rahul Verma", "Backend Engineer", sampleMatchResponse);
     expect(normalized.overallScore).toBe(sampleMatchResponse.overall_match_score);
+  });
+});
+
+describe("normalizePipelineStats", () => {
+  const valid = {
+    applications_by_status: { APPLIED: 1, SCREENING: 1, SHORTLISTED: 3 },
+    open_jobs: 4,
+    top_jobs_by_applications: [
+      { title: "Data Analyst", application_count: 2 },
+      { title: "Backend Engineer", application_count: 1 },
+    ],
+  };
+
+  it("normalizes the API's structured payload, sorting statuses by count", () => {
+    expect(normalizePipelineStats(valid)).toEqual({
+      statusCounts: [
+        { status: "SHORTLISTED", count: 3 },
+        { status: "APPLIED", count: 1 },
+        { status: "SCREENING", count: 1 },
+      ],
+      totalApplications: 5,
+      openJobs: 4,
+      topJobs: [
+        { title: "Data Analyst", count: 2 },
+        { title: "Backend Engineer", count: 1 },
+      ],
+    });
+  });
+
+  it("marks missing sections as null instead of inventing values", () => {
+    expect(normalizePipelineStats({ open_jobs: 2 })).toEqual({
+      statusCounts: null,
+      totalApplications: null,
+      openJobs: 2,
+      topJobs: null,
+    });
+  });
+
+  it("keeps empty-but-valid sections so the UI can say 'none yet'", () => {
+    expect(normalizePipelineStats({ applications_by_status: {}, open_jobs: 0, top_jobs_by_applications: [] })).toEqual({
+      statusCounts: [],
+      totalApplications: 0,
+      openJobs: 0,
+      topJobs: [],
+    });
+  });
+
+  it("drops malformed entries but keeps the valid ones", () => {
+    const result = normalizePipelineStats({
+      applications_by_status: { APPLIED: 2, SCREENING: "3", REJECTED: -1, HIRED: Number.NaN, "": 1 },
+      open_jobs: "4",
+      top_jobs_by_applications: [
+        { title: "Data Analyst", application_count: 2 },
+        { title: "", application_count: 1 },
+        { title: "No count" },
+        "Backend Engineer",
+        null,
+      ],
+    });
+    expect(result).toEqual({
+      statusCounts: [{ status: "APPLIED", count: 2 }],
+      totalApplications: 2,
+      openJobs: null,
+      topJobs: [{ title: "Data Analyst", count: 2 }],
+    });
+  });
+
+  it.each([
+    ["null", null],
+    ["a serialized JSON string", JSON.stringify(valid)],
+    ["an array", [valid]],
+    ["an object with no recognized fields", { foo: "bar" }],
+    ["an object whose fields are all malformed", { applications_by_status: "APPLIED:1", open_jobs: null, top_jobs_by_applications: {} }],
+  ])("returns null for %s", (_label, raw) => {
+    expect(normalizePipelineStats(raw)).toBeNull();
   });
 });

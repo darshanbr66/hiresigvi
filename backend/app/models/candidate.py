@@ -45,6 +45,19 @@ class CandidateType(StrEnum):
     EXPERIENCED = "EXPERIENCED"
 
 
+class EducationLevel(StrEnum):
+    """The candidate's current/highest programme of study, self-declared on
+    a recruitment-program application. A recruitment program's eligibility
+    lists which levels it accepts (never hardcoded here)."""
+
+    DIPLOMA = "DIPLOMA"
+    BACHELORS = "BACHELORS"
+    MASTERS = "MASTERS"
+    MTECH = "MTECH"
+    PHD = "PHD"
+    OTHER = "OTHER"
+
+
 class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     """Reusable candidate profile data — never merged with Application, which
     carries per-opportunity workflow state (CLAUDE.md § 2: "Candidate !=
@@ -82,6 +95,10 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
             "email_verified_at IS NULL OR (phone IS NOT NULL AND date_of_birth IS NOT NULL "
             "AND place_of_birth IS NOT NULL AND cardinality(languages) > 0)",
             name="ck_candidates_verified_identity_complete",
+        ),
+        CheckConstraint(
+            "current_study_year IS NULL OR (current_study_year >= 1 AND current_study_year <= 10)",
+            name="ck_candidates_current_study_year_range",
         ),
         CheckConstraint(
             "tenth_marks_percentage IS NULL OR "
@@ -155,6 +172,22 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     tenth_marks_card_uploaded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Current education, declared on a recruitment-program application
+    # (docs/programs.md § 3) and kept on the profile so a returning candidate
+    # never re-enters it from scratch. Self-declared, not verified: HR's
+    # eligibility review is the check. `institution_id` is set when the
+    # candidate picked a registered institution; `institution_name` always
+    # holds the name as shown/typed.
+    education_level: Mapped[EducationLevel | None] = mapped_column(
+        Enum(EducationLevel, name="education_level", native_enum=True), nullable=True
+    )
+    current_study_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    specialization: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    institution_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="SET NULL"), nullable=True
+    )
+    institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expected_completion_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Set once the candidate proved ownership of `email` with a one-time code
     # (app/services/email_verification_service.py). NULL for recruiter-added
     # and imported candidates, whose email was never verified by the platform.

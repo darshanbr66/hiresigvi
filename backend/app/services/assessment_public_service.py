@@ -18,6 +18,7 @@ from app.core.security import hash_opaque_token
 from app.db.rls import rls_bypass, set_tenant_context
 from app.models.application import ApplicationStatus
 from app.models.assessment import (
+    CHOICE_QUESTION_TYPES,
     Assessment,
     AssessmentInvitation,
     AssessmentMonitoringEvent,
@@ -29,7 +30,12 @@ from app.models.assessment import (
 from app.models.notification import NotificationType
 from app.models.organization import Organization
 from app.schemas.public_assessment import MonitoringEventCreate
-from app.services import activity_service, application_service, in_app_notification_service
+from app.services import (
+    activity_service,
+    application_service,
+    assessment_grading_service,
+    in_app_notification_service,
+)
 
 _INVALID_MESSAGE = "This invitation link is no longer valid."
 
@@ -44,6 +50,11 @@ async def _resolve_invitation(db: AsyncSession, token: str) -> AssessmentInvitat
                 joinedload(AssessmentInvitation.assessment)
                 .selectinload(Assessment.questions)
                 .selectinload(Question.options),
+                # Loaded for server-side grading only; no public schema has
+                # a field for any of it (app/schemas/public_assessment.py).
+                joinedload(AssessmentInvitation.assessment)
+                .selectinload(Assessment.questions)
+                .selectinload(Question.answer_key),
                 joinedload(AssessmentInvitation.result),
             )
         )
@@ -100,8 +111,14 @@ async def start_attempt(db: AsyncSession, token: str) -> AssessmentInvitation:
 
 
 async def submit_attempt(
-    db: AsyncSession, token: str, answers: list[tuple[uuid.UUID, list[uuid.UUID]]]
+    db: AsyncSession,
+    token: str,
+    answers: list[tuple[uuid.UUID, list[uuid.UUID], str | None]],
 ) -> AssessmentResult:
+    """Stores each answer and grades what can be graded automatically
+    (app/services/assessment_grading_service.py). Answers to questions that
+    aren't on this assessment are ignored, and so are option ids that don't
+    belong to the question — a tampered payload can't earn marks."""
     invitation = await _resolve_invitation(db, token)
     if invitation.status == InvitationStatus.SUBMITTED:
         raise AppError("This assessment has already been submitted.", code="already_submitted")
@@ -109,37 +126,44 @@ async def submit_attempt(
     assessment = invitation.assessment
     questions_by_id = {question.id: question for question in assessment.questions}
 
-    score = 0
-    max_score = 0
-    for question in assessment.questions:
-        max_score += question.points
-
-    for question_id, selected_option_ids in answers:
+    stored: list[CandidateAnswer] = []
+    seen: set[uuid.UUID] = set()
+    for question_id, selected_option_ids, text_answer in answers:
         question = questions_by_id.get(question_id)
-        if question is None:
+        if question is None or question_id in seen:
             continue
-        db.add(
-            CandidateAnswer(
-                invitation_id=invitation.id,
-                question_id=question_id,
-                selected_option_ids=[str(option_id) for option_id in selected_option_ids],
-            )
+        seen.add(question_id)
+        if question.type in CHOICE_QUESTION_TYPES:
+            valid_ids = {option.id for option in question.options}
+            selected = [option_id for option_id in selected_option_ids if option_id in valid_ids]
+            text = None
+        else:
+            selected = []
+            text = text_answer.strip() if text_answer and text_answer.strip() else None
+        grade = assessment_grading_service.auto_grade(
+            question, selected_option_ids=selected, text_answer=text
         )
-        correct_ids = {option.id for option in question.options if option.is_correct}
-        if set(selected_option_ids) == correct_ids:
-            score += question.points
+        answer = CandidateAnswer(
+            invitation_id=invitation.id,
+            question_id=question_id,
+            selected_option_ids=[str(option_id) for option_id in selected],
+            text_answer=text,
+            is_correct=grade.is_correct,
+            awarded_points=grade.awarded_points,
+            grading_method=grade.method,
+            graded_at=datetime.now(UTC) if grade.method is not None else None,
+        )
+        db.add(answer)
+        stored.append(answer)
 
-    percentage = round((score / max_score) * 100) if max_score > 0 else 0
-    passed = percentage >= assessment.pass_score
-
-    result = AssessmentResult(
-        invitation_id=invitation.id,
-        score=score,
-        max_score=max_score,
-        percentage=percentage,
-        passed=passed,
-        evaluated_at=datetime.now(UTC),
+    result = AssessmentResult(invitation_id=invitation.id, score=0, max_score=0, percentage=0)
+    assessment_grading_service.apply_totals(
+        result,
+        assessment_grading_service.totals(assessment.questions, stored),
+        pass_score=assessment.pass_score,
     )
+    passed = result.passed
+    percentage = result.percentage
     db.add(result)
 
     invitation.status = InvitationStatus.SUBMITTED
@@ -161,7 +185,12 @@ async def submit_attempt(
             entity_label=f"{application.candidate.full_name} — {assessment.title}",
             description=(
                 f"{application.candidate.full_name} completed \"{assessment.title}\" "
-                f"(attempt {invitation.attempt_number}): {percentage}% — {'passed' if passed else 'failed'}."
+                f"(attempt {invitation.attempt_number}): "
+                + (
+                    f"{percentage}% — {'passed' if passed else 'failed'}."
+                    if passed is not None
+                    else f"{percentage}% so far — awaiting manual grading."
+                )
             ),
         )
         # A second submit is rejected above (`already_submitted`), so this

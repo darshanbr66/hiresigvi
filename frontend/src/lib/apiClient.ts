@@ -10,6 +10,14 @@
  * see docs/architecture.md § 4.
  */
 
+import {
+  NETWORK_MESSAGE,
+  friendlyMessage,
+  humanizeDetails,
+  kindForStatus,
+  type ApiErrorKind,
+} from "./apiErrors";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
@@ -20,6 +28,11 @@ export class ApiError extends Error {
    * `error.data`) — e.g. the id of the candidate a create collided with, or
    * the date a reapply window opens. Shape varies by `code`. */
   readonly data: Record<string, unknown> | null;
+  /** The server's own message, before `friendlyMessage` (for diagnostics;
+   * show `message`). */
+  readonly serverMessage: string;
+  /** The backend's request id, for support/log correlation. */
+  readonly requestId: string | null;
 
   constructor(
     message: string,
@@ -27,6 +40,7 @@ export class ApiError extends Error {
     code: string,
     details: { field: string; message: string }[] = [],
     data: Record<string, unknown> | null = null,
+    extra: { serverMessage?: string; requestId?: string | null } = {},
   ) {
     super(message);
     this.name = "ApiError";
@@ -34,6 +48,18 @@ export class ApiError extends Error {
     this.code = code;
     this.details = details;
     this.data = data;
+    this.serverMessage = extra.serverMessage ?? message;
+    this.requestId = extra.requestId ?? null;
+  }
+
+  /** What kind of failure this is (validation, auth, permission, …). */
+  get kind(): ApiErrorKind {
+    return kindForStatus(this.status);
+  }
+
+  /** Field-level problems from a validation error, in plain wording. */
+  get fieldIssues(): { field: string; message: string }[] {
+    return humanizeDetails(this.details);
   }
 }
 
@@ -52,37 +78,55 @@ interface RequestOptions {
   body?: unknown;
 }
 
+/** `fetch`, with a failure to connect reported as an ApiError (status 0)
+ * instead of the browser's raw "Failed to fetch". */
+async function send(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, { credentials: "include", ...init });
+  } catch {
+    throw new ApiError(NETWORK_MESSAGE, 0, "network_error");
+  }
+}
+
+/** The one place a non-2xx response becomes an ApiError. */
+async function toApiError(response: Response): Promise<ApiError> {
+  let code = "unknown_error";
+  let serverMessage = "";
+  let details: { field: string; message: string }[] = [];
+  let data: Record<string, unknown> | null = null;
+  let requestId: string | null = null;
+  try {
+    const body = (await response.json()) as ErrorEnvelope;
+    code = body.error?.code ?? code;
+    serverMessage = body.error?.message ?? "";
+    details = body.error?.details ?? [];
+    data = body.error?.data ?? null;
+    requestId = body.error?.request_id ?? null;
+  } catch {
+    // Non-JSON error body (e.g. a proxy's HTML page) — never shown as-is.
+  }
+  const message = friendlyMessage({ status: response.status, code, message: serverMessage, details });
+  return new ApiError(message, response.status, code, details, data, { serverMessage, requestId });
+}
+
+function authHeaders(accessToken?: string): Record<string, string> {
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+}
+
 async function request<T>(path: string, method: string, options?: RequestOptions): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers = authHeaders(options?.accessToken);
   if (options?.body !== undefined) {
     headers["Content-Type"] = "application/json";
   }
-  if (options?.accessToken) {
-    headers.Authorization = `Bearer ${options.accessToken}`;
-  }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await send(path, {
     method,
-    credentials: "include",
     headers,
     body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
   if (!response.ok) {
-    let code = "unknown_error";
-    let message = "Request failed.";
-    let details: { field: string; message: string }[] = [];
-    let data: Record<string, unknown> | null = null;
-    try {
-      const body = (await response.json()) as ErrorEnvelope;
-      code = body.error?.code ?? code;
-      message = body.error?.message ?? message;
-      details = body.error?.details ?? [];
-      data = body.error?.data ?? null;
-    } catch {
-      // Non-JSON error body — fall back to the defaults above.
-    }
-    throw new ApiError(message, response.status, code, details, data);
+    throw await toApiError(response);
   }
 
   if (response.status === 204) {
@@ -93,35 +137,10 @@ async function request<T>(path: string, method: string, options?: RequestOptions
 }
 
 async function requestForm<T>(path: string, formData: FormData, accessToken?: string): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    credentials: "include",
-    headers,
-    body: formData,
-  });
-
+  const response = await send(path, { method: "POST", headers: authHeaders(accessToken), body: formData });
   if (!response.ok) {
-    let code = "unknown_error";
-    let message = "Request failed.";
-    let details: { field: string; message: string }[] = [];
-    let data: Record<string, unknown> | null = null;
-    try {
-      const body = (await response.json()) as ErrorEnvelope;
-      code = body.error?.code ?? code;
-      message = body.error?.message ?? message;
-      details = body.error?.details ?? [];
-      data = body.error?.data ?? null;
-    } catch {
-      // Non-JSON error body — fall back to the defaults above.
-    }
-    throw new ApiError(message, response.status, code, details, data);
+    throw await toApiError(response);
   }
-
   return response.json() as Promise<T>;
 }
 
@@ -129,13 +148,10 @@ async function requestBlob(
   path: string,
   accessToken: string,
 ): Promise<{ blob: Blob; filename: string | null }> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: "include",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const response = await send(path, { headers: authHeaders(accessToken) });
 
   if (!response.ok) {
-    throw new ApiError("Could not download the file.", response.status, "download_failed");
+    throw await toApiError(response);
   }
 
   const disposition = response.headers.get("content-disposition");
@@ -152,26 +168,10 @@ export interface PagedResult<T> {
 /** A list endpoint that pages server-side: the body is the page, and the total
  * number of matches travels in the `X-Total-Count` response header. */
 async function requestPage<T>(path: string, accessToken: string): Promise<PagedResult<T>> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: "include",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const response = await send(path, { headers: authHeaders(accessToken) });
 
   if (!response.ok) {
-    let code = "unknown_error";
-    let message = "Request failed.";
-    let details: { field: string; message: string }[] = [];
-    let data: Record<string, unknown> | null = null;
-    try {
-      const body = (await response.json()) as ErrorEnvelope;
-      code = body.error?.code ?? code;
-      message = body.error?.message ?? message;
-      details = body.error?.details ?? [];
-      data = body.error?.data ?? null;
-    } catch {
-      // Non-JSON error body — fall back to the defaults above.
-    }
-    throw new ApiError(message, response.status, code, details, data);
+    throw await toApiError(response);
   }
 
   const items = (await response.json()) as T[];

@@ -234,9 +234,9 @@ a {
 .field select,
 .field textarea {
   padding: 0.6rem 0.75rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-input-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--color-input-bg);
   color: var(--color-text);
   font-size: 0.9rem;
   font-family: inherit;
@@ -345,8 +345,8 @@ a {
 }
 
 .btn-lg {
-  padding: 0.85rem 1.6rem;
-  font-size: 1rem;
+  padding: 0.75rem 1.35rem;
+  font-size: var(--text-body);
   border-radius: var(--radius-lg);
 }
 
@@ -568,9 +568,9 @@ fieldset.field legend {
   flex: 1 1 220px;
   min-width: 0;
   padding: 0.6rem 0.8rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-input-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--color-input-bg);
   color: var(--color-text);
   font-size: 0.9rem;
   transition:
@@ -613,9 +613,9 @@ fieldset.field legend {
 
 .filter-select {
   padding: 0.55rem 0.7rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-input-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--color-input-bg);
   color: var(--color-text);
   font-size: 0.85rem;
 }
@@ -967,10 +967,7 @@ fieldset.field legend {
     background-color var(--dur-base) var(--ease-out);
 }
 
-.stat-card:hover {
-  box-shadow: var(--shadow-raised);
-  border-color: var(--color-border-strong);
-}
+/* Figures aren't clickable, so they don't lift on hover. */
 
 .btn {
   transition:
@@ -1056,7 +1053,7 @@ a,
   color: var(--color-text-muted);
   border: 1px dashed var(--color-border-strong);
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, var(--color-primary-soft), transparent 70%);
+  background: var(--color-bg-subtle);
 }
 
 .empty-state-compact {
@@ -1223,6 +1220,10 @@ a,
 
 .dialog-card-wide {
   max-width: 640px;
+}
+
+.dialog-card-xwide {
+  max-width: 960px;
 }
 
 .dialog-actions {

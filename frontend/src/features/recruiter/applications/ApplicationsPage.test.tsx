@@ -4,7 +4,9 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { ApiError } from "../../../lib/apiClient";
 import { ToastProvider } from "../../../shared/components/ToastContext";
+import * as campusDrivesApi from "../campusDrives/api";
 import * as candidatesApi from "../candidates/api";
+import * as institutionsApi from "../institutions/api";
 import * as jobsApi from "../jobs/api";
 import * as api from "./api";
 import { ApplicationsPage } from "./ApplicationsPage";
@@ -72,6 +74,8 @@ describe("ApplicationsPage — server-side search and filters", () => {
       makeJob("job-2", "Backend Engineer"),
     ]);
     vi.spyOn(candidatesApi, "listCandidates").mockResolvedValue([]);
+    vi.spyOn(campusDrivesApi, "listCampusDrives").mockResolvedValue([]);
+    vi.spyOn(institutionsApi, "listInstitutions").mockResolvedValue([]);
   });
 
   afterEach(() => {

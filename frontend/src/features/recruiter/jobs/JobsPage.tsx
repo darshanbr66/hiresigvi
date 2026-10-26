@@ -10,9 +10,22 @@ import { EmptyState } from "../../../shared/components/EmptyState";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
-import type { JobResponse, JobStatus } from "../../../types/recruitment";
+import {
+  EMPLOYMENT_TYPE_LABELS,
+  EMPLOYMENT_TYPES,
+  type EmploymentType,
+  type JobResponse,
+  type JobStatus,
+} from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
 import { createJob, deleteJob, listJobs, updateJob } from "./api";
+import {
+  detailsFromJob,
+  detailsPayload,
+  EMPTY_DETAILS,
+  EmploymentDetailsFields,
+  type EmploymentDetailsForm,
+} from "./employmentDetails";
 
 const JOBS_QUERY_KEY = ["recruiter", "jobs"];
 
@@ -49,7 +62,9 @@ interface JobFormState {
   title: string;
   department: string;
   location: string;
-  employmentType: string;
+  /** null only for a recruitment program's carrier job, which has no type. */
+  employmentType: EmploymentType | null;
+  details: EmploymentDetailsForm;
   openingsCount: string;
   description: string;
   descriptionVisible: boolean;
@@ -59,7 +74,8 @@ const EMPTY_FORM: JobFormState = {
   title: "",
   department: "",
   location: "",
-  employmentType: "Full-time",
+  employmentType: "FULL_TIME",
+  details: EMPTY_DETAILS,
   openingsCount: "1",
   description: "",
   descriptionVisible: true,
@@ -70,7 +86,8 @@ function jobToFormState(job: JobResponse): JobFormState {
     title: job.title,
     department: job.department ?? "",
     location: job.location ?? "",
-    employmentType: job.employment_type ?? "",
+    employmentType: job.employment_type,
+    details: detailsFromJob(job),
     openingsCount: String(job.openings_count),
     description: job.description,
     descriptionVisible: job.description_visible,
@@ -160,7 +177,9 @@ export function JobsPage() {
         title: form.title,
         department: form.department || null,
         location: form.location || null,
-        employment_type: form.employmentType || null,
+        ...(form.employmentType
+          ? { employment_type: form.employmentType, ...detailsPayload(form.employmentType, form.details) }
+          : {}),
         description: form.description,
         description_visible: form.descriptionVisible,
         openings_count: Number(form.openingsCount),
@@ -258,17 +277,20 @@ export function JobsPage() {
 
   const canManageJobs = !(jobsQuery.error instanceof ApiError && jobsQuery.error.status === 403);
 
+  const [typeFilter, setTypeFilter] = useState<EmploymentType | "">("");
+
   const filteredJobs = useMemo(() => {
     if (!jobsQuery.data) return [];
     const term = search.trim().toLowerCase();
-    if (!term) return jobsQuery.data;
     return jobsQuery.data.filter(
       (job) =>
-        job.title.toLowerCase().includes(term) ||
-        (job.department ?? "").toLowerCase().includes(term) ||
-        (job.location ?? "").toLowerCase().includes(term),
+        (!typeFilter || job.employment_type === typeFilter) &&
+        (!term ||
+          job.title.toLowerCase().includes(term) ||
+          (job.department ?? "").toLowerCase().includes(term) ||
+          (job.location ?? "").toLowerCase().includes(term)),
     );
-  }, [jobsQuery.data, search]);
+  }, [jobsQuery.data, search, typeFilter]);
 
   return (
     <div className="stack-lg">
@@ -286,7 +308,7 @@ export function JobsPage() {
         )}
       </div>
 
-      {jobsQuery.isPending && <SkeletonTable columns={7} />}
+      {jobsQuery.isPending && <SkeletonTable columns={8} />}
 
       {jobsQuery.isError && !canManageJobs && (
         <Alert>You do not have permission to view jobs.</Alert>
@@ -322,6 +344,18 @@ export function JobsPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                <select
+                  aria-label="Employment type"
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value as EmploymentType | "")}
+                >
+                  <option value="">All types</option>
+                  {EMPLOYMENT_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {EMPLOYMENT_TYPE_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="table-scroll">
                 <table className="data-table">
@@ -331,6 +365,7 @@ export function JobsPage() {
                       <th>Title</th>
                       <th>Department</th>
                       <th>Location</th>
+                      <th>Type</th>
                       <th>Openings</th>
                       <th>Status</th>
                       {canManageJobs && <th>Actions</th>}
@@ -343,6 +378,7 @@ export function JobsPage() {
                         <td>{job.title}</td>
                         <td>{job.department ?? "—"}</td>
                         <td>{job.location ?? "—"}</td>
+                        <td>{job.employment_type ? EMPLOYMENT_TYPE_LABELS[job.employment_type] : "Program"}</td>
                         <td>{job.openings_count}</td>
                         <td>
                           <span
@@ -441,11 +477,22 @@ export function JobsPage() {
             <div className="field-row">
               <label className="field">
                 <span>Employment type</span>
-                <input
-                  value={form.employmentType}
-                  onChange={(e) => setForm({ ...form, employmentType: e.target.value })}
-                  disabled={saveMutation.isPending}
-                />
+                {form.employmentType ? (
+                  <select
+                    required
+                    value={form.employmentType}
+                    onChange={(e) => setForm({ ...form, employmentType: e.target.value as EmploymentType })}
+                    disabled={saveMutation.isPending}
+                  >
+                    {EMPLOYMENT_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {EMPLOYMENT_TYPE_LABELS[type]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="field-hint">Recruitment program job — managed from Programs.</span>
+                )}
               </label>
 
               <label className="field">
@@ -473,6 +520,15 @@ export function JobsPage() {
                 )}
               </label>
             </div>
+
+            {form.employmentType && (
+              <EmploymentDetailsFields
+                type={form.employmentType}
+                value={form.details}
+                onChange={(details) => setForm({ ...form, details })}
+                disabled={saveMutation.isPending}
+              />
+            )}
 
             <label className="field">
               <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", justifyContent: "space-between" }}>

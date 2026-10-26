@@ -199,57 +199,59 @@ Gemini generations.
   never affects the page. Being a layout route, the conversation survives
   navigation between these pages. On the home page only it turns on the
   one-time teaser.
-- `SigviWidget` — the panel (portal to `<body>`): header, welcome screen,
-  bubbles, job cards, "Based on" chip, thinking row, error + Retry, Clear,
-  auto-scroll, Enter / Shift+Enter (IME-safe), 1000-char limit with counter,
-  mobile full-screen sheet that follows the visible viewport (so the on-screen
-  keyboard cannot cover the input).
-- `SigviMascot` — Sigvi's character: a friendly white-and-blue robot with a
-  dark visor, glowing eyes and an antenna light. Inline SVG only (gradients and
-  highlights give the 3D feel; no filters, images or libraries), `head` and
-  `full` variants, states `idle` / `thinking` (eyes scan, particles orbit, glow
-  quickens) / `delight` (a ring of light and happy eyes when a reply lands).
-  Decorative unless given a `label` (the welcome-screen mascot is a named
-  image).
-- `SigviLauncher` — glowing robot orb + "Ask Sigvi / AI assistant" pill, with a
-  miniature constellation orbiting it (the hero network in miniature).
-  `SigviTeaser` — a one-time "Hi, I'm Sigvi" nudge on the home page, ~5 s after
-  load, once per browser session, dismissible, opens the chat; a real button,
-  never a live region. `SigviWelcome` — mascot, greeting, what Sigvi can help
-  with, and five suggestion cards with icons. `SigviJobCard` — "Open role"
-  card (title, location · type, department, summary, *View role →*, *Apply*);
-  only fields the careers page already shows.
+- `SigviWidget` — the panel (portal to `<body>`): compact header (small
+  avatar, title, Clear, Close — closing keeps the conversation, so it doubles
+  as minimize), the greeting, bubbles, job cards, "Based on SIGVITAS Careers"
+  note, thinking row, error + Retry, auto-scroll, Enter / Shift+Enter
+  (IME-safe), 1000-char limit with counter, mobile full-screen sheet that
+  follows the visible viewport (so the on-screen keyboard cannot cover the
+  input).
+- `SigviMascot` — Sigvi's character: a small white-and-blue robot head, inline
+  SVG only (no filters, images or libraries). Used purely as an icon —
+  launcher, header, beside replies — and always decorative (`aria-hidden`).
+  The component still supports the `full` variant and its halo/particle
+  parts, but the widget hides those (`styles/sigvi.css`). Only the header
+  avatar animates: an occasional blink, and scanning eyes while a reply is on
+  its way.
+- `SigviLauncher` — a quiet pill (head + "Ask Sigvi") that stays still; on
+  phones just the round head, labelled for assistive tech. `SigviTeaser` — a
+  one-time "Hi, I'm Sigvi" nudge on the home page, ~5 s after load, once per
+  browser session, dismissible, opens the chat; a real button, never a live
+  region. `SigviWelcome` — the greeting ("Hi! How can I help?" with one
+  muted line, "Ask me about careers at SIGVITAS."), which stays at the top of
+  the conversation, and four compact suggestion chips (View open positions ·
+  How do I apply? · Campus opportunities · Hiring process), shown until the
+  visitor asks something. Each chip sends a full question (e.g. "What campus
+  opportunities do you offer?") through the normal chat flow
+  (`suggestions.ts`). `SigviJobCard` — "Open role" card (title, location · type,
+  department, summary, *View role →*, *Apply*); only fields the careers page
+  already shows.
 - `useSigviChat` — in-memory conversation state, bounded history, retry,
   discards a reply that arrives after Clear.
 - Accessibility: dialog with a name, `role="log"` `aria-live="polite"`, labelled
   controls, focus moves into the panel on open and back to the launcher on
-  close/Escape, visible cyan focus rings, decorative art `aria-hidden`, honest
-  "AI can make mistakes" note.
+  close/Escape, visible focus rings in the site's primary colour, decorative
+  art `aria-hidden`, honest "AI can make mistakes" note.
 - Styling: `styles/sigvi.css`, imported by the lazy widget (so it is not in the
-  main stylesheet). Sigvi has a small identity of its own — deep navy, SIGVITAS
-  blue, electric blue, a little violet and cyan, white — and is deliberately
-  dark in **both** site themes so it reads as one recognisable character on a
-  light or dark page. It reuses the design system's type, radii, easing and
-  durations.
+  main stylesheet). Sigvi uses the design system's tokens for colour, depth,
+  type, radii and motion, so it follows the site's light/dark theme like any
+  other surface: flat panel with hairline borders and the standard popover
+  shadow, replies on a neutral tint, the visitor's messages in the primary
+  blue. Its only local variables are the reply tint (`--sv-reply-*`), because
+  `--color-bg-subtle` is darker than the surface in dark mode.
 
-**Motion and performance rules** (measured, not assumed):
+**Motion and performance rules:**
 
-1. Only `transform`/`opacity` animate. The ambient loop is limited to things
-   the browser can composite (the SVG *root*, HTML boxes, pseudo-elements);
-   animating the *inside* of an SVG cannot be composited and keeps the page
-   rendering every frame. Blinks and glances are therefore short transitions
-   triggered every few seconds from JS (`useIdleLife`), and the SVG-internal
-   animations run only while thinking/celebrating.
-2. Ambient motion is **finite**. Measured on the real page, any animation that
-   runs forever keeps the browser producing full frames for as long as the tab
-   is open (an unrelated 40 px animated dot cost as much as all of Sigvi's
-   animations together). So the launcher animates for a few seconds, then rests
-   completely; it wakes on hover, once a minute (the orb is remounted), and on
-   each open. At rest there are zero running animations.
-3. Under `prefers-reduced-motion` every Sigvi animation is switched off and the
-   launcher never re-wakes; state is still shown (the "Sigvi is thinking…"
-   text, the static mascot, replies appearing at once).
-4. The widget chunk (JS + CSS) loads after first paint, off the main bundle.
+1. Motion is limited to short fades (panel open/close, new messages). Nothing
+   runs at rest; the only loops are the typing dots and the header avatar's
+   scanning eyes, and both stop when the reply arrives. Blinks are short
+   transitions triggered every few seconds from JS (`useIdleLife`), never
+   infinite SVG-internal animations (those cannot be composited and keep the
+   page rendering every frame).
+2. Under `prefers-reduced-motion` every Sigvi animation and transition is
+   switched off; state is still shown (the "Sigvi is thinking…" text, static
+   dots, replies appearing at once).
+3. The widget chunk (JS + CSS) loads after first paint, off the main bundle.
 
 **Not implemented (deliberately):** token streaming. The reply is validated
 and matched to job cards as a whole before display, and a single JSON response

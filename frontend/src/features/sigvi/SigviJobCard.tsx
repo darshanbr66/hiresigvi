@@ -10,10 +10,7 @@ export function SigviJobCard({ job, onNavigate }: { job: JobCard; onNavigate: ()
   return (
     <article className="sigvi-job" aria-label={`Role: ${job.title}`}>
       <div className="sigvi-job-top">
-        <span className="sigvi-job-eyebrow">
-          <Icon name="sparkles" size={12} />
-          Open role
-        </span>
+        <span className="sigvi-job-eyebrow">Open role</span>
         {job.department && <span className="sigvi-job-dept">{job.department}</span>}
       </div>
       <h3 className="sigvi-job-title">{job.title}</h3>

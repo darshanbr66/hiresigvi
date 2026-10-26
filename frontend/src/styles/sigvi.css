@@ -1,209 +1,86 @@
 /*
  * Sigvi — SIGVITAS' AI assistant.
  *
- * A small identity of its own, deliberately dark in BOTH site themes: deep
- * navy surfaces, SIGVITAS signal blue, electric blue, a touch of violet and
- * cyan, white text. It reuses the design system's type, radii, easing and
- * durations (tokens.css); only the palette is Sigvi's (--sv-*), so the
- * assistant reads as one recognisable character on a light or dark page.
+ * Sigvi is part of the site, not a demo floating over it: it uses the design
+ * system's own tokens (tokens.css) for colour, depth, type, radii and motion,
+ * so it follows the light/dark theme with the rest of the page and needs no
+ * palette of its own. The only brand element that is Sigvi's alone is the
+ * small mascot head, used as an icon (launcher, header, beside replies).
  *
- * Only transform/opacity animate, and the always-on (ambient) loops are
- * restricted to elements the browser can composite off the main thread — the
- * SVG root, HTML boxes and pseudo-elements. Animating the *inside* of an SVG
- * cannot be composited and keeps the page rendering every frame, so blinks,
- * glances and the like are short transitions triggered occasionally from
- * SigviMascot.tsx, and the SVG-internal animations (thinking, delight) only
- * run for the few seconds they are needed.
- *
- * Ambient motion is also FINITE. Measured on the real page, any animation that
- * runs forever keeps the browser producing full frames for the whole time the
- * tab is open — on the careers and role pages it would be the only thing doing
- * so. So the launcher animates for a handful of seconds, then rests completely
- * (zero cost); it wakes again on hover, once a minute (SigviLauncher.tsx
- * remounts the orb), and every time the panel opens. Only states with a reason
- * to move — thinking — loop until they end.
- *
- * Under prefers-reduced-motion every animation is switched off (see the end of
- * the file) and transitions collapse via tokens.css.
+ * Restraint is deliberate: one accent (the site's primary blue), flat
+ * surfaces separated by hairline borders, a single popover shadow, and motion
+ * limited to short fades. Nothing loops except the typing dots while a reply
+ * is actually on its way. Under prefers-reduced-motion all of it is off.
  */
 
 .sigvi {
-  --sv-bg-0: #060a1a;
-  --sv-bg-1: #0a1130;
-  --sv-bg-2: #101a45;
-  --sv-line: rgb(139 160 255 / 22%);
-  --sv-line-strong: rgb(139 160 255 / 42%);
-  --sv-text: #e9eeff;
-  --sv-muted: #9fb0d6;
-  --sv-blue: #3d6bf5;
-  --sv-electric: #5b8cff;
-  --sv-violet: #8b7bff;
-  --sv-cyan: #5ee0ff;
   --sv-gap: 1.25rem;
+  /* Sigvi's replies sit on a tint of the panel. Light: the subtle page grey.
+     Dark: --color-bg-subtle is *darker* than the surface and all but
+     vanishes, so step up to the raised surface plus a hairline instead. */
+  --sv-reply-bg: var(--color-bg-subtle);
+  --sv-reply-border: transparent;
 
   position: fixed;
   right: var(--sv-gap);
   bottom: var(--sv-gap);
   z-index: 80;
-  color: var(--sv-text);
+  color: var(--color-text);
   font-family: var(--font-sans);
-  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sigvi {
+    --sv-reply-bg: var(--color-surface-raised);
+    --sv-reply-border: var(--color-border);
+  }
+}
+
+:root[data-theme="dark"] .sigvi {
+  --sv-reply-bg: var(--color-surface-raised);
+  --sv-reply-border: var(--color-border);
 }
 
 .sigvi :focus-visible {
-  outline: 2px solid var(--sv-cyan);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
 /* ============================ launcher ================================== */
 
 .sigvi-launcher {
-  position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  height: 3.5rem;
-  padding: 0 1.15rem 0 0.15rem;
-  border: 1px solid var(--sv-line-strong);
+  gap: 0.5rem;
+  height: 2.75rem;
+  padding: 0 1rem 0 0.5rem;
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-pill);
-  background:
-    radial-gradient(120% 140% at 0% 50%, rgb(91 140 255 / 22%), transparent 60%),
-    linear-gradient(135deg, var(--sv-bg-2), var(--sv-bg-0));
-  color: var(--sv-text);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
   cursor: pointer;
-  box-shadow:
-    0 10px 30px rgb(6 10 26 / 45%),
-    0 0 0 1px rgb(255 255 255 / 4%) inset,
-    0 1px 0 rgb(255 255 255 / 10%) inset;
+  box-shadow: var(--shadow-raised);
   transition:
-    transform var(--dur-base) var(--ease-out),
-    opacity var(--dur-base) var(--ease-out),
-    border-color var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
 }
 
 .sigvi-launcher:hover {
-  transform: translateY(-2px);
-  border-color: rgb(94 224 255 / 60%);
-  box-shadow:
-    0 14px 36px rgb(6 10 26 / 55%),
-    0 0 26px rgb(91 140 255 / 38%),
-    0 1px 0 rgb(255 255 255 / 14%) inset;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-popover);
 }
 
-.sigvi-launcher:active {
-  transform: translateY(0) scale(0.985);
-}
-
-.sigvi-orb {
-  position: relative;
+.sigvi-launcher-icon {
   display: grid;
-  flex: none;
   place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
-}
-
-/* soft atmospheric glow */
-.sigvi-orb::before {
-  content: "";
-  position: absolute;
-  inset: -0.9rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: 50%;
-  background: radial-gradient(
-    closest-side,
-    rgb(139 123 255 / 42%),
-    rgb(61 107 245 / 20%) 55%,
-    transparent 78%
-  );
-  animation: sv-aura 3.8s ease-in-out 3;
-  pointer-events: none;
-}
-
-/* a slim ring with a bright arc that slowly travels round the orb */
-.sigvi-orb-ring {
-  position: absolute;
-  inset: 0.05rem;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0 52%,
-    var(--sv-cyan) 76%,
-    var(--sv-violet) 92%,
-    transparent
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
-  opacity: 0.85;
-  animation: sv-spin 7s linear 1;
-  pointer-events: none;
-}
-
-/* the little constellation — the hero network, in miniature */
-.sigvi-orb-net {
-  position: absolute;
-  inset: -0.9rem;
-  width: calc(100% + 1.8rem);
-  height: calc(100% + 1.8rem);
-  color: var(--sv-electric);
-  animation: sv-net 12s linear both;
-  pointer-events: none;
-}
-
-.sigvi-orb-node {
-  fill: var(--sv-cyan);
-}
-
-.sigvi-launcher .sigvi-mascot {
-  position: relative;
-}
-
-/* the mascot reacts when you point at it: a small lean, wider eyes, brighter light */
-.sigvi-launcher:hover .sigvi-mascot {
-  transform: scale(1.07) rotate(-4deg);
-}
-
-/* pointing at it wakes the ring and the bob again (new animation names, so
-   ones that already finished restart) */
-.sigvi-launcher:hover .sigvi-orb-ring {
-  animation: sv-spin-b 3s linear infinite;
-}
-
-.sigvi-launcher:hover .sigvi-mascot[data-animated] {
-  animation: sv-bob-b 2.6s ease-in-out infinite;
-}
-
-/* (an animation owns `transform`, so the reaction is an animation too) */
-.sigvi-launcher:hover .sv-eyes {
-  animation: sv-perk 0.5s var(--ease-out) both;
-}
-
-.sigvi-launcher:hover .sv-tip-glow {
-  animation: sv-tip 0.8s ease-in-out infinite;
-}
-
-.sigvi-launcher-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-  text-align: left;
-}
-
-.sigvi-launcher-label {
-  font-size: 0.9375rem;
-  font-weight: var(--weight-strong);
-  letter-spacing: 0.005em;
-  transition: text-shadow var(--dur-base) var(--ease-out);
-}
-
-.sigvi-launcher:hover .sigvi-launcher-label {
-  text-shadow: 0 0 14px rgb(94 224 255 / 55%);
-}
-
-.sigvi-launcher-sub {
-  font-size: 0.6875rem;
-  color: var(--sv-muted);
+  background: var(--color-primary-soft);
 }
 
 /* While the panel is open the launcher steps aside (the panel has its own
@@ -211,40 +88,38 @@
    to it the moment the panel closes. */
 .sigvi[data-open="true"] .sigvi-launcher {
   opacity: 0;
-  transform: scale(0.9);
   visibility: hidden;
   pointer-events: none;
-  transition-property: transform, opacity, visibility;
-  transition-delay: 0s, 0s, var(--dur-base);
+  transition-property: opacity, visibility;
+  transition-delay: 0s, var(--dur-base);
 }
 
 /* ============================== teaser ================================== */
 
 .sigvi-teaser {
   position: absolute;
-  right: 0.25rem;
-  bottom: calc(100% + 0.9rem);
+  right: 0;
+  bottom: calc(100% + 0.6rem);
   display: flex;
   align-items: flex-start;
   width: max-content;
   max-width: min(16rem, calc(100vw - 2 * var(--sv-gap)));
-  border: 1px solid var(--sv-line-strong);
-  border-radius: 1rem 1rem 0.3rem 1rem;
-  background: linear-gradient(140deg, var(--sv-bg-2), var(--sv-bg-1));
-  box-shadow: 0 12px 32px rgb(6 10 26 / 45%);
-  transform-origin: bottom right;
-  animation: sv-pop 0.45s var(--ease-out) both;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
+  animation: sv-fade-up var(--dur-slow) var(--ease-out) both;
 }
 
 .sigvi-teaser-main {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
-  padding: 0.65rem 0.4rem 0.65rem 0.85rem;
+  padding: 0.6rem 0.25rem 0.6rem 0.85rem;
   border: 0;
   border-radius: inherit;
   background: none;
-  color: var(--sv-text);
+  color: var(--color-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -259,30 +134,30 @@
 }
 
 .sigvi-teaser-title svg {
-  color: var(--sv-cyan);
+  color: var(--color-primary);
 }
 
 .sigvi-teaser-text {
+  color: var(--color-text-muted);
   font-size: var(--text-meta);
-  color: var(--sv-muted);
 }
 
 .sigvi-teaser-close {
   display: grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
   margin: 0.3rem 0.3rem 0 0;
   border: 0;
   border-radius: 50%;
   background: none;
-  color: var(--sv-muted);
+  color: var(--color-text-muted);
   cursor: pointer;
 }
 
 .sigvi-teaser-close:hover {
-  background: rgb(255 255 255 / 8%);
-  color: var(--sv-text);
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
 }
 
 /* ============================== panel =================================== */
@@ -293,61 +168,23 @@
   bottom: 0;
   display: flex;
   flex-direction: column;
-  width: min(26rem, calc(100vw - 2 * var(--sv-gap)));
-  height: min(43rem, calc(100vh - 2 * var(--sv-gap)));
-  height: min(43rem, calc(100dvh - 2 * var(--sv-gap)));
+  width: min(24rem, calc(100vw - 2 * var(--sv-gap)));
+  height: min(38rem, calc(100vh - 2 * var(--sv-gap)));
+  height: min(38rem, calc(100dvh - 2 * var(--sv-gap)));
   overflow: hidden;
-  isolation: isolate;
-  border: 1px solid var(--sv-line-strong);
-  border-radius: 1.4rem;
-  background:
-    radial-gradient(110% 55% at 100% 0%, rgb(139 123 255 / 26%), transparent 62%),
-    radial-gradient(90% 50% at 0% 0%, rgb(61 107 245 / 24%), transparent 58%),
-    linear-gradient(180deg, var(--sv-bg-1), var(--sv-bg-0));
-  box-shadow:
-    0 30px 70px rgb(3 6 20 / 60%),
-    0 0 0 1px rgb(255 255 255 / 4%) inset,
-    0 1px 0 rgb(255 255 255 / 12%) inset;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
   transform-origin: bottom right;
   opacity: 0;
-  transform: translateY(16px) scale(0.94);
+  transform: translateY(8px);
   visibility: hidden;
   pointer-events: none;
   transition:
     opacity var(--dur-base) var(--ease-out),
-    transform var(--dur-slow) var(--ease-out),
-    visibility 0s linear var(--dur-slow);
-}
-
-/* a faint star field + slow aurora drift behind everything */
-.sigvi-panel::before {
-  content: "";
-  position: absolute;
-  inset: -20% -10% auto;
-  height: 60%;
-  z-index: -1;
-  background:
-    radial-gradient(circle at 20% 40%, rgb(94 224 255 / 14%), transparent 40%),
-    radial-gradient(circle at 80% 30%, rgb(139 123 255 / 16%), transparent 42%);
-  pointer-events: none;
-}
-
-.sigvi[data-open="true"] .sigvi-panel::before {
-  animation: sv-drift 12s ease-in-out 2 alternate;
-}
-
-.sigvi-panel::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image:
-    radial-gradient(1px 1px at 12% 18%, rgb(255 255 255 / 55%), transparent),
-    radial-gradient(1px 1px at 78% 12%, rgb(255 255 255 / 45%), transparent),
-    radial-gradient(1.2px 1.2px at 90% 46%, rgb(160 190 255 / 50%), transparent),
-    radial-gradient(1px 1px at 8% 62%, rgb(160 190 255 / 40%), transparent),
-    radial-gradient(1px 1px at 55% 84%, rgb(255 255 255 / 35%), transparent);
-  pointer-events: none;
+    transform var(--dur-base) var(--ease-out),
+    visibility 0s linear var(--dur-base);
 }
 
 .sigvi[data-open="true"] .sigvi-panel {
@@ -358,37 +195,8 @@
   transition-delay: 0s;
 }
 
-/* The panel's contents arrive a beat after the shell, so opening feels like
-   the assistant "waking up" rather than a box appearing. */
-.sigvi-header,
-.sigvi-log,
-.sigvi-composer {
-  opacity: 0;
-  transform: translateY(8px);
-  transition:
-    opacity var(--dur-slow) var(--ease-out),
-    transform var(--dur-slow) var(--ease-out);
-}
-
-.sigvi[data-open="true"] .sigvi-header,
-.sigvi[data-open="true"] .sigvi-log,
-.sigvi[data-open="true"] .sigvi-composer {
-  opacity: 1;
-  transform: none;
-}
-
-.sigvi[data-open="true"] .sigvi-header {
-  transition-delay: 60ms;
-}
-.sigvi[data-open="true"] .sigvi-log {
-  transition-delay: 110ms;
-}
-.sigvi[data-open="true"] .sigvi-composer {
-  transition-delay: 160ms;
-}
-
-/* Phones: a full-screen sheet rising from the bottom edge. The height follows
-   the *visible* viewport (set from JS when the keyboard is up). */
+/* Phones: a full-screen sheet. The height follows the *visible* viewport
+   (set from JS when the keyboard is up). */
 .sigvi-panel[data-layout="sheet"] {
   position: fixed;
   top: var(--sigvi-top, 0px);
@@ -400,12 +208,7 @@
   height: var(--sigvi-vh, 100dvh);
   border: 0;
   border-radius: 0;
-  transform-origin: bottom center;
-  transform: translateY(28px);
-}
-
-.sigvi[data-open="true"] .sigvi-panel[data-layout="sheet"] {
-  transform: none;
+  box-shadow: none;
 }
 
 /* ============================== header ================================== */
@@ -413,40 +216,19 @@
 .sigvi-header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.85rem 0.85rem 0.8rem 1rem;
-  border-bottom: 1px solid var(--sv-line);
-  background: linear-gradient(180deg, rgb(91 140 255 / 10%), transparent);
+  gap: 0.65rem;
+  padding: 0.6rem 0.5rem 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .sigvi-head-avatar {
-  position: relative;
   display: grid;
   flex: none;
   place-items: center;
-  width: 3rem;
-  height: 3rem;
+  width: 2.25rem;
+  height: 2.25rem;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgb(139 123 255 / 30%), transparent 72%);
-}
-
-/* a thin light that circles the avatar, quickening while Sigvi thinks */
-.sigvi-head-avatar::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0 58%, var(--sv-cyan) 82%, transparent);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
-}
-
-.sigvi[data-open="true"] .sigvi-head-avatar::before {
-  animation: sv-spin 9s linear 2;
-}
-
-.sigvi[data-state="thinking"] .sigvi-head-avatar::before {
-  animation: sv-spin-fast 1.6s linear infinite;
+  background: var(--color-primary-soft);
 }
 
 .sigvi-header-text {
@@ -456,14 +238,14 @@
 
 .sigvi-title {
   margin: 0;
-  color: #fff;
-  font-size: 1.0625rem;
-  letter-spacing: 0.01em;
+  font-size: var(--text-card-title);
+  font-weight: var(--weight-strong);
+  line-height: 1.3;
 }
 
 .sigvi-subtitle {
-  margin: 0.05rem 0 0;
-  color: var(--sv-muted);
+  margin: 0;
+  color: var(--color-text-muted);
   font-size: var(--text-meta);
 }
 
@@ -475,26 +257,20 @@
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--sv-muted);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition:
     background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
+    color var(--dur-fast) var(--ease-out);
 }
 
 .sigvi-icon-btn:hover:not(:disabled) {
-  background: rgb(139 160 255 / 16%);
-  color: #fff;
-  transform: translateY(-1px);
-}
-
-.sigvi-icon-btn:active:not(:disabled) {
-  transform: scale(0.94);
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
 }
 
 .sigvi-icon-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.4;
   cursor: default;
 }
 
@@ -504,30 +280,26 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  padding: 0.85rem 1rem 1rem;
+  gap: 0.75rem;
+  padding: 1rem 0.9rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgb(139 160 255 / 35%) transparent;
 }
 
 .sigvi-row {
   display: flex;
-  gap: 0.55rem;
-  animation: sv-rise var(--dur-base) var(--ease-out) both;
+  align-items: flex-start;
+  gap: 0.5rem;
+  animation: sv-fade-up var(--dur-base) var(--ease-out) both;
 }
 
 .sigvi-row-user {
   justify-content: flex-end;
 }
 
-.sigvi-avatar {
-  flex: none;
-}
-
 .sigvi-row > .sigvi-avatar {
-  margin-top: 0.1rem;
+  margin-top: 0.3rem;
 }
 
 .sigvi-stack {
@@ -535,50 +307,37 @@
   flex-direction: column;
   gap: 0.5rem;
   min-width: 0;
-  max-width: calc(100% - 2.3rem);
+  max-width: calc(100% - 2rem);
 }
 
 .sigvi-bubble {
-  position: relative;
   max-width: 100%;
-  padding: 0.7rem 0.95rem;
-  border-radius: 1.1rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-xl);
   font-size: var(--text-body);
-  line-height: 1.6;
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
-/* assistant: a deep card with a gradient edge */
 .sigvi-bubble-assistant {
-  border: 1px solid transparent;
-  border-bottom-left-radius: 0.3rem;
-  background:
-    linear-gradient(160deg, #111b46, #0c1436) padding-box,
-    linear-gradient(135deg, rgb(125 162 255 / 55%), rgb(139 123 255 / 28%) 55%, rgb(94 224 255 / 22%))
-      border-box;
-  color: var(--sv-text);
-  box-shadow: 0 6px 18px rgb(3 6 20 / 30%);
+  border: 1px solid var(--sv-reply-border);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--sv-reply-bg);
+  color: var(--color-text);
 }
 
-/* a reply glows briefly as it arrives */
-.sigvi-arrive::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgb(94 224 255 / 35%), rgb(139 123 255 / 30%));
-  opacity: 0;
-  pointer-events: none;
-  animation: sv-arrive 1.1s var(--ease-out) both;
+/* The greeting sits in the flow of the conversation, so it lines up with the
+   bubbles beneath it. */
+.sigvi-row > .sigvi-greeting {
+  max-width: calc(100% - 2rem);
 }
 
 .sigvi-bubble-user {
-  max-width: 86%;
-  border-bottom-right-radius: 0.3rem;
-  background: linear-gradient(135deg, #3d6bf5, #5b7cff 55%, #7c6cff);
-  color: #fff;
+  max-width: 85%;
+  border-top-right-radius: var(--radius-sm);
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
   white-space: pre-wrap;
-  box-shadow: 0 8px 22px rgb(61 107 245 / 35%);
 }
 
 .sigvi-bubble p {
@@ -596,148 +355,67 @@
 }
 
 .sigvi-bubble li + li {
-  margin-top: 0.25rem;
+  margin-top: 0.2rem;
 }
 
 .sigvi-bubble strong {
-  color: #fff;
+  font-weight: var(--weight-strong);
 }
 
-.sigvi-welcome p:first-child {
+.sigvi-greeting-title {
+  margin: 0;
   font-size: var(--text-card-title);
+  font-weight: var(--weight-strong);
+  line-height: 1.35;
+}
+
+.sigvi-greeting-text {
+  margin: 0.1rem 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+  line-height: 1.45;
 }
 
 .sigvi-sources {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  align-self: flex-start;
   margin: 0;
-  padding: 0.22rem 0.6rem 0.22rem 0.5rem;
-  border: 1px solid var(--sv-line);
-  border-radius: var(--radius-pill);
-  background: rgb(94 224 255 / 7%);
-  color: var(--sv-muted);
+  color: var(--color-text-muted);
   font-size: var(--text-meta);
 }
 
-.sigvi-sources svg {
-  color: var(--sv-cyan);
-}
+/* ======================== suggested questions =========================== */
 
-/* ============================ welcome screen ============================ */
-
-.sigvi-welcome-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  animation: sv-rise var(--dur-slow) var(--ease-out) both;
-}
-
-.sigvi-hero-mascot {
-  margin: 0 0 0.2rem;
-}
-
-.sigvi-hero-title {
-  margin: 0;
-  color: #fff;
-  font-size: 1.3rem;
-  letter-spacing: -0.01em;
-}
-
-.sigvi-hero-sub {
-  margin: 0.1rem 0 0.7rem;
-  color: var(--sv-muted);
-  font-size: var(--text-body);
-}
-
-.sigvi-hero-lead {
-  margin: 0 0 0.45rem;
-  color: var(--sv-text);
-  font-size: var(--text-label);
-  font-weight: var(--weight-medium);
-}
-
-.sigvi-can {
+.sigvi-suggestions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.28rem 0.35rem;
-  margin: 0 0 0.8rem;
-  padding: 0;
-  list-style: none;
+  gap: 0.375rem;
+  /* line up with the greeting bubble, past the avatar */
+  padding-left: 2rem;
 }
 
-.sigvi-can li {
-  padding: 0.16rem 0.6rem;
-  border: 1px solid var(--sv-line);
-  border-radius: var(--radius-pill);
-  background: rgb(139 160 255 / 8%);
-  color: var(--sv-muted);
-  font-size: 0.75rem;
-}
-
-.sigvi-suggest-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.45rem;
-  width: 100%;
-}
-
-/* the odd fifth card takes the full row */
-.sigvi-suggest:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
+/* Compact, neutral chips: quiet at rest, clearly a control (outline,
+   pointer, blue on hover and keyboard focus). */
 .sigvi-suggest {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.7rem;
-  border: 1px solid var(--sv-line);
-  border-radius: 0.9rem;
-  background: linear-gradient(160deg, rgb(139 160 255 / 9%), rgb(139 160 255 / 3%));
-  color: var(--sv-text);
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
   font-size: var(--text-label);
-  font-weight: var(--weight-medium);
-  line-height: 1.3;
+  font-weight: var(--weight-regular);
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
   transition:
-    transform var(--dur-base) var(--ease-out),
-    border-color var(--dur-base) var(--ease-out),
-    background var(--dur-base) var(--ease-out);
-}
-
-.sigvi-suggest-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.65rem;
-  background: linear-gradient(135deg, rgb(61 107 245 / 50%), rgb(139 123 255 / 38%));
-  color: var(--sv-cyan);
-  transition:
-    transform var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .sigvi-suggest:hover:not(:disabled) {
-  transform: translateY(-2px);
-  border-color: var(--sv-line-strong);
-  background: linear-gradient(160deg, rgb(91 140 255 / 20%), rgb(139 123 255 / 8%));
-}
-
-.sigvi-suggest:hover:not(:disabled) .sigvi-suggest-icon {
-  transform: scale(1.08) rotate(-5deg);
-  box-shadow: 0 0 16px rgb(94 224 255 / 45%);
-}
-
-.sigvi-suggest:active:not(:disabled) {
-  transform: translateY(0) scale(0.985);
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
 .sigvi-suggest:disabled {
@@ -750,45 +428,19 @@
 .sigvi-jobs {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.5rem;
 }
 
 .sigvi-job {
-  position: relative;
-  overflow: hidden;
-  padding: 0.8rem 0.9rem 0.75rem;
-  border: 1px solid var(--sv-line);
-  border-radius: 1rem;
-  background: linear-gradient(160deg, #13204f, #0c1436);
-  box-shadow: 0 6px 18px rgb(3 6 20 / 35%);
-  transition:
-    transform var(--dur-base) var(--ease-out),
-    border-color var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
-}
-
-/* an accent line that sweeps across on hover */
-.sigvi-job::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--sv-cyan), var(--sv-electric), var(--sv-violet));
-  transform: scaleX(0.22);
-  transform-origin: left;
-  transition: transform 0.45s var(--ease-out);
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  transition: border-color var(--dur-fast) var(--ease-out);
 }
 
 .sigvi-job:hover {
-  transform: translateY(-2px);
-  border-color: var(--sv-line-strong);
-  box-shadow: 0 14px 30px rgb(3 6 20 / 50%), 0 0 22px rgb(91 140 255 / 18%);
-}
-
-.sigvi-job:hover::before {
-  transform: scaleX(1);
+  border-color: var(--color-border-strong);
 }
 
 .sigvi-job-top {
@@ -796,47 +448,39 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.25rem;
 }
 
 .sigvi-job-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--sv-cyan);
-  font-size: 0.6875rem;
-  font-weight: var(--weight-strong);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
 }
 
 .sigvi-job-dept {
-  padding: 0.1rem 0.5rem;
-  border: 1px solid var(--sv-line);
-  border-radius: var(--radius-pill);
-  color: var(--sv-muted);
-  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
 }
 
 .sigvi-job-title {
   margin: 0 0 0.2rem;
-  color: #fff;
   font-size: var(--text-card-title);
-  line-height: 1.25;
+  font-weight: var(--weight-strong);
+  line-height: 1.3;
 }
 
 .sigvi-job-where {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  margin: 0 0 0.4rem;
-  color: var(--sv-muted);
+  margin: 0 0 0.35rem;
+  color: var(--color-text-muted);
   font-size: var(--text-label);
 }
 
 .sigvi-job-summary {
-  margin: 0 0 0.65rem;
-  color: var(--sv-muted);
+  margin: 0 0 0.6rem;
+  color: var(--color-text-muted);
   font-size: var(--text-label);
   line-height: 1.5;
 }
@@ -852,18 +496,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  color: var(--sv-cyan);
+  color: var(--color-primary);
   font-size: var(--text-label);
   font-weight: var(--weight-strong);
   text-decoration: none;
-}
-
-.sigvi-job-cta svg {
-  transition: transform var(--dur-base) var(--ease-out);
-}
-
-.sigvi-job-cta:hover svg {
-  transform: translateX(3px);
 }
 
 .sigvi-job-cta:hover {
@@ -872,26 +508,18 @@
 }
 
 .sigvi-job-apply {
-  padding: 0.38rem 0.95rem;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(135deg, var(--sv-blue), var(--sv-violet));
-  color: #fff;
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
   font-size: var(--text-label);
   font-weight: var(--weight-strong);
   text-decoration: none;
-  box-shadow: 0 6px 16px rgb(61 107 245 / 35%);
-  transition:
-    transform var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out);
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .sigvi-job-apply:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgb(91 108 255 / 50%);
-}
-
-.sigvi-job-apply:active {
-  transform: scale(0.97);
+  background: var(--color-primary-solid-hover);
 }
 
 /* ========================== thinking & error ============================ */
@@ -899,21 +527,21 @@
 .sigvi-typing {
   display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
-  color: var(--sv-muted);
+  gap: 0.6rem;
+  color: var(--color-text-muted);
   font-size: var(--text-label);
 }
 
 .sigvi-dots {
   display: inline-flex;
-  gap: 0.28rem;
+  gap: 0.25rem;
 }
 
 .sigvi-dots span {
-  width: 0.42rem;
-  height: 0.42rem;
+  width: 0.375rem;
+  height: 0.375rem;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--sv-cyan), var(--sv-violet));
+  background: var(--color-text-muted);
   animation: sv-dot 1.2s ease-in-out infinite;
 }
 
@@ -930,13 +558,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.7rem 0.9rem;
-  border: 1px solid rgb(248 113 113 / 40%);
-  border-radius: 0.9rem;
-  background: rgb(248 113 113 / 10%);
-  color: #fecaca;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
   font-size: var(--text-label);
-  animation: sv-rise var(--dur-base) var(--ease-out) both;
 }
 
 .sigvi-error p {
@@ -945,149 +572,133 @@
 
 .sigvi-retry {
   flex: none;
-  padding: 0.35rem 0.85rem;
-  border: 1px solid rgb(248 113 113 / 50%);
-  border-radius: var(--radius-pill);
-  background: rgb(248 113 113 / 12%);
-  color: #fff;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-danger-text);
   font: inherit;
   font-size: var(--text-label);
   font-weight: var(--weight-strong);
   cursor: pointer;
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
 }
 
 .sigvi-retry:hover {
-  background: rgb(248 113 113 / 24%);
-  transform: translateY(-1px);
-}
-
-.sigvi-retry:active {
-  transform: scale(0.96);
+  border-color: var(--color-danger-text);
 }
 
 /* ============================== composer ================================ */
 
 .sigvi-composer {
-  padding: 0.75rem 0.9rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--sv-line);
-  background: linear-gradient(0deg, rgb(6 10 26 / 70%), transparent);
+  padding: 0.65rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--color-border);
 }
 
-.sigvi-composer-row {
+/* One field: the box and its Send button share a border, like a search bar. */
+.sigvi-field {
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-input-bg);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.sigvi-field:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 .sigvi-input {
   flex: 1;
   min-width: 0;
   max-height: 7.5rem;
-  padding: 0.65rem 0.85rem;
-  border: 1px solid var(--sv-line-strong);
-  border-radius: 1.1rem;
-  background: rgb(255 255 255 / 5%);
-  color: var(--sv-text);
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-body);
   line-height: 1.4;
   resize: none;
-  transition:
-    border-color var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
 }
 
-.sigvi-input:focus-visible {
+/* the field shows focus (above); the bare textarea doesn't need its own ring */
+.sigvi .sigvi-input:focus-visible {
   outline: none;
-  border-color: var(--sv-cyan);
-  box-shadow: 0 0 0 3px rgb(94 224 255 / 20%), 0 0 22px rgb(91 140 255 / 22%);
 }
 
 .sigvi-input::placeholder {
-  color: #8092bd;
+  color: var(--color-text-muted);
 }
 
 .sigvi-send {
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 2.25rem;
+  height: 2.25rem;
   border: 0;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--sv-blue), var(--sv-violet));
-  color: #fff;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-solid);
+  color: var(--color-on-primary);
   cursor: pointer;
-  box-shadow: 0 8px 20px rgb(61 107 245 / 40%);
   transition:
-    transform var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
     opacity var(--dur-fast) var(--ease-out);
 }
 
 .sigvi-send:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 26px rgb(91 108 255 / 55%);
-}
-
-.sigvi-send:active:not(:disabled) {
-  transform: scale(0.94);
+  background: var(--color-primary-solid-hover);
 }
 
 .sigvi-send:disabled {
-  opacity: 0.4;
-  box-shadow: none;
+  opacity: 0.35;
   cursor: default;
 }
 
 .sigvi-footnote {
   display: flex;
-  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0.15rem 0.75rem;
-  margin: 0.5rem 0 0;
-  color: #8092bd;
+  gap: 0.75rem;
+  margin: 0.4rem 0.15rem 0;
+  color: var(--color-text-muted);
   font-size: var(--text-meta);
 }
 
 .sigvi-counter {
+  flex: none;
   font-variant-numeric: tabular-nums;
 }
 
 /* ============================ the mascot ================================ */
 
+/* The mascot is used as an icon here, so its decorative extras — the halo,
+   the antenna glow, the thinking particles and the reply burst — stay off. */
 .sigvi-mascot {
   display: block;
   flex: none;
   overflow: visible;
-  transition: transform var(--dur-base) var(--ease-out);
 }
 
-/* SVG parts rotate/scale about their own centre by default */
 .sigvi-mascot * {
   transform-box: fill-box;
   transform-origin: center;
 }
 
-/* Ambient life, composited: the whole mascot bobs (the SVG root moves, its
-   insides don't). `translate` is its own property so it never fights the hover
-   `transform` on the launcher. Finite: a couple of bobs, then still. */
-.sigvi-launcher .sigvi-mascot[data-animated="true"] {
-  animation: sv-bob 4.6s ease-in-out 2;
+.sigvi .sv-aura,
+.sigvi .sv-tip-glow,
+.sigvi .sv-orbit,
+.sigvi .sv-burst {
+  display: none;
 }
 
-.sigvi[data-open="true"] .sigvi-panel .sigvi-mascot[data-animated="true"] {
-  animation: sv-bob 4.6s ease-in-out 3;
-}
-
-.sv-floor {
-  opacity: 0.4;
-}
-
-/* Blink and glance are short transitions, toggled now and then from JS
-   (SigviMascot.tsx) — nothing runs in between. */
+/* Blink and glance are short transitions toggled now and then from JS
+   (SigviMascot.tsx) on the header avatar only — nothing runs in between. */
 .sv-eyes {
   transition: transform 0.4s var(--ease-out);
 }
@@ -1108,53 +719,13 @@
   transform: scaleY(0.12);
 }
 
-.sv-orbit,
-.sv-burst {
-  opacity: 0;
-}
-
-/* thinking: eyes scan side to side, three particles orbit, the glow quickens */
-.sigvi-mascot[data-state="thinking"] .sv-orbit {
-  opacity: 1;
-  transform-box: view-box;
-  transform-origin: 60px 48px;
-  animation: sv-orbit 2.2s linear infinite;
-}
-
-.sigvi-mascot[data-state="thinking"] .sv-eyes {
+/* While a reply is on its way the header avatar's eyes scan. */
+.sigvi-mascot[data-state="thinking"][data-animated="true"] .sv-eyes {
   animation: sv-scan 1.2s ease-in-out infinite;
 }
 
-.sigvi-mascot[data-state="thinking"] .sv-aura {
-  animation: sv-aura 1.5s ease-in-out infinite;
-}
-
-.sigvi-mascot[data-state="thinking"] .sv-tip-glow {
-  animation: sv-tip 0.7s ease-in-out infinite;
-}
-
-/* a reply just landed: a ring of light and happy, squinting eyes */
-.sigvi-mascot[data-state="delight"] .sv-burst {
-  animation: sv-burst 1s var(--ease-out) 1 both;
-}
-
-.sigvi-mascot[data-state="delight"] .sv-eye {
-  animation: sv-happy 1.4s ease-out 1 both;
-}
-
-.sigvi-mascot[data-state="delight"] .sv-aura {
-  animation: sv-glow-up 1.4s ease-out 1 both;
-}
-
-/* the small still avatars beside messages carry no motion at all */
-.sigvi-mascot[data-animated="false"] *,
-.sigvi-mascot[data-animated="false"] {
-  animation: none !important;
-}
-
 /* nothing animates while the panel is closed (it is hidden, but be explicit) */
-.sigvi[data-open="false"] .sigvi-panel *,
-.sigvi[data-open="false"] .sigvi-panel::before {
+.sigvi[data-open="false"] .sigvi-panel * {
   animation-play-state: paused;
 }
 
@@ -1162,32 +733,25 @@
 
 @media (max-width: 640px) {
   .sigvi {
-    --sv-gap: 0.9rem;
+    --sv-gap: 1rem;
     bottom: calc(var(--sv-gap) + env(safe-area-inset-bottom, 0px));
   }
 
-  /* compact launcher: smaller orb, tighter pill */
+  /* just the head: a compact round button that covers as little as possible */
   .sigvi-launcher {
-    height: 3.1rem;
-    padding-right: 0.95rem;
+    width: 3rem;
+    height: 3rem;
+    padding: 0;
+    justify-content: center;
   }
 
-  .sigvi-orb {
-    width: 3.1rem;
-    height: 3.1rem;
-  }
-
-  .sigvi-orb .sigvi-mascot {
-    width: 40px;
-    height: auto;
-  }
-
-  .sigvi-launcher-sub {
-    display: none;
-  }
-
-  .sigvi-teaser {
-    right: 0;
+  .sigvi-launcher-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   /* 16px keeps iOS from zooming the page when the box is focused */
@@ -1195,103 +759,18 @@
     font-size: 1rem;
   }
 
-  .sigvi-footnote > :first-child {
-    display: none;
-  }
-
-  .sigvi-hero-mascot .sigvi-mascot {
-    width: 84px;
-    height: auto;
-  }
-}
-
-@media (max-width: 359px) {
-  .sigvi-launcher-text {
-    display: none;
-  }
-
-  .sigvi-launcher {
-    padding-right: 0.15rem;
+  .sigvi-icon-btn {
+    width: 2.75rem;
+    height: 2.75rem;
   }
 }
 
 /* ============================== motion ================================== */
 
-@keyframes sv-bob {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  50% {
-    translate: 0 -2.6px;
-  }
-}
-
-/* identical to sv-bob / sv-spin, under other names (see hover, thinking) */
-@keyframes sv-bob-b {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  50% {
-    translate: 0 -2.6px;
-  }
-}
-
-@keyframes sv-spin-b {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes sv-spin-fast {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes sv-net {
-  to {
-    transform: rotate(-60deg);
-  }
-}
-
-@keyframes sv-aura {
-  0%,
-  100% {
-    opacity: 0.7;
-    transform: scale(0.96);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.05);
-  }
-}
-
-@keyframes sv-glow-up {
-  0% {
-    opacity: 0.7;
-    transform: scale(1);
-  }
-  25% {
-    opacity: 1;
-    transform: scale(1.18);
-  }
-  100% {
-    opacity: 0.85;
-    transform: scale(1);
-  }
-}
-
-@keyframes sv-tip {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.9);
-  }
-  50% {
-    opacity: 0.9;
-    transform: scale(1.15);
+@keyframes sv-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
   }
 }
 
@@ -1305,110 +784,29 @@
   }
 }
 
-@keyframes sv-happy {
-  0% {
-    transform: scaleY(1);
-  }
-  20%,
-  70% {
-    transform: scaleY(0.55);
-  }
-  100% {
-    transform: scaleY(1);
-  }
-}
-
-@keyframes sv-perk {
-  from {
-    transform: translate(0, 0) scale(1);
-  }
-  to {
-    transform: translate(0, -0.6px) scale(1.12);
-  }
-}
-
-@keyframes sv-orbit {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes sv-burst {
-  0% {
-    opacity: 0.9;
-    transform: scale(0.6);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.6);
-  }
-}
-
-@keyframes sv-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes sv-drift {
-  from {
-    transform: translate3d(-4%, 0, 0);
-  }
-  to {
-    transform: translate3d(4%, 6%, 0);
-  }
-}
-
-@keyframes sv-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-
-@keyframes sv-pop {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.92);
-  }
-}
-
-@keyframes sv-arrive {
-  0% {
-    opacity: 0.85;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
 @keyframes sv-dot {
   0%,
   60%,
   100% {
     opacity: 0.35;
-    transform: translateY(0);
   }
   30% {
     opacity: 1;
-    transform: translateY(-3px);
   }
 }
 
-/* Reduced motion: the design system's global rule collapses durations but not
-   delays or iteration of ambient loops, so switch every Sigvi animation off
-   outright. State is still communicated — the "Sigvi is thinking…" text,
-   the static mascot, and the instant appearance of replies. */
+/* Reduced motion: switch every Sigvi animation and movement off outright.
+   State is still communicated — the "Sigvi is thinking…" text, the static
+   dots, and the instant appearance of replies. */
 @media (prefers-reduced-motion: reduce) {
   .sigvi *,
   .sigvi *::before,
   .sigvi *::after {
     animation: none !important;
+    transition: none !important;
   }
 
-  .sigvi-job:hover,
-  .sigvi-suggest:hover:not(:disabled),
-  .sigvi-launcher:hover {
+  .sigvi-panel {
     transform: none;
   }
 }

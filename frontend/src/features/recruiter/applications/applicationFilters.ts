@@ -65,6 +65,8 @@ export interface ApplicationFilters {
   appliedFrom: string;
   appliedTo: string;
   source: ApplicationSource | "";
+  campusDrive: string;
+  institution: string;
 }
 
 export interface ApplicationListState {
@@ -91,6 +93,8 @@ export const EMPTY_FILTERS: ApplicationFilters = {
   appliedFrom: "",
   appliedTo: "",
   source: "",
+  campusDrive: "",
+  institution: "",
 };
 
 export const DEFAULT_LIST_STATE: ApplicationListState = {
@@ -118,6 +122,8 @@ const URL_KEYS: Record<keyof ApplicationFilters, string> = {
   appliedFrom: "from",
   appliedTo: "to",
   source: "source",
+  campusDrive: "drive",
+  institution: "institution",
 };
 
 /** filter key -> the query parameter the API expects. */
@@ -138,11 +144,14 @@ const API_KEYS: Record<keyof ApplicationFilters, string> = {
   appliedFrom: "applied_from",
   appliedTo: "applied_to",
   source: "source",
+  campusDrive: "campus_drive_id",
+  institution: "institution_id",
 };
 
 const FILTER_KEYS = Object.keys(EMPTY_FILTERS) as (keyof ApplicationFilters)[];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DIGITS = /^\d{1,3}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T | "" {
   return allowed.includes(value as T) ? (value as T) : "";
@@ -155,6 +164,7 @@ export function parseListState(params: URLSearchParams): ApplicationListState {
   const text = (key: keyof ApplicationFilters) => (params.get(URL_KEYS[key]) ?? "").trim();
   const digits = (key: keyof ApplicationFilters) => (DIGITS.test(text(key)) ? text(key) : "");
   const date = (key: keyof ApplicationFilters) => (ISO_DATE.test(text(key)) ? text(key) : "");
+  const uuid = (key: keyof ApplicationFilters) => (UUID.test(text(key)) ? text(key) : "");
   const page = Number.parseInt(params.get("page") ?? "1", 10);
 
   return {
@@ -181,6 +191,8 @@ export function parseListState(params: URLSearchParams): ApplicationListState {
         params.get(URL_KEYS.source),
         APPLICATION_SOURCES.map((s) => s.value),
       ),
+      campusDrive: uuid("campusDrive"),
+      institution: uuid("institution"),
     },
     sort: oneOf(
       params.get("sort"),
@@ -249,6 +261,10 @@ function formatDate(iso: string): string {
 export function activeFilterChips(
   filters: ApplicationFilters,
   jobs: { id: string; title: string }[] = [],
+  lookups: {
+    campusDrives?: { id: string; name: string }[];
+    institutions?: { id: string; name: string }[];
+  } = {},
 ): FilterChip[] {
   const chips: FilterChip[] = [];
   if (filters.job) {
@@ -295,6 +311,14 @@ export function activeFilterChips(
   if (filters.source) {
     const label = APPLICATION_SOURCES.find((s) => s.value === filters.source)?.label;
     chips.push({ keys: ["source"], label: `Source: ${label}` });
+  }
+  if (filters.campusDrive) {
+    const name = lookups.campusDrives?.find((d) => d.id === filters.campusDrive)?.name ?? "Selected drive";
+    chips.push({ keys: ["campusDrive"], label: `Campus drive: ${name}` });
+  }
+  if (filters.institution) {
+    const name = lookups.institutions?.find((i) => i.id === filters.institution)?.name ?? "Selected institution";
+    chips.push({ keys: ["institution"], label: `Institution: ${name}` });
   }
   return chips;
 }

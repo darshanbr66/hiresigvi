@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,6 +50,15 @@ class CalendarEvent(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base
     """
 
     __tablename__ = "calendar_events"
+    __table_args__ = (
+        # The reminder poll's query: due, unfired reminders across all orgs
+        # (migration a8b9c0d1e2f3).
+        Index(
+            "ix_calendar_events_due_reminders",
+            "start_at",
+            postgresql_where=text("reminder_minutes_before IS NOT NULL AND reminder_fired_at IS NULL"),
+        ),
+    )
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

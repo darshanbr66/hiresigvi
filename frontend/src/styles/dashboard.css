@@ -12,24 +12,13 @@
   justify-content: space-between;
   gap: 1.5rem;
   flex-wrap: wrap;
-  padding: 1.75rem 2rem;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  background:
-    linear-gradient(120deg, var(--color-primary-soft), transparent 55%),
-    var(--color-surface);
-  box-shadow: var(--shadow-card), var(--highlight-top);
-}
-
-.command-header .network-backdrop {
-  z-index: -1;
-  opacity: 0.5;
+  /* A page header, not a hero: same weight as every other page's title. */
+  padding: 0.25rem 0 0.5rem;
 }
 
 .command-header h1 {
   margin: 0.15rem 0 0.35rem;
-  font-size: clamp(1.6rem, 3vw, 2.15rem);
+  font-size: var(--text-page-title);
 }
 
 .command-header p {
@@ -73,12 +62,13 @@
   width: 2.1rem;
   height: 2.1rem;
   border-radius: var(--radius-md);
-  background: var(--tone-soft, var(--color-primary-soft));
+  /* Quiet tile; the tone colour is only on the glyph. */
+  background: var(--color-bg-subtle);
   color: var(--tone-fg, var(--color-primary));
 }
 
 .stat-grid .stat-value {
-  font-size: 2.6rem;
+  font-size: 2.15rem;
   margin-top: 0.15rem;
 }
 
@@ -87,19 +77,8 @@
   font-size: var(--text-label);
 }
 
-/* One accent line per figure — the tone says what kind of number this is. */
 .stat-grid .stat-card {
   position: relative;
-  overflow: hidden;
-}
-
-.stat-grid .stat-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--tone-fg, var(--color-primary));
-  opacity: 0.85;
 }
 
 .stat-tone-brand {

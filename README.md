@@ -8,8 +8,14 @@ flow.
 **Status:** Local development demo. Working end-to-end: staff auth (with
 org/tenant isolation via Postgres RLS), Jobs/Candidates/Applications CRUD
 and pipeline, a public career site with resume upload, AI-assisted resume
-screening, MCQ assessments with token-based candidate access (no login
-required), campus drives, application notes, live reports, and outbound
+screening, assessments with token-based candidate access (no login
+required) built from written questions or a reusable, versioned question
+bank, with automatic grading of objective answers and manual grading of
+descriptive/coding answers, campus drives tied to an institution registry
+with optional affiliation verification, MTech/PhD scholarship & paid
+training programs (eligibility, selection test, interview, scholarship,
+training, offer, agreement and bond tracking — amounts and terms only as HR
+enters them), application notes, live reports, and outbound
 template-based candidate email (Resend over HTTPS in production, SMTP for local development). Recruiter email is **manual**: a
 recruiter picks one of six professional HTML templates (application received,
 interview invitation, assessment invitation, next steps, rejection, general),
@@ -67,6 +73,12 @@ intentionally simplified for the local MVP — see each doc for specifics).
 
 ## Documentation
 
+- [`docs/developer-guide.md`](docs/developer-guide.md) — start here: how the
+  layers fit, where code belongs, auth/tenancy, error handling, theme
+  tokens, local commands, safe schema changes.
+- [`docs/component-inventory.md`](docs/component-inventory.md) — every
+  backend module and frontend feature: responsibility, APIs, permissions,
+  tests.
 - [`docs/architecture.md`](docs/architecture.md) — system shape, domain
   modules, multi-tenancy, identity/authz, API boundary, frontend structure,
   implementation phases, risks.
@@ -78,10 +90,13 @@ intentionally simplified for the local MVP — see each doc for specifics).
   tenant isolation, secrets, invitation token security.
 - [`docs/recruitment-workflow.md`](docs/recruitment-workflow.md) —
   application status model and lifecycle.
-- [`docs/campus-hiring.md`](docs/campus-hiring.md) — campus drive model and
-  bulk assessment invitation flow.
+- [`docs/campus-hiring.md`](docs/campus-hiring.md) — campus drive model,
+  institution registry, affiliation verification, campus reporting.
 - [`docs/assessment.md`](docs/assessment.md) — assessment domain model,
-  secure invitation mechanics, evaluation.
+  secure invitation mechanics, grading, question bank and test builder.
+- [`docs/programs.md`](docs/programs.md) — MTech/PhD scholarship & paid
+  training programs: configuration, application, selection workflow,
+  scholarship/training/agreement records, open business decisions.
 - [`docs/ai-screening.md`](docs/ai-screening.md) — resume intelligence and
   AI screening pipeline, provider abstraction.
 - [`docs/sigvi.md`](docs/sigvi.md) — Sigvi, the public AI assistant: API,

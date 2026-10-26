@@ -12,7 +12,9 @@ import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
 import type { ApplicationResponse } from "../../../types/recruitment";
 import { useAuth } from "../../auth/AuthContext";
+import { listCampusDrives } from "../campusDrives/api";
 import { listCandidates } from "../candidates/api";
+import { listInstitutions } from "../institutions/api";
 import { listJobs } from "../jobs/api";
 import {
   PAGE_SIZE,
@@ -39,6 +41,8 @@ const FILTER_FIELDS: FilterField[] = [
   "immediateJoiner",
   "applied",
   "source",
+  "campusDrive",
+  "institution",
 ];
 
 export function ApplicationsPage() {
@@ -74,6 +78,20 @@ export function ApplicationsPage() {
   const jobsQuery = useQuery({
     queryKey: ["recruiter", "jobs"],
     queryFn: () => listJobs(token),
+    enabled: accessToken !== null,
+  });
+
+  // Options for the campus drive / institution filters. Same cache keys as
+  // the Campus Drives and Institutions pages, so they share one fetch.
+  const campusDrivesQuery = useQuery({
+    queryKey: ["recruiter", "campus-drives"],
+    queryFn: () => listCampusDrives(token),
+    enabled: accessToken !== null,
+  });
+
+  const institutionsQuery = useQuery({
+    queryKey: ["recruiter", "institutions", "active"],
+    queryFn: () => listInstitutions(token, { activeOnly: true }),
     enabled: accessToken !== null,
   });
 
@@ -202,6 +220,8 @@ export function ApplicationsPage() {
           onChange={setListState}
           fields={FILTER_FIELDS}
           jobs={jobsQuery.data}
+          campusDrives={campusDrivesQuery.data}
+          institutions={institutionsQuery.data}
           showSort
           searchLabel="Search applications"
           searchPlaceholder="Search by name, email, phone or job…"

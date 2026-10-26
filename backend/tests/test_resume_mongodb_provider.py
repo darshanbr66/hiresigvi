@@ -21,7 +21,7 @@ _JOB_PAYLOAD = {
     "title": "Backend Engineer",
     "department": "Engineering",
     "location": "Remote",
-    "employment_type": "Full-time",
+    "employment_type": "FULL_TIME",
     "description": "Own the recruitment platform's backend.",
     "openings_count": 1,
 }

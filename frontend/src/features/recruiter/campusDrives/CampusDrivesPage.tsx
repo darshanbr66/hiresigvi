@@ -9,11 +9,17 @@ import { QrCode } from "../../../shared/components/QrCode";
 import { SkeletonTable } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
-import type { CampusDriveResponse, CampusDriveStatus } from "../../../types/campusDrive";
+import {
+  VERIFICATION_METHOD_LABELS,
+  type AffiliationVerificationMethod,
+  type CampusDriveResponse,
+  type CampusDriveStatus,
+} from "../../../types/campusDrive";
 import { useAuth } from "../../auth/AuthContext";
 import { listAssessments } from "../assessments/api";
+import { listInstitutions } from "../institutions/api";
 import { listJobs } from "../jobs/api";
-import { createCampusDrive, deleteCampusDrive, listCampusDrives } from "./api";
+import { createCampusDrive, deleteCampusDrive, getCampusReport, listCampusDrives } from "./api";
 
 const DRIVES_QUERY_KEY = ["recruiter", "campus-drives"];
 
@@ -26,7 +32,12 @@ const STATUS_BADGE: Record<CampusDriveStatus, string> = {
 
 interface DriveFormState {
   name: string;
-  collegeName: string;
+  institutionSource: "existing" | "new";
+  institutionId: string;
+  newInstitutionName: string;
+  newInstitutionCity: string;
+  newInstitutionDomains: string;
+  verificationMethod: AffiliationVerificationMethod;
   jobSource: "existing" | "new";
   jobId: string;
   newJobTitle: string;
@@ -39,7 +50,12 @@ interface DriveFormState {
 
 const EMPTY_FORM: DriveFormState = {
   name: "",
-  collegeName: "",
+  institutionSource: "existing",
+  institutionId: "",
+  newInstitutionName: "",
+  newInstitutionCity: "",
+  newInstitutionDomains: "",
+  verificationMethod: "NONE",
   jobSource: "existing",
   jobId: "",
   newJobTitle: "",
@@ -74,6 +90,22 @@ export function CampusDrivesPage() {
     queryFn: () => listAssessments(token),
     enabled: accessToken !== null,
   });
+  // Only a published assessment can be attached to a drive.
+  const publishedAssessments = assessmentsQuery.data?.filter((a) => a.status === "PUBLISHED") ?? [];
+
+  const institutionsQuery = useQuery({
+    queryKey: ["recruiter", "institutions", "active"],
+    queryFn: () => listInstitutions(token, { activeOnly: true }),
+    enabled: accessToken !== null,
+  });
+
+  const [institutionFilter, setInstitutionFilter] = useState("");
+  const [showReport, setShowReport] = useState(false);
+  const reportQuery = useQuery({
+    queryKey: ["recruiter", "campus-drives", "report", institutionFilter],
+    queryFn: () => getCampusReport(token, institutionFilter || undefined),
+    enabled: accessToken !== null && showReport,
+  });
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<DriveFormState>(EMPTY_FORM);
@@ -98,7 +130,19 @@ export function CampusDrivesPage() {
       createCampusDrive(
         {
           name: form.name,
-          college_name: form.collegeName,
+          ...(form.institutionSource === "existing"
+            ? { institution_id: form.institutionId }
+            : {
+                new_institution: {
+                  name: form.newInstitutionName.trim(),
+                  city: form.newInstitutionCity.trim() || null,
+                  email_domains: form.newInstitutionDomains
+                    .split(/[\s,]+/)
+                    .map((d) => d.trim())
+                    .filter(Boolean),
+                },
+              }),
+          affiliation_verification_method: form.verificationMethod,
           job_id: form.jobSource === "existing" ? form.jobId : null,
           new_job_title: form.jobSource === "new" ? form.newJobTitle : null,
           new_job_description: form.jobSource === "new" ? form.newJobDescription : null,
@@ -117,6 +161,7 @@ export function CampusDrivesPage() {
       }
       void queryClient.invalidateQueries({ queryKey: DRIVES_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "institutions"] });
     },
     onError: (err) => {
       setFormError(err instanceof ApiError ? err.message : "Unable to reach the server.");
@@ -176,7 +221,9 @@ export function CampusDrivesPage() {
   const canManage = !(drivesQuery.error instanceof ApiError && drivesQuery.error.status === 403);
   const isFormValid =
     form.name.trim() !== "" &&
-    form.collegeName.trim() !== "" &&
+    (form.institutionSource === "existing"
+      ? form.institutionId !== ""
+      : form.newInstitutionName.trim() !== "") &&
     (form.jobSource === "existing"
       ? form.jobId !== ""
       : form.newJobTitle.trim() !== "" && form.newJobDescription.trim() !== "") &&
@@ -189,12 +236,92 @@ export function CampusDrivesPage() {
           <h1>Campus Drives</h1>
           <p className="muted">Mass hiring events tied to a job and a college, with their own public link.</p>
         </div>
-        {canManage && (
-          <button type="button" className="btn btn-primary" onClick={openCreateForm}>
-            + New drive
+        <div className="btn-group">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-expanded={showReport}
+            onClick={() => setShowReport((v) => !v)}
+          >
+            {showReport ? "Hide campus report" : "Campus report"}
           </button>
-        )}
+          {canManage && (
+            <button type="button" className="btn btn-primary" onClick={openCreateForm}>
+              + New drive
+            </button>
+          )}
+        </div>
       </div>
+
+      {(institutionsQuery.data?.length ?? 0) > 0 && (
+        <label className="field" style={{ maxWidth: "22rem" }}>
+          <span>Filter by institution</span>
+          <select value={institutionFilter} onChange={(e) => setInstitutionFilter(e.target.value)}>
+            <option value="">All institutions</option>
+            {institutionsQuery.data?.map((institution) => (
+              <option key={institution.id} value={institution.id}>
+                {institution.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {showReport && (
+        <section className="card stack-sm" aria-label="Campus report">
+          <h2>Campus report</h2>
+          {reportQuery.isPending && <SkeletonTable columns={8} />}
+          {reportQuery.isError && <Alert>Could not load the campus report.</Alert>}
+          {reportQuery.isSuccess && reportQuery.data.length === 0 && (
+            <p className="muted">No campus drives to report on yet.</p>
+          )}
+          {reportQuery.isSuccess && reportQuery.data.length > 0 && (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Institution</th>
+                    <th>Drive</th>
+                    <th>Applications</th>
+                    <th>Verified / pending / rejected</th>
+                    <th>Tests invited / completed</th>
+                    <th>Passed / failed / to grade</th>
+                    <th>Interview</th>
+                    <th>Selected / hired / rejected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportQuery.data.map((row) => (
+                    <tr key={row.drive_id}>
+                      <td>{row.institution_name}</td>
+                      <td>
+                        {row.drive_name}
+                        <span className="cell-sub">{row.job_title}</span>
+                      </td>
+                      <td>{row.applications}</td>
+                      <td>
+                        {row.affiliation_verification_method === "NONE"
+                          ? "Not required"
+                          : `${row.verified} / ${row.verification_pending} / ${row.verification_rejected}`}
+                      </td>
+                      <td>
+                        {row.assessment_invited} / {row.assessment_completed}
+                      </td>
+                      <td>
+                        {row.assessment_passed} / {row.assessment_failed} / {row.assessment_pending_review}
+                      </td>
+                      <td>{row.interview}</td>
+                      <td>
+                        {row.selected} / {row.hired} / {row.rejected}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       {createdLink && (
         <section className="card stack-sm" role="status">
@@ -242,14 +369,16 @@ export function CampusDrivesPage() {
                   <th>#</th>
                   <th>Drive</th>
                   <th>Job</th>
-                  <th>College</th>
+                  <th>Institution</th>
                   <th>Status</th>
                   <th>Applications</th>
                   {canManage && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
-                {drivesQuery.data.map((drive, index) => (
+                {drivesQuery.data
+                  .filter((drive) => !institutionFilter || drive.institution_id === institutionFilter)
+                  .map((drive, index) => (
                   <tr
                     key={drive.id}
                     className="clickable-row"
@@ -258,7 +387,7 @@ export function CampusDrivesPage() {
                     <td>{index + 1}</td>
                     <td>{drive.name}</td>
                     <td>{drive.job_title}</td>
-                    <td>{drive.college_name}</td>
+                    <td>{drive.institution_name}</td>
                     <td>
                       <span className={`badge ${STATUS_BADGE[drive.status]}`}>{drive.status}</span>
                     </td>
@@ -294,14 +423,106 @@ export function CampusDrivesPage() {
               />
             </label>
 
+            <fieldset className="field">
+              <legend>College / institution</legend>
+              <div className="segmented-control">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${form.institutionSource === "existing" ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setForm({ ...form, institutionSource: "existing" })}
+                  disabled={createMutation.isPending}
+                >
+                  Registered institution
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${form.institutionSource === "new" ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setForm({ ...form, institutionSource: "new" })}
+                  disabled={createMutation.isPending}
+                >
+                  + Register new institution
+                </button>
+              </div>
+              {form.institutionSource === "existing" ? (
+                <label className="field">
+                  <span>Institution</span>
+                  <select
+                    required
+                    value={form.institutionId}
+                    onChange={(e) => setForm({ ...form, institutionId: e.target.value })}
+                    disabled={createMutation.isPending}
+                  >
+                    <option value="" disabled>
+                      Select an institution…
+                    </option>
+                    {institutionsQuery.data?.map((institution) => (
+                      <option key={institution.id} value={institution.id}>
+                        {institution.name}
+                        {institution.city ? ` — ${institution.city}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {(institutionsQuery.data?.length ?? 0) === 0 && (
+                    <span className="field-hint">
+                      No institutions registered yet — use "+ Register new institution".
+                    </span>
+                  )}
+                </label>
+              ) : (
+                <div className="field-row">
+                  <label className="field">
+                    <span>Institution name</span>
+                    <input
+                      required
+                      value={form.newInstitutionName}
+                      onChange={(e) => setForm({ ...form, newInstitutionName: e.target.value })}
+                      disabled={createMutation.isPending}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>
+                      City <span className="optional-mark">(Optional)</span>
+                    </span>
+                    <input
+                      value={form.newInstitutionCity}
+                      onChange={(e) => setForm({ ...form, newInstitutionCity: e.target.value })}
+                      disabled={createMutation.isPending}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>
+                      Official email domain(s) <span className="optional-mark">(Optional)</span>
+                    </span>
+                    <input
+                      value={form.newInstitutionDomains}
+                      onChange={(e) => setForm({ ...form, newInstitutionDomains: e.target.value })}
+                      placeholder="college.edu"
+                      disabled={createMutation.isPending}
+                    />
+                  </label>
+                </div>
+              )}
+            </fieldset>
+
             <label className="field">
-              <span>College / institution</span>
-              <input
-                required
-                value={form.collegeName}
-                onChange={(e) => setForm({ ...form, collegeName: e.target.value })}
+              <span>Institution verification</span>
+              <select
+                value={form.verificationMethod}
+                onChange={(e) =>
+                  setForm({ ...form, verificationMethod: e.target.value as AffiliationVerificationMethod })
+                }
                 disabled={createMutation.isPending}
-              />
+              >
+                {(Object.keys(VERIFICATION_METHOD_LABELS) as AffiliationVerificationMethod[]).map((method) => (
+                  <option key={method} value={method}>
+                    {VERIFICATION_METHOD_LABELS[method]}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">
+                Opening the drive link never proves a candidate studies there. Email-domain
+                verification needs the institution's official domain on record.
+              </span>
             </label>
 
             <fieldset className="field">
@@ -434,7 +655,7 @@ export function CampusDrivesPage() {
                     <option value="" disabled>
                       Select an existing assessment…
                     </option>
-                    {assessmentsQuery.data?.map((assessment) => (
+                    {publishedAssessments.map((assessment) => (
                       <option key={assessment.id} value={assessment.id}>
                         {assessment.title}
                       </option>
@@ -442,8 +663,8 @@ export function CampusDrivesPage() {
                   </select>
                   <span className="field-hint">
                     Candidates are automatically invited to it right after they register.{" "}
-                    {(assessmentsQuery.data?.length ?? 0) === 0
-                      ? "You don't have any assessments yet — "
+                    {publishedAssessments.length === 0
+                      ? "You don't have any published assessments yet — "
                       : "Don't see the one you need? "}
                     <a href="/recruiter/assessments" target="_blank" rel="noreferrer">
                       create a new assessment

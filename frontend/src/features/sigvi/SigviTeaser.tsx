@@ -41,7 +41,7 @@ export function SigviTeaser({
     <div className="sigvi-teaser">
       <button type="button" className="sigvi-teaser-main" onClick={onOpen}>
         <span className="sigvi-teaser-title">
-          Hi, I'm Sigvi <Icon name="sparkles" size={13} />
+          Hi, I'm Sigvi
         </span>
         <span className="sigvi-teaser-text">Ask me about open roles.</span>
       </button>

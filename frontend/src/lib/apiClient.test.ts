@@ -47,3 +47,46 @@ describe("apiClient.getPage", () => {
     });
   });
 });
+
+describe("apiClient error normalization", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reports a failure to connect as a friendly network error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const failure = apiClient.get("/x", "t");
+    await expect(failure).rejects.toMatchObject({ status: 0, code: "network_error", kind: "network" });
+    await expect(failure).rejects.not.toMatchObject({ message: "Failed to fetch" });
+  });
+
+  it("never shows a non-JSON error page", async () => {
+    stubFetch(new Response("<html>502 Bad Gateway</html>", { status: 502 }));
+    await expect(apiClient.post("/x", {}, "t")).rejects.toMatchObject({
+      status: 502,
+      message: "We couldn't complete this request. Please try again.",
+    });
+  });
+
+  it("keeps the server's text and request id for diagnostics", async () => {
+    const body = { error: { code: "http_error", message: "Not Found", request_id: "req-1" } };
+    stubFetch(new Response(JSON.stringify(body), { status: 404 }));
+    const error = (await apiClient.get("/x", "t").catch((e: unknown) => e)) as ApiError;
+    expect(error.serverMessage).toBe("Not Found");
+    expect(error.requestId).toBe("req-1");
+    expect(error.message).not.toBe("Not Found");
+  });
+
+  it("exposes field issues in plain wording for forms", async () => {
+    const body = {
+      error: {
+        code: "validation_error",
+        message: "email: Field required",
+        request_id: null,
+        details: [{ field: "email", message: "Field required" }],
+      },
+    };
+    stubFetch(new Response(JSON.stringify(body), { status: 422 }));
+    const error = (await apiClient.postForm("/x", new FormData()).catch((e: unknown) => e)) as ApiError;
+    expect(error.fieldIssues).toEqual([{ field: "email", message: "This field is required." }]);
+    expect(error.message).toBe("Email: This field is required.");
+  });
+});

@@ -18,6 +18,7 @@ import { computeJobMatches, computeMatch, queryInternalAi } from "./api";
 import { AiDisclaimer } from "./AiDisclaimer";
 import { MatchResultCard } from "./MatchResultCard";
 import { PickerModal } from "./PickerModal";
+import { PipelineStatsPanel } from "./PipelineStatsPanel";
 import { normalizeMatchCard, normalizeMatchResponse } from "./presentation";
 
 type ConversationTurn =
@@ -265,17 +266,8 @@ export function AiWorkspacePage() {
                     <p style={{ margin: 0 }}>{turn.content}</p>
                     {turn.role === "assistant" && turn.response && (
                       <div className="ai-turn-results">
-                        {turn.response.pipeline_stats && (
-                          <div className="ai-pipeline-stats">
-                            {Object.entries(turn.response.pipeline_stats).map(([key, value]) => (
-                              <div key={key} className="stat-card">
-                                <span className="stat-label">{key.replace(/_/g, " ")}</span>
-                                <span className="stat-value" style={{ fontSize: "1.2rem" }}>
-                                  {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
+                        {turn.response.pipeline_stats != null && (
+                          <PipelineStatsPanel stats={turn.response.pipeline_stats} />
                         )}
                         {turn.response.matches.map((match) => (
                           <MatchResultCard

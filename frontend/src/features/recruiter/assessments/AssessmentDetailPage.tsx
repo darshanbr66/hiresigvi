@@ -7,10 +7,16 @@ import { BackLink } from "../../../shared/components/BackLink";
 import { SkeletonLines } from "../../../shared/components/Skeleton";
 import { Spinner } from "../../../shared/components/Spinner";
 import { useToast } from "../../../shared/components/ToastContext";
-import type { AssessmentCreateRequest, AssessmentResponse } from "../../../types/assessment";
+import { Modal } from "../../../shared/components/Modal";
+import {
+  QUESTION_TYPE_LABELS,
+  isChoiceType,
+  type AssessmentCreateRequest,
+  type AssessmentResponse,
+} from "../../../types/assessment";
 import { useAuth } from "../../auth/AuthContext";
 import { AssessmentForm } from "./AssessmentForm";
-import { getAssessment, updateAssessment } from "./api";
+import { changeAssessmentStatus, getAssessment, previewAssessment, updateAssessment } from "./api";
 
 function toFormValue(assessment: AssessmentResponse): AssessmentCreateRequest {
   return {
@@ -22,7 +28,15 @@ function toFormValue(assessment: AssessmentResponse): AssessmentCreateRequest {
       prompt: q.prompt,
       type: q.type,
       points: q.points,
+      negative_points: q.negative_points ?? 0,
       options: q.options.map((o) => ({ label: o.label, is_correct: o.is_correct })),
+      accepted_answers: q.accepted_answers ?? [],
+      case_sensitive: q.case_sensitive ?? false,
+      grading_notes: q.grading_notes ?? null,
+      explanation: q.explanation ?? null,
+      // Re-saving keeps the exact bank snapshot: the server copies the
+      // same version again rather than trusting edited content.
+      bank_version_id: q.source_bank_version_id ?? null,
     })),
   };
 }
@@ -48,6 +62,22 @@ export function AssessmentDetailPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const canManage = !(assessmentQuery.error instanceof ApiError && assessmentQuery.error.status === 403);
+  const [showPreview, setShowPreview] = useState(false);
+  const previewQuery = useQuery({
+    queryKey: ["recruiter", "assessments", assessmentId, "preview"],
+    queryFn: () => previewAssessment(assessmentId, token),
+    enabled: showPreview,
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: (status: "DRAFT" | "PUBLISHED") => changeAssessmentStatus(assessmentId, status, token),
+    onSuccess: (updated) => {
+      showToast(updated.status === "PUBLISHED" ? "Assessment published." : "Moved back to draft.", "success");
+      queryClient.setQueryData(["recruiter", "assessments", assessmentId], updated);
+      void queryClient.invalidateQueries({ queryKey: ["recruiter", "assessments"] });
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : "Could not change the status.", "error"),
+  });
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -119,8 +149,18 @@ export function AssessmentDetailPage() {
             <div>
               <h1>{assessmentQuery.data.title}</h1>
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.35rem" }}>
-                <span className={`badge ${assessmentQuery.data.deleted_at ? "badge-inactive" : "badge-active"}`}>
-                  {assessmentQuery.data.deleted_at ? "Archived" : "Active"}
+                <span
+                  className={`badge ${
+                    assessmentQuery.data.deleted_at || assessmentQuery.data.status === "DRAFT"
+                      ? "badge-inactive"
+                      : "badge-active"
+                  }`}
+                >
+                  {assessmentQuery.data.deleted_at
+                    ? "Archived"
+                    : assessmentQuery.data.status === "DRAFT"
+                      ? "Draft"
+                      : "Published"}
                 </span>
                 {assessmentQuery.data.has_invitations && (
                   <span className="badge badge-warn" title="Questions are locked because this assessment has been sent to a candidate">
@@ -129,11 +169,39 @@ export function AssessmentDetailPage() {
                 )}
               </div>
             </div>
-            {canManage && !editing && (
-              <button type="button" className="btn btn-primary" onClick={startEditing}>
-                Edit
+            <div className="btn-group">
+              <button type="button" className="btn btn-ghost" onClick={() => setShowPreview(true)}>
+                Preview as candidate
               </button>
-            )}
+              {canManage && !editing && !assessmentQuery.data.deleted_at && (
+                <>
+                  {assessmentQuery.data.status === "DRAFT" ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={statusMutation.isPending}
+                      onClick={() => statusMutation.mutate("PUBLISHED")}
+                    >
+                      Publish
+                    </button>
+                  ) : (
+                    !assessmentQuery.data.has_invitations && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={statusMutation.isPending}
+                        onClick={() => statusMutation.mutate("DRAFT")}
+                      >
+                        Back to draft
+                      </button>
+                    )
+                  )}
+                  <button type="button" className="btn btn-primary" onClick={startEditing}>
+                    Edit
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {!editing ? (
@@ -169,17 +237,27 @@ export function AssessmentDetailPage() {
                           {index + 1}. {question.prompt}
                         </strong>{" "}
                         <span className="muted">
-                          ({question.type === "MCQ_SINGLE" ? "Single choice" : "Multiple choice"},{" "}
-                          {question.points} pt)
+                          ({QUESTION_TYPE_LABELS[question.type]}, {question.points} pt
+                          {question.negative_points ? `, −${question.negative_points} if wrong` : ""})
+                          {question.source_bank_version_id ? " · from question bank" : ""}
                         </span>
                       </p>
-                      <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
-                        {question.options.map((option) => (
-                          <li key={option.id}>
-                            {option.label} {option.is_correct && <span aria-label="Correct answer">✓</span>}
-                          </li>
-                        ))}
-                      </ul>
+                      {isChoiceType(question.type) ? (
+                        <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
+                          {question.options.map((option) => (
+                            <li key={option.id}>
+                              {option.label} {option.is_correct && <span aria-label="Correct answer">✓</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="muted" style={{ margin: 0 }}>
+                          {question.accepted_answers?.length
+                            ? `Accepted answers: ${question.accepted_answers.join(" · ")}`
+                            : "Graded manually"}
+                          {question.grading_notes ? ` — Notes: ${question.grading_notes}` : ""}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -215,6 +293,37 @@ export function AssessmentDetailPage() {
             </section>
           ) : null}
         </>
+      )}
+
+      {showPreview && (
+        <Modal title="Candidate preview" onClose={() => setShowPreview(false)} wide>
+          {previewQuery.isPending && <p role="status">Loading…</p>}
+          {previewQuery.isError && <Alert>Could not load the preview.</Alert>}
+          {previewQuery.isSuccess && (
+            <div className="stack-sm">
+              <p className="muted">
+                {previewQuery.data.duration_minutes} minutes · {previewQuery.data.instructions}
+              </p>
+              <ol className="stack-sm">
+                {previewQuery.data.questions.map((q) => (
+                  <li key={q.id}>
+                    <strong>{q.prompt}</strong> <span className="muted">({q.points} mark(s))</span>
+                    {q.options.length > 0 ? (
+                      <ul>
+                        {q.options.map((o) => (
+                          <li key={o.id}>{o.label}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <textarea rows={q.type === "SHORT_ANSWER" ? 1 : 4} disabled aria-label="Answer box" />
+                    )}
+                  </li>
+                ))}
+              </ol>
+              <p className="field-hint">Exactly what candidates see — no answer key or grading notes.</p>
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { ApiError } from "../../lib/apiClient";
@@ -7,8 +7,8 @@ import type { SigviChatResponse } from "../../types/sigvi";
 import * as sigviApi from "./api";
 import { SigviWidget } from "./SigviWidget";
 
-/** The redesigned experience: welcome screen, launcher, mascot reactions, the
- * one-time teaser and the phone keyboard. (Conversation mechanics are in
+/** The experience around the conversation: welcome screen, launcher, header
+ * avatar, the one-time teaser and the phone keyboard. (Conversation mechanics are in
  * SigviWidget.test.tsx.) */
 
 function reply(message: string): SigviChatResponse {
@@ -53,34 +53,25 @@ afterEach(() => {
 });
 
 describe("welcome screen", () => {
-  it("introduces Sigvi, lists what it can help with, and presents the mascot as a named image", () => {
+  it("greets the visitor with a short question and one line of context", () => {
     renderWidget();
     openPanel();
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByRole("heading", { name: /hi, i'm sigvi/i })).toBeInTheDocument();
-    expect(within(dialog).getByText("I can help you explore:")).toBeInTheDocument();
-    for (const item of [
-      "Current job openings",
-      "How to apply",
-      "The hiring process",
-      "Campus opportunities",
-      "Assessments",
-      "SIGVITAS and career questions",
-      "General questions",
-    ]) {
-      expect(within(dialog).getByText(item)).toBeInTheDocument();
-    }
-    expect(within(dialog).getByRole("img", { name: /sigvi.*robot/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "Hi! How can I help?" })).toBeInTheDocument();
+    expect(within(dialog).getByText("Ask me about careers at SIGVITAS.")).toBeInTheDocument();
+    // The long introduction is gone.
+    expect(within(dialog).queryByText(/your ai assistant for sigvitas/i)).not.toBeInTheDocument();
+    // No oversized artwork: every mascot in the panel is a small decorative icon.
+    expect(within(dialog).queryByRole("img")).not.toBeInTheDocument();
   });
 
   it.each([
-    "Show me current openings",
-    "How do I apply?",
-    "How does the hiring process work?",
-    "Tell me about SIGVITAS",
-    "How does the assessment work?",
-  ])("the “%s” card sends exactly that question", async (label) => {
+    ["View open positions", "What positions are open right now?"],
+    ["How do I apply?", "How do I apply?"],
+    ["Campus opportunities", "What campus opportunities do you offer?"],
+    ["Hiring process", "How does the hiring process work?"],
+  ])("the “%s” suggestion sends its question through the chat", async (label, question) => {
     renderWidget();
     openPanel();
 
@@ -88,96 +79,62 @@ describe("welcome screen", () => {
 
     await screen.findByText("Hello from Sigvi.");
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ message: label, history: [] }));
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ message: question, history: [] }));
+    // The visitor's bubble shows what was asked.
+    expect(screen.getByText(question, { selector: ".sigvi-bubble-user" })).toBeInTheDocument();
   });
 
-  it("gives every suggestion an icon that assistive tech ignores", () => {
+  it("offers a small set of suggestions, each named by its question alone", () => {
     renderWidget();
     openPanel();
 
-    const cards = within(screen.getByRole("group", { name: /suggested questions/i })).getAllByRole("button");
-    expect(cards).toHaveLength(5);
-    cards.forEach((card) => {
-      const icon = card.querySelector(".sigvi-suggest-icon");
-      expect(icon).toHaveAttribute("aria-hidden", "true");
-      expect(icon?.querySelector("svg")).not.toBeNull();
-    });
+    const suggestions = within(screen.getByRole("group", { name: /suggested questions/i })).getAllByRole("button");
+    expect(suggestions).toHaveLength(4);
+    suggestions.forEach((button) => expect(button.querySelector("svg")).toBeNull());
   });
 
-  it("is replaced by a compact greeting once the conversation starts", async () => {
+  it("keeps the greeting at the top of the conversation once it starts", async () => {
     renderWidget();
     openPanel();
     type("hello");
     pressEnter();
     await screen.findByText("Hello from Sigvi.");
 
-    expect(screen.queryByText("I can help you explore:")).not.toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: /sigvi.*robot/i })).not.toBeInTheDocument();
-    expect(screen.getByText("How can I help you today?")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hi! How can I help?" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /suggested questions/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Hi! How can I help?" })).toHaveLength(1);
   });
 });
 
 describe("the launcher", () => {
-  it("shows the mascot beside an 'Ask Sigvi' label, with a single accessible name", () => {
+  it("shows Sigvi's head beside an 'Ask Sigvi' label, with a single accessible name", () => {
     renderWidget();
 
     const button = launcher();
     expect(within(button).getByText("Ask Sigvi")).toBeInTheDocument();
-    expect(within(button).getByText("AI assistant")).toBeInTheDocument();
     expect(button.querySelector("svg.sigvi-mascot")).toHaveAttribute("aria-hidden", "true");
     expect(button).toHaveAccessibleName("Ask Sigvi, the AI assistant");
   });
-});
 
-describe("the launcher's resting and waking", () => {
-  beforeEach(() => vi.useFakeTimers());
-  const orb = () => document.querySelector(".sigvi-orb");
-  const advance = (ms: number) =>
+  it("stays still: no animated mascot and nothing that keeps waking it", () => {
+    vi.useFakeTimers();
+    renderWidget();
+    const mascot = launcher().querySelector("svg.sigvi-mascot");
+    expect(mascot).toHaveAttribute("data-animated", "false");
+
     act(() => {
-      vi.advanceTimersByTime(ms);
+      vi.advanceTimersByTime(130_000);
     });
 
-  it("stirs once a minute (a fresh orb replays its finite animations)", () => {
-    renderWidget();
-    const first = orb();
-
-    advance(59_000);
-    expect(orb()).toBe(first);
-    advance(2_000);
-    expect(orb()).not.toBe(first);
-    expect(orb()).not.toBeNull();
-  });
-
-  it("does not stir while the panel is open", () => {
-    renderWidget();
-    openPanel();
-    const first = orb();
-
-    advance(130_000);
-
-    expect(orb()).toBe(first);
-  });
-
-  it("does not stir for people who asked for reduced motion", () => {
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query.includes("prefers-reduced-motion"),
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }));
-    renderWidget();
-    const first = orb();
-
-    advance(130_000);
-
-    expect(orb()).toBe(first);
+    // Same element: the launcher is never remounted to replay an animation.
+    expect(launcher().querySelector("svg.sigvi-mascot")).toBe(mascot);
   });
 });
 
-describe("the mascot's reactions", () => {
+describe("the header avatar", () => {
   const headerMascot = () => document.querySelector(".sigvi-header svg.sigvi-mascot");
 
-  it("thinks while a reply is on its way, celebrates when it lands, then settles", async () => {
+  it("looks busy only while a reply is on its way", async () => {
     const pending = deferred<SigviChatResponse>();
     send.mockReturnValueOnce(pending.promise);
     renderWidget();
@@ -190,16 +147,14 @@ describe("the mascot's reactions", () => {
 
     expect(headerMascot()).toHaveAttribute("data-state", "thinking");
     expect(within(status).getByText(/sigvi is thinking/i)).toBeInTheDocument();
-    expect(status.querySelector("svg.sigvi-mascot")).toHaveAttribute("data-state", "thinking");
 
     await act(async () => pending.resolve(reply("All done.")));
     await screen.findByText("All done.");
-    expect(headerMascot()).toHaveAttribute("data-state", "delight");
-
-    await waitFor(() => expect(headerMascot()).toHaveAttribute("data-state", "idle"), { timeout: 3000 });
+    // No celebration: straight back to idle.
+    expect(headerMascot()).toHaveAttribute("data-state", "idle");
   });
 
-  it("does not celebrate an error", async () => {
+  it("returns to idle after an error", async () => {
     send.mockRejectedValueOnce(new ApiError("nope", 503, "ai_unavailable"));
     renderWidget();
     openPanel();
@@ -217,10 +172,9 @@ describe("the mascot's reactions", () => {
     pressEnter();
     await screen.findByText("Hello from Sigvi.");
 
-    expect(document.querySelector(".sigvi-row-assistant svg.sigvi-mascot")).toHaveAttribute(
-      "data-animated",
-      "false",
-    );
+    document.querySelectorAll(".sigvi-row-assistant svg.sigvi-mascot").forEach((svg) => {
+      expect(svg).toHaveAttribute("data-animated", "false");
+    });
   });
 });
 

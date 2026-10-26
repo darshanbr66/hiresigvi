@@ -176,6 +176,63 @@
   font-size: 0.78rem;
 }
 
+.cell-sub.text-danger {
+  color: var(--color-danger-text);
+}
+
+.cell-sub.text-warn {
+  color: var(--color-warn-text);
+}
+
+.data-table .nowrap {
+  white-space: nowrap;
+}
+
+.data-table tr.row-muted td {
+  color: var(--color-text-muted);
+}
+
+/* --- question bank import ------------------------------------------------- */
+
+.import-rules {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+}
+
+.import-rules li + li {
+  margin-top: 0.35rem;
+}
+
+.import-warnings {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem;
+  background: var(--color-warn-bg);
+  color: var(--color-warn-text);
+  font-size: var(--text-label);
+}
+
+.import-warnings summary {
+  cursor: pointer;
+  font-weight: var(--weight-medium);
+}
+
+.import-warnings ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.import-preview {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.import-preview .import-question {
+  min-width: 16rem;
+}
+
 @media (max-width: 720px) {
   .filter-grid {
     grid-template-columns: 1fr;
@@ -183,5 +240,37 @@
 
   .pager {
     justify-content: center;
+  }
+}
+
+/* --- compact list filter bar ----------------------------------------------- */
+
+/* One dense row of filters above a list (Question Bank): the search takes
+   the room it needs, each select stays as narrow as its content allows, and
+   the row wraps instead of stacking every field full-width. */
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(14rem, 2fr) repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.filter-bar .field {
+  margin: 0;
+  gap: 0.3rem;
+}
+
+.filter-bar .field > span {
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 720px) {
+  .filter-bar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .filter-bar .field:first-child {
+    grid-column: 1 / -1;
   }
 }

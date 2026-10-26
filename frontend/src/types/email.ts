@@ -6,6 +6,8 @@ export type EmailTemplateKey =
   | "ASSESSMENT_INVITATION"
   | "NEXT_STEPS"
   | "REJECTION"
+  | "SCHOLARSHIP_UPDATE"
+  | "TRAINING_ENROLLMENT"
   | "GENERAL";
 
 export type EmailFieldInputType = "text" | "textarea" | "date" | "time" | "select" | "url";

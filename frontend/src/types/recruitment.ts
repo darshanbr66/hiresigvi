@@ -8,13 +8,94 @@ export type JobStatus = "DRAFT" | "OPEN" | "ON_HOLD" | "CLOSED" | "WITHDRAWN";
 
 export const JOB_STATUSES: JobStatus[] = ["DRAFT", "OPEN", "ON_HOLD", "CLOSED", "WITHDRAWN"];
 
-export interface JobResponse {
+/** Mirrors app/models/job.py::EmploymentType. */
+export type EmploymentType = "INTERNSHIP" | "PART_TIME" | "FULL_TIME";
+
+export const EMPLOYMENT_TYPES: EmploymentType[] = ["INTERNSHIP", "PART_TIME", "FULL_TIME"];
+
+export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
+  INTERNSHIP: "Internship",
+  PART_TIME: "Part-time",
+  FULL_TIME: "Full-time",
+};
+
+export type WorkMode = "ON_SITE" | "HYBRID" | "REMOTE";
+
+export const WORK_MODE_LABELS: Record<WorkMode, string> = {
+  ON_SITE: "On-site",
+  HYBRID: "Hybrid",
+  REMOTE: "Remote",
+};
+
+export type CompensationPeriod = "HOURLY" | "MONTHLY" | "ANNUAL";
+
+export const COMPENSATION_PERIOD_LABELS: Record<CompensationPeriod, string> = {
+  HOURLY: "per hour",
+  MONTHLY: "per month",
+  ANNUAL: "per year",
+};
+
+/** The optional, type-specific job details (backend/app/schemas/job.py::
+ * _EmploymentDetails). Money is a decimal string, as the API sends it. */
+export interface EmploymentDetails {
+  work_mode: WorkMode | null;
+  duration_months: number | null;
+  is_paid: boolean | null;
+  compensation_min: string | null;
+  compensation_max: string | null;
+  compensation_currency: string | null;
+  compensation_period: CompensationPeriod | null;
+  hours_per_week: number | null;
+  work_schedule: string | null;
+  min_experience_years: number | null;
+  max_experience_years: number | null;
+  eligibility_criteria: string | null;
+  conversion_to_full_time: boolean | null;
+  expected_joining_date: string | null;
+  employment_terms: string | null;
+}
+
+export type EmploymentDetailField = keyof EmploymentDetails;
+
+const COMMON_TYPE_FIELDS: EmploymentDetailField[] = [
+  "work_mode",
+  "compensation_min",
+  "compensation_max",
+  "compensation_currency",
+  "compensation_period",
+  "eligibility_criteria",
+];
+
+/** Mirrors app/models/job.py::EMPLOYMENT_TYPE_FIELDS — which details apply
+ * to each type. The server rejects a value outside the type's set. */
+export const EMPLOYMENT_TYPE_FIELDS: Record<EmploymentType, EmploymentDetailField[]> = {
+  INTERNSHIP: [...COMMON_TYPE_FIELDS, "duration_months", "is_paid", "conversion_to_full_time"],
+  PART_TIME: [
+    ...COMMON_TYPE_FIELDS,
+    "duration_months",
+    "hours_per_week",
+    "work_schedule",
+    "min_experience_years",
+    "max_experience_years",
+    "employment_terms",
+  ],
+  FULL_TIME: [
+    ...COMMON_TYPE_FIELDS,
+    "min_experience_years",
+    "max_experience_years",
+    "expected_joining_date",
+    "employment_terms",
+  ],
+};
+
+export interface JobResponse extends Partial<EmploymentDetails> {
   id: string;
   organization_id: string;
   title: string;
   department: string | null;
   location: string | null;
-  employment_type: string | null;
+  /** null only for a recruitment program's carrier job. */
+  employment_type: EmploymentType | null;
   description: string;
   description_visible: boolean;
   status: JobStatus;
@@ -29,21 +110,22 @@ export interface JobDeleteRequest {
   reason: string;
 }
 
-export interface JobCreateRequest {
+export interface JobCreateRequest extends Partial<EmploymentDetails> {
   title: string;
   department?: string | null;
   location?: string | null;
-  employment_type?: string | null;
+  employment_type?: EmploymentType;
   description: string;
   description_visible?: boolean;
   openings_count?: number;
 }
 
-export interface JobUpdateRequest {
+export interface JobUpdateRequest extends Partial<EmploymentDetails> {
   title?: string;
   department?: string | null;
   location?: string | null;
-  employment_type?: string | null;
+  /** Can be changed, never cleared. */
+  employment_type?: EmploymentType;
   description?: string;
   description_visible?: boolean;
   openings_count?: number;

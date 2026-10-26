@@ -20,8 +20,17 @@ the org-chart lines and the 3D hero.
   3D motif is there to say *intelligence behind the recruiting*, not to rename
   the site. The logo mark echoes the shipped favicon (brand tile, circuit
   nodes, magnifier, person).
-- **Dark is designed, not inverted**: deeper ink, hairline borders, a lit top
-  edge on raised surfaces.
+- **Dark is designed, not inverted**: a neutral graphite surface scale
+  (`--color-bg` #0f1115 < `--color-surface` #171a20 < `--color-surface-raised`
+  #1d2129) rather than blue-tinted near-black; hairline borders do the
+  separating and shadows stay flat; the brand blue is kept for actions,
+  links and focus; status colours are desaturated so badges read on dark
+  without glowing.
+- **The recruiter workspace is quiet.** The network/talent-graph artwork and
+  soft brand glows belong to the public site. Inside `/recruiter` there is no
+  page-wide glow, no frosted top bar, no gradient header card or gradient
+  empty states, and key-figure cards don't lift on hover (they aren't
+  clickable); colour is reserved for status and actions.
 
 ## Tokens (`frontend/src/styles/tokens.css`)
 
@@ -32,13 +41,31 @@ tokens: type scale (`--text-*`, three weights only), radii, elevation
 talent-graph category palette (`--kind-*`), which the 3D scene, the SVG poster
 and the legend all read — so they can never drift apart.
 
+Typography uses one family everywhere: the platform UI face (`--font-sans` /
+`--font-display`: Segoe UI Variable, SF Pro, Roboto). No webfont is loaded.
+The public site (landing, careers, Sigvi) adds a small fluid scale:
+`--text-display` (hero, 36–52px), `--text-headline` (section titles, 26–34px)
+and `--text-lead` (intro paragraphs, 17–19px), with matching
+`--leading-*` / `--tracking-*` tokens. Display and headline sizes use the
+medium weight (500), and headlines are a single ink colour. Brand blue is
+reserved for actions and links, not for headline words or eyebrows, which are
+muted small caps (`--tracking-caps`).
+
 `--color-primary` is for text/links; `--color-primary-solid` is the fill behind
 white text (buttons). They are separate so each clears WCAG AA in each theme.
+
+Form controls use `--color-input-border` and `--color-input-bg`: the outline
+is 3:1 against its surface in both themes (WCAG 1.4.11), which the general
+`--color-border-strong` hairline is not. Radii are 6 / 8 / 10 / 14 px
+(`--radius-sm/md/lg/xl`).
 
 **Contrast is audited, not eyeballed**: every text and graphic token pair in
 both themes was checked against WCAG (4.5:1 text, 3:1 graphics) directly from
 `tokens.css`; all 56 pairs pass. (The audit found and fixed two: the light
 "matched" amber on the hero stage, and the dark primary button's hover fill.)
+The graphite dark palette was re-checked the same way: body text 15.6:1 on
+the page and 13.3:1 on raised surfaces, muted text 6.4–6.9:1, links 8.1:1,
+white on the primary button 5.1:1, every status text on its badge 6.8–9.3:1.
 
 ## Motion rules
 
@@ -110,20 +137,17 @@ added.
 
 ## Sigvi (the public AI assistant)
 
-`features/sigvi/` + `styles/sigvi.css`. Sigvi is the one place the site has a
-*character*, so it carries a small identity of its own on top of the tokens:
-deep navy surfaces, signal blue, electric blue, a touch of violet and cyan,
-white text (`--sv-*`, scoped to `.sigvi`), and it stays dark in **both** themes
-so it is recognisable on a light or dark page. Type, radii, easing and durations
-still come from `tokens.css`. The mascot is an inline-SVG robot (white/blue
-shell, dark visor, glowing eyes) — no images, filters or libraries — echoing the
-"talent graph" motif through a miniature constellation around the launcher.
-
-Motion follows the rules above with two additions, both measured on the real
-page: ambient loops are limited to compositable elements and are **finite**
-(the launcher animates for a few seconds, then rests; hover, a once-a-minute
-wake and each open restart it), because an animation that never ends keeps the
-whole page rendering. Reduced motion switches every Sigvi animation off.
+`features/sigvi/` + `styles/sigvi.css`. Sigvi is part of the site, not a
+separate product: it uses the tokens for every colour, shadow, radius, type
+size and duration, so it follows light/dark with the page. One accent (the
+primary blue: visitor messages, Send, Apply, links; suggestion chips are
+neutral and turn blue on hover),
+neutral surfaces separated by hairlines, `--shadow-popover` for the panel and
+`--shadow-raised` for the launcher. No glows, gradients, star fields or
+orbiting decoration. The one piece of character is the small inline-SVG robot
+head, used as an icon (launcher, header, beside replies) and always
+decorative. Motion is limited to short fades; nothing runs at rest, and
+reduced motion switches every Sigvi animation off.
 
 Rendered through a portal into `<body>` (same reason as dialogs). Non-modal
 floating panel on desktop; full-screen sheet ≤ 640px that tracks the visible

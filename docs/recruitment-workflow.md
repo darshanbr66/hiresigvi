@@ -33,6 +33,11 @@ function that: validates the transition is legal, writes the new status,
 and appends an `ApplicationStatusHistory` row — so no call site can move an
 application into an invalid state or skip the history write.
 
+Applications that belong to a recruitment program get extra gates on top of
+the table (eligibility review, passing selection test, completed interview,
+accepted offer), checked by `app/workflows/program_workflow.py::check_application_transition`
+on every status change — see `docs/programs.md` § 4.
+
 ## 2. Application status model
 
 ```

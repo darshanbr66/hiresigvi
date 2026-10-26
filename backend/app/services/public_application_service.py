@@ -31,8 +31,9 @@ neither a slow/failed model nor a failed email can lose it.
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -57,6 +58,7 @@ from app.schemas.public import PublicApplicationOutcome
 from app.services import (
     activity_service,
     application_service,
+    campus_affiliation_service,
     candidate_document_service,
     candidate_service,
     email_verification_service,
@@ -68,7 +70,16 @@ from app.services import (
 from app.services.candidate_document_service import MarksCardUpload, StoredFileRef
 from app.services.email_verification_service import IssuedToken
 
+if TYPE_CHECKING:
+    from app.models.program import RecruitmentProgram
+
 logger = get_logger(__name__)
+
+#: Runs inside the submission's transaction, right after the Candidate,
+#: Application and resume exist and before anything is committed — so
+#: whatever it records (e.g. a program enrollment) is created atomically
+#: with the application, or not at all.
+ApplicationCreatedHook = Callable[[AsyncSession, Application, Candidate], Awaitable[None]]
 
 AI_SCREENED_OUT_REASON = (
     "Automatic AI screening: the resume did not sufficiently match this job's requirements. "
@@ -199,6 +210,7 @@ async def has_already_applied(
     phone: str | None,
     job_id: uuid.UUID | None,
     campus_drive: CampusDrive | None = None,
+    program: "RecruitmentProgram | None" = None,
 ) -> bool:
     """The apply form's early check, before any one-time code: does the
     profile this email — or this mobile number — belongs to already block a
@@ -207,7 +219,9 @@ async def has_already_applied(
     proven they own the address. The OTP request, verification, precheck
     and submission each enforce the same rules on their own."""
     job = (
-        await _load_job(db, job_id, organization_id=organization.id, campus_drive=campus_drive)
+        await _load_job(
+            db, job_id, organization_id=organization.id, campus_drive=campus_drive, program=program
+        )
         if job_id is not None
         else None
     )
@@ -238,6 +252,7 @@ async def request_applicant_code(
     email: str,
     job_id: uuid.UUID | None,
     campus_drive: CampusDrive | None = None,
+    program: "RecruitmentProgram | None" = None,
 ) -> email_verification_service.CodeSent:
     """Sends the one-time code — unless this email's profile already blocks
     a new application, in which case no code is sent and the caller gets the
@@ -250,6 +265,7 @@ async def request_applicant_code(
         phone=None,
         job_id=job_id,
         campus_drive=campus_drive,
+        program=program,
     ):
         raise already_applied_error()
     return await email_verification_service.request_code(
@@ -265,6 +281,7 @@ async def verify_applicant_email(
     code: str,
     job_id: uuid.UUID | None = None,
     campus_drive: CampusDrive | None = None,
+    program: "RecruitmentProgram | None" = None,
 ) -> VerifiedApplicant:
     """Verifies the code, then stops a returning candidate who can't apply
     from continuing into a form they can't submit: one who already applied
@@ -280,7 +297,9 @@ async def verify_applicant_email(
     The submission repeats every one of these checks: this is an early,
     friendlier stop, never the enforcement."""
     job = (
-        await _load_job(db, job_id, organization_id=organization.id, campus_drive=campus_drive)
+        await _load_job(
+            db, job_id, organization_id=organization.id, campus_drive=campus_drive, program=program
+        )
         if job_id is not None
         else None
     )
@@ -318,6 +337,7 @@ async def precheck_applicant(
     verification_token: str,
     phone: str,
     campus_drive: CampusDrive | None = None,
+    program: "RecruitmentProgram | None" = None,
 ) -> None:
     """Runs a submission's identity rules (`_identify_applicant`) for the
     details entered so far — before the candidate uploads a resume — with
@@ -325,7 +345,9 @@ async def precheck_applicant(
     returning candidate inside the reapply window, burns the token exactly
     as a submission would. Nothing is created; the submission checks it all
     again."""
-    job = await _load_job(db, job_id, organization_id=organization.id, campus_drive=campus_drive)
+    job = await _load_job(
+        db, job_id, organization_id=organization.id, campus_drive=campus_drive, program=program
+    )
     email = email_verification_service.normalize_email(email)
     verification = await email_verification_service.require_verified_token(
         db, organization_id=organization.id, email=email, token=verification_token
@@ -350,14 +372,26 @@ async def _load_job(
     *,
     organization_id: uuid.UUID,
     campus_drive: CampusDrive | None,
+    program: "RecruitmentProgram | None" = None,
 ) -> Job:
     """A careers-site application needs an OPEN job. A campus drive link is
     governed by the drive's own status instead (the caller has already
     checked it is ACTIVE), exactly as before this flow existed — the drive's
-    job only has to still exist. Always this organization's job (RLS
-    enforces it too)."""
+    job only has to still exist. A recruitment program likewise governs its
+    own carrier job — which, in turn, can never be applied to through the
+    careers site (that would bypass the program's eligibility rules and
+    terms). Always this organization's job (RLS enforces it too)."""
+    # Local import: program_service sits above this module.
+    from app.services import program_service
+
     job = await db.get(Job, job_id)
     if job is None or job.deleted_at is not None or job.organization_id != organization_id:
+        raise NotFoundError("This job is not accepting applications.")
+    if program is not None:
+        if job.id != program.job_id:
+            raise NotFoundError("This job is not accepting applications.")
+        return job
+    if await program_service.is_program_job(db, job.id):
         raise NotFoundError("This job is not accepting applications.")
     if campus_drive is None and job.status != JobStatus.OPEN:
         raise NotFoundError("This job is not accepting applications.")
@@ -641,6 +675,8 @@ async def submit_application(
     resume_bytes: bytes,
     marks_card: MarksCardUpload | None = None,
     campus_drive: CampusDrive | None = None,
+    program: "RecruitmentProgram | None" = None,
+    on_created: ApplicationCreatedHook | None = None,
 ) -> SubmissionResult:
     """`campus_drive` set = the candidate came in through that drive's public
     link: the application is tied to that drive and recorded with the
@@ -651,7 +687,9 @@ async def submit_application(
     profile. If the submission fails before it is committed, the stored file
     is removed again; a returning candidate's previous card is removed only
     once the new one is committed."""
-    job = await _load_job(db, job_id, organization_id=organization.id, campus_drive=campus_drive)
+    job = await _load_job(
+        db, job_id, organization_id=organization.id, campus_drive=campus_drive, program=program
+    )
     # Cheap checks first, so a bad file never spends the verification token.
     resume_service.validate_resume_upload(
         filename=resume_filename, content=resume_bytes, pdf_only=True
@@ -693,17 +731,17 @@ async def submit_application(
             campus_drive=campus_drive,
         )
 
-    if campus_drive is None:
+    drive: CampusDrive | None = campus_drive
+    if campus_drive is None and program is None:
         # A job with an ACTIVE campus drive gets a careers-site application
         # associated automatically (docs/campus-hiring.md § 2: "Public portal
         # association").
-        campus_drive_id = await db.scalar(
-            select(CampusDrive.id).where(
+        drive = await db.scalar(
+            select(CampusDrive).where(
                 CampusDrive.job_id == job.id, CampusDrive.status == CampusDriveStatus.ACTIVE
             )
         )
-    else:
-        campus_drive_id = campus_drive.id
+    campus_drive_id = drive.id if drive is not None else None
     application = await application_service.create_application(
         db,
         organization_id=organization.id,
@@ -729,6 +767,14 @@ async def submit_application(
         content=resume_bytes,
         pdf_only=True,
     )
+    if drive is not None:
+        # The institution is always the drive's (resolved from the drive's
+        # link or job server-side), never anything the candidate sent.
+        await campus_affiliation_service.open_verification(
+            db, drive=drive, application=application, candidate=candidate
+        )
+    if on_created is not None:
+        await on_created(db, application, candidate)
     stored_card: StoredFileRef | None = None
     replaced_card: StoredFileRef | None = None
     try:

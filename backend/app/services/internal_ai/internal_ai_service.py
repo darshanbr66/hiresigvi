@@ -37,6 +37,7 @@ from app.schemas.internal_ai import (
     InternalAIQueryResponse,
     JobCard,
     MatchCard,
+    PipelineStats,
 )
 from app.services.internal_ai import intent_detection, retrieval_planner
 from app.services.internal_ai.intent_detection import QueryIntent
@@ -226,5 +227,9 @@ async def answer_query(
         candidates=[_candidate_card(c) for c in unmatched_candidates],
         jobs=[_job_card(j) for j in retrieved.jobs],
         matches=[_match_card(c, j, m) for c, j, m in retrieved.matches],
-        pipeline_stats=retrieved.pipeline_stats,
+        pipeline_stats=(
+            PipelineStats.model_validate(retrieved.pipeline_stats)
+            if retrieved.pipeline_stats is not None
+            else None
+        ),
     )

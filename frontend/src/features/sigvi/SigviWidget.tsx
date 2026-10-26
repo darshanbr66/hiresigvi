@@ -10,7 +10,7 @@ import { FormattedMessage } from "./formatMessage";
 import { SigviAvatar } from "./SigviAvatar";
 import { SigviJobCard } from "./SigviJobCard";
 import { SigviLauncher } from "./SigviLauncher";
-import { SigviMascot, type MascotState } from "./SigviMascot";
+import { SigviMascot } from "./SigviMascot";
 import { SigviTeaser } from "./SigviTeaser";
 import { SigviWelcome } from "./SigviWelcome";
 import { rememberTeaserDismissed } from "./teaserStorage";
@@ -18,16 +18,14 @@ import { useSigviChat, type ChatTurn } from "./useSigviChat";
 
 const MOBILE_QUERY = "(max-width: 640px)";
 const COUNTER_FROM = Math.floor(SIGVI_MAX_MESSAGE_CHARS * 0.8);
-/** How long the mascot celebrates after a reply lands. */
-const DELIGHT_MS = 1400;
 
 function AssistantTurn({ turn, onNavigate }: { turn: ChatTurn; onNavigate: () => void }) {
   const knowledge = (turn.sources ?? []).filter((source) => source.type === "knowledge");
   return (
     <div className="sigvi-row sigvi-row-assistant">
-      <SigviAvatar size={30} />
+      <SigviAvatar size={24} />
       <div className="sigvi-stack">
-        <div className="sigvi-bubble sigvi-bubble-assistant sigvi-arrive">
+        <div className="sigvi-bubble sigvi-bubble-assistant">
           <FormattedMessage text={turn.content} />
         </div>
         {turn.jobs && turn.jobs.length > 0 && (
@@ -41,7 +39,6 @@ function AssistantTurn({ turn, onNavigate }: { turn: ChatTurn; onNavigate: () =>
           // The specific topics are in the tooltip; the chip itself stays
           // simple and never names anything internal.
           <p className="sigvi-sources" title={knowledge.map((source) => source.title).join(" · ")}>
-            <Icon name="sparkles" size={12} />
             Based on SIGVITAS Careers
           </p>
         )}
@@ -69,8 +66,6 @@ export function SigviWidget({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [teaserDismissed, setTeaserDismissed] = useState(false);
-  // The reply the mascot has already finished celebrating.
-  const [celebrated, setCelebrated] = useState<string | null>(null);
   const { turns, status, error, send, retry, clear } = useSigviChat({ organizationSlug });
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const reducedMotion = useReducedMotion();
@@ -83,18 +78,9 @@ export function SigviWidget({
   const composing = useRef(false);
 
   const pending = status === "pending";
-  const lastTurn = turns.at(-1);
-  const delight = lastTurn?.role === "assistant" && celebrated !== lastTurn.id;
-  const mascotState: MascotState = pending ? "thinking" : delight ? "delight" : "idle";
-
-  // A reply just arrived: the mascot lights up (derived above) until this
-  // timer marks that reply as celebrated.
-  useEffect(() => {
-    if (lastTurn?.role !== "assistant") return;
-    const id = lastTurn.id;
-    const timer = window.setTimeout(() => setCelebrated(id), DELIGHT_MS);
-    return () => window.clearTimeout(timer);
-  }, [lastTurn?.id, lastTurn?.role]);
+  // The header avatar's only state change: it looks busy while a reply is
+  // on its way (the "Sigvi is thinking…" row says the same in words).
+  const mascotState = pending ? "thinking" : "idle";
 
   // Opening moves focus to the message box; closing (button / Escape) returns
   // it to the launcher. Following a link out of the panel does neither.
@@ -111,7 +97,7 @@ export function SigviWidget({
   useLayoutEffect(() => {
     const log = logRef.current;
     if (!log || !open) return;
-    // The welcome screen reads from the top; only a conversation follows the end.
+    // The greeting reads from the top; only a conversation follows the end.
     if (turns.length === 0) {
       log.scrollTop = 0;
       return;
@@ -221,7 +207,7 @@ export function SigviWidget({
       >
         <header className="sigvi-header">
           <span className="sigvi-head-avatar">
-            <SigviMascot size={44} variant="head" state={mascotState} />
+            <SigviMascot size={28} variant="head" state={mascotState} />
           </span>
           <div className="sigvi-header-text">
             <h2 className="sigvi-title">Sigvi</h2>
@@ -240,7 +226,14 @@ export function SigviWidget({
           >
             <Icon name="trash" size={18} />
           </button>
-          <button type="button" className="sigvi-icon-btn" aria-label="Close Sigvi" title="Close" onClick={close}>
+          {/* Closing keeps the conversation, so this doubles as "minimize". */}
+          <button
+            type="button"
+            className="sigvi-icon-btn"
+            aria-label="Close Sigvi"
+            title="Close — your conversation is kept"
+            onClick={close}
+          >
             <Icon name="x" size={18} />
           </button>
         </header>
@@ -254,20 +247,7 @@ export function SigviWidget({
           aria-relevant="additions"
           tabIndex={0}
         >
-          {turns.length === 0 ? (
-            <SigviWelcome onPick={send} disabled={pending} />
-          ) : (
-            <div className="sigvi-row sigvi-row-assistant">
-              <SigviAvatar size={30} />
-              <div className="sigvi-bubble sigvi-bubble-assistant sigvi-welcome">
-                <p>
-                  <strong>Hi, I'm Sigvi</strong> <span aria-hidden="true">👋</span>
-                </p>
-                <p>Your AI assistant for SIGVITAS.</p>
-                <p>How can I help you today?</p>
-              </div>
-            </div>
-          )}
+          <SigviWelcome onPick={send} disabled={pending} showSuggestions={turns.length === 0} />
 
           {turns.map((turn) =>
             turn.role === "user" ? (
@@ -281,7 +261,7 @@ export function SigviWidget({
 
           {pending && (
             <div className="sigvi-row sigvi-row-assistant" role="status">
-              <SigviMascot size={34} variant="head" state="thinking" />
+              <SigviAvatar size={24} state="thinking" />
               <div className="sigvi-bubble sigvi-bubble-assistant sigvi-typing">
                 <span className="sigvi-dots" aria-hidden="true">
                   <span />
@@ -304,7 +284,7 @@ export function SigviWidget({
         </div>
 
         <form className="sigvi-composer" onSubmit={submit}>
-          <div className="sigvi-composer-row">
+          <div className="sigvi-field">
             <textarea
               ref={inputRef}
               className="sigvi-input"
@@ -332,14 +312,12 @@ export function SigviWidget({
             </button>
           </div>
           <p className="sigvi-footnote">
-            {draft.length >= COUNTER_FROM ? (
+            <span>AI can make mistakes. Don't share sensitive details.</span>
+            {draft.length >= COUNTER_FROM && (
               <span className="sigvi-counter" aria-live="polite">
                 {draft.length}/{SIGVI_MAX_MESSAGE_CHARS}
               </span>
-            ) : (
-              "Enter to send · Shift+Enter for a new line"
             )}
-            <span>AI can make mistakes. Don't share sensitive details.</span>
           </p>
         </form>
       </section>

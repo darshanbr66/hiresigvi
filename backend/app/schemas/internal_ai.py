@@ -86,13 +86,29 @@ class MatchCard(BaseModel):
     disclaimer: str = AI_MATCH_DISCLAIMER
 
 
+class TopJobStat(BaseModel):
+    title: str
+    application_count: int
+
+
+class PipelineStats(BaseModel):
+    """Org-wide pipeline counts for a PIPELINE_INTELLIGENCE query — computed
+    from persisted applications/jobs (retrieval_planner._pipeline_stats).
+    Typed so clients get a documented shape instead of an opaque dict."""
+
+    # ApplicationStatus value -> count; only statuses with >=1 application.
+    applications_by_status: dict[str, int] = Field(default_factory=dict)
+    open_jobs: int = 0
+    top_jobs_by_applications: list[TopJobStat] = Field(default_factory=list)
+
+
 class InternalAIQueryResponse(BaseModel):
     conversation_id: uuid.UUID
     message: str
     candidates: list[CandidateCard] = Field(default_factory=list)
     jobs: list[JobCard] = Field(default_factory=list)
     matches: list[MatchCard] = Field(default_factory=list)
-    pipeline_stats: dict[str, Any] | None = None
+    pipeline_stats: PipelineStats | None = None
     disclaimer: str = AI_MATCH_DISCLAIMER
 
 

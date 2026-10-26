@@ -67,7 +67,10 @@ async def submit_assessment(
 ) -> PublicSubmissionResult:
     if not payload.answers:
         raise AppError("At least one answer is required.", code="no_answers")
-    answers = [(answer.question_id, answer.selected_option_ids) for answer in payload.answers]
+    answers = [
+        (answer.question_id, answer.selected_option_ids, answer.text_answer)
+        for answer in payload.answers
+    ]
     result = await assessment_public_service.submit_attempt(db, token, answers)
     return PublicSubmissionResult(submitted_at=result.evaluated_at)
 

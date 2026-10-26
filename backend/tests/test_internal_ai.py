@@ -221,6 +221,30 @@ async def test_query_pipeline_intelligence_returns_real_counts(client: AsyncClie
     assert sum(body["pipeline_stats"]["applications_by_status"].values()) >= 1
 
 
+async def test_query_pipeline_stats_are_structured_json_not_strings(
+    client: AsyncClient, super_admin: User
+) -> None:
+    """The frontend renders these as lists/badges — nested values must arrive
+    as real JSON objects/arrays with typed leaves, never serialized strings."""
+    ctx = await _bootstrap_org_with_applied_application(client, "query-pipeline-shape")
+
+    response = await client.post(
+        "/api/v1/recruiter/ai/query",
+        json={"message": "Give me a summary of the current recruitment pipeline."},
+        headers=ctx["headers"],
+    )
+
+    assert response.status_code == 200, response.text
+    stats = response.json()["pipeline_stats"]
+    assert set(stats) == {"applications_by_status", "open_jobs", "top_jobs_by_applications"}
+    assert isinstance(stats["applications_by_status"], dict)
+    assert all(isinstance(k, str) and isinstance(v, int) for k, v in stats["applications_by_status"].items())
+    assert isinstance(stats["open_jobs"], int)
+    top_jobs = stats["top_jobs_by_applications"]
+    assert isinstance(top_jobs, list) and len(top_jobs) >= 1
+    assert top_jobs[0] == {"title": ctx["job"]["title"], "application_count": 1}
+
+
 async def test_query_job_wide_ranks_applicants(client: AsyncClient, super_admin: User) -> None:
     ctx = await _bootstrap_org_with_applied_application(client, "query-role")
 

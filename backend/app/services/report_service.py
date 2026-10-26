@@ -7,11 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.application import Application, ApplicationStatus
 from app.models.assessment import AssessmentInvitation, AssessmentResult, InvitationStatus
 from app.models.candidate import Candidate
-from app.models.job import Job, JobStatus
+from app.models.job import EmploymentType, Job, JobStatus
 from app.models.screening import ScreeningRun, ScreeningStatus
 from app.schemas.report import (
     AssessmentSummaryStats,
     CampusDriveCount,
+    EmploymentTypeCount,
     JobApplicationCount,
     ReportOverview,
     ScreeningSummary,
@@ -32,6 +33,11 @@ async def get_overview(db: AsyncSession, organization_id: uuid.UUID) -> ReportOv
     status_counts = Counter(application.status.value for application in applications)
     job_counts = Counter(application.job_id for application in applications)
     job_titles = {job.id: job.title for job in jobs}
+    job_types = {job.id: job.employment_type for job in jobs}
+    jobs_per_type = Counter(job.employment_type for job in jobs)
+    applications_per_type = Counter(
+        application.job.employment_type for application in applications
+    )
 
     return ReportOverview(
         total_jobs=len(jobs),
@@ -45,8 +51,26 @@ async def get_overview(db: AsyncSession, organization_id: uuid.UUID) -> ReportOv
             StatusCount(status=status, count=count) for status, count in status_counts.items()
         ],
         applications_by_job=[
-            JobApplicationCount(job_id=job_id, job_title=job_titles.get(job_id, "Unknown"), count=count)
+            JobApplicationCount(
+                job_id=job_id,
+                job_title=job_titles.get(job_id, "Unknown"),
+                employment_type=job_types.get(job_id),
+                count=count,
+            )
             for job_id, count in job_counts.most_common()
+        ],
+        by_employment_type=[
+            EmploymentTypeCount(
+                employment_type=employment_type,
+                jobs=jobs_per_type.get(employment_type, 0),
+                applications=applications_per_type.get(employment_type, 0),
+            )
+            for employment_type in (*EmploymentType, None)
+            # The three types always appear (zeros included); the program row
+            # only when programs exist.
+            if employment_type is not None
+            or jobs_per_type.get(None)
+            or applications_per_type.get(None)
         ],
         screening=await _screening_summary(db, organization_id),
         assessments=await _assessment_summary(db, organization_id),
@@ -122,6 +146,12 @@ async def _campus_drive_counts(db: AsyncSession, organization_id: uuid.UUID) -> 
     drives = await campus_drive_service.list_campus_drives(db, organization_id)
     counts = await campus_drive_service.application_counts(db, organization_id)
     return [
-        CampusDriveCount(drive_id=drive.id, drive_name=drive.name, application_count=counts.get(drive.id, 0))
+        CampusDriveCount(
+            drive_id=drive.id,
+            drive_name=drive.name,
+            institution_id=drive.institution_id,
+            institution_name=drive.institution.name,
+            application_count=counts.get(drive.id, 0),
+        )
         for drive in drives
     ]

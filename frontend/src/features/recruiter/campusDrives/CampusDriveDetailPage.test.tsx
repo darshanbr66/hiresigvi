@@ -30,6 +30,9 @@ const drive = (status: CampusDriveStatus = "ACTIVE"): CampusDriveResponse => ({
   job_id: "job-1",
   job_title: "Graduate Engineer",
   college_name: "MIT",
+  institution_id: "inst-1",
+  institution_name: "MIT",
+  affiliation_verification_method: "NONE",
   description: null,
   batch_year: 2026,
   start_date: null,
@@ -56,6 +59,9 @@ const funnel: CampusDriveFunnelCounts = {
   selected: 0,
   rejected: 0,
   hired: 0,
+  verification_pending: 0,
+  verified: 0,
+  verification_rejected: 0,
 };
 
 function renderPage(url = "/recruiter/campus-drives/drive-1") {

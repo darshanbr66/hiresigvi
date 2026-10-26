@@ -32,6 +32,8 @@ def test_all_required_templates_exist_with_the_specified_subjects() -> None:
         EmailTemplateKey.ASSESSMENT_INVITATION: "Assessment Invitation – {{job_title}}",
         EmailTemplateKey.NEXT_STEPS: "Next Steps – {{job_title}}",
         EmailTemplateKey.REJECTION: "Application Update – {{job_title}}",
+        EmailTemplateKey.SCHOLARSHIP_UPDATE: "Scholarship Update – {{job_title}}",
+        EmailTemplateKey.TRAINING_ENROLLMENT: "Training Enrollment – {{job_title}}",
         EmailTemplateKey.GENERAL: "A message from {{company_name}}",
     }
 

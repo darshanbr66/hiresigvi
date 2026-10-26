@@ -319,10 +319,6 @@
   background: var(--color-bg-subtle);
 }
 
-.sidebar-link:hover svg {
-  transform: scale(1.08);
-}
-
 .sidebar-link.active {
   color: var(--color-primary);
   font-weight: var(--weight-strong);
@@ -401,18 +397,6 @@
   overflow: hidden;
 }
 
-/* Layered depth: a faint brand-tinted light from the top-right corner sits
-   behind the content, so the canvas isn't a flat sheet. */
-.app-main::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 24rem;
-  background: radial-gradient(50rem 22rem at 82% -9rem, var(--color-primary-soft), transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
 .topbar {
   position: relative;
   z-index: 5;
@@ -424,8 +408,7 @@
   min-height: 4rem;
   padding: 0.7rem 1.75rem;
   border-bottom: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--color-surface);
 }
 
 .topbar-left {

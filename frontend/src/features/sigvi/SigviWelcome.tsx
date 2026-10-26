@@ -1,53 +1,42 @@
-import { Icon } from "../../shared/components/Icon";
-import { SigviMascot } from "./SigviMascot";
-import { SIGVI_CAPABILITIES, SIGVI_SUGGESTIONS } from "./suggestions";
+import { SigviAvatar } from "./SigviAvatar";
+import { SIGVI_SUGGESTIONS } from "./suggestions";
 
-/** The first thing a visitor sees when they open Sigvi. It goes away once the
- * conversation starts (a compact greeting takes its place). */
+/** Sigvi's opening message. It stays at the top of the conversation; the
+ * suggested questions beneath it go away once the visitor asks something. */
 export function SigviWelcome({
   onPick,
   disabled,
+  showSuggestions,
 }: {
   onPick: (question: string) => void;
   disabled: boolean;
+  showSuggestions: boolean;
 }) {
   return (
-    <section className="sigvi-welcome-hero" aria-label="Welcome">
-      <div className="sigvi-hero-mascot">
-        <SigviMascot
-          size={90}
-          variant="full"
-          label="Sigvi, the SIGVITAS AI assistant — a friendly robot"
-        />
+    <>
+      <div className="sigvi-row sigvi-row-assistant">
+        <SigviAvatar size={24} />
+        <div className="sigvi-bubble sigvi-bubble-assistant sigvi-greeting">
+          <h3 className="sigvi-greeting-title">Hi! How can I help?</h3>
+          <p className="sigvi-greeting-text">Ask me about careers at SIGVITAS.</p>
+        </div>
       </div>
-      <h3 className="sigvi-hero-title">
-        Hi, I'm Sigvi <span aria-hidden="true">👋</span>
-      </h3>
-      <p className="sigvi-hero-sub">Your AI assistant for SIGVITAS.</p>
 
-      <p className="sigvi-hero-lead">I can help you explore:</p>
-      <ul className="sigvi-can">
-        {SIGVI_CAPABILITIES.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-
-      <div className="sigvi-suggest-grid" role="group" aria-label="Suggested questions">
-        {SIGVI_SUGGESTIONS.map(({ label, icon }) => (
-          <button
-            key={label}
-            type="button"
-            className="sigvi-suggest"
-            disabled={disabled}
-            onClick={() => onPick(label)}
-          >
-            <span className="sigvi-suggest-icon" aria-hidden="true">
-              <Icon name={icon} size={16} />
-            </span>
-            <span className="sigvi-suggest-label">{label}</span>
-          </button>
-        ))}
-      </div>
-    </section>
+      {showSuggestions && (
+        <div className="sigvi-suggestions" role="group" aria-label="Suggested questions">
+          {SIGVI_SUGGESTIONS.map(({ label, question }) => (
+            <button
+              key={label}
+              type="button"
+              className="sigvi-suggest"
+              disabled={disabled}
+              onClick={() => onPick(question)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

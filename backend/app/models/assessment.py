@@ -13,8 +13,57 @@ from app.db.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class QuestionType(StrEnum):
+    """Choice types (MCQ_SINGLE, MCQ_MULTI, TRUE_FALSE) are always graded
+    automatically from `QuestionOption.is_correct`. SHORT_ANSWER is graded
+    automatically against `QuestionAnswerKey.accepted_answers` when any are
+    configured, otherwise manually. DESCRIPTIVE and CODING are always graded
+    manually by HR. CODING answers are stored as text and reviewed by a
+    person: the platform has no code-execution engine and never pretends to
+    run them (docs/assessment.md § 10)."""
+
     MCQ_SINGLE = "MCQ_SINGLE"
     MCQ_MULTI = "MCQ_MULTI"
+    TRUE_FALSE = "TRUE_FALSE"
+    SHORT_ANSWER = "SHORT_ANSWER"
+    DESCRIPTIVE = "DESCRIPTIVE"
+    CODING = "CODING"
+
+
+#: Types answered by picking options (`CandidateAnswer.selected_option_ids`).
+CHOICE_QUESTION_TYPES: frozenset[QuestionType] = frozenset(
+    {QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI, QuestionType.TRUE_FALSE}
+)
+#: Types answered with free text (`CandidateAnswer.text_answer`).
+TEXT_QUESTION_TYPES: frozenset[QuestionType] = frozenset(
+    {QuestionType.SHORT_ANSWER, QuestionType.DESCRIPTIVE, QuestionType.CODING}
+)
+#: Types that always need a person to award marks.
+MANUAL_QUESTION_TYPES: frozenset[QuestionType] = frozenset(
+    {QuestionType.DESCRIPTIVE, QuestionType.CODING}
+)
+
+
+class AssessmentStatus(StrEnum):
+    """DRAFT assessments can be built and previewed but not assigned to a
+    candidate, a campus drive or a program; PUBLISHED ones can. Archiving
+    is the existing soft delete (`deleted_at`)."""
+
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+
+
+class GradingMethod(StrEnum):
+    AUTO = "AUTO"
+    MANUAL = "MANUAL"
+
+
+class ResultGradingStatus(StrEnum):
+    """FINAL: every answer has marks, so `score`/`percentage`/`passed` are
+    the outcome. PENDING_MANUAL_REVIEW: at least one answer still waits for
+    a grader, and `passed` is NULL until it is graded."""
+
+    FINAL = "FINAL"
+    PENDING_MANUAL_REVIEW = "PENDING_MANUAL_REVIEW"
 
 
 class InvitationStatus(StrEnum):
@@ -37,6 +86,12 @@ class Assessment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     instructions: Mapped[str] = mapped_column(Text, nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     pass_score: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    status: Mapped[AssessmentStatus] = mapped_column(
+        Enum(AssessmentStatus, name="assessment_status", native_enum=True),
+        nullable=False,
+        default=AssessmentStatus.PUBLISHED,
+        server_default=AssessmentStatus.PUBLISHED.value,
+    )
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
@@ -61,9 +116,11 @@ class Assessment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
 
 
 class Question(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Belongs to exactly one Assessment — no shared question-bank
-    abstraction (docs/assessment.md § 2: adding one prematurely is exactly
-    what CLAUDE.md § 5 rules out). Tenancy is derived through
+    """Belongs to exactly one Assessment. A question added from the
+    organization's question bank is a *snapshot* of one bank version
+    (`source_bank_version_id` records which), never a live reference, so
+    editing the bank question later can never change this assessment or any
+    attempt at it (docs/assessment.md § 10). Tenancy is derived through
     assessment_id, same indirect-RLS pattern as application_status_history.
     """
 
@@ -77,11 +134,50 @@ class Question(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Enum(QuestionType, name="question_type", native_enum=True), nullable=False
     )
     points: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Deducted for a wrong (non-blank) answer to an automatically graded
+    # question; 0 = no negative marking. Never more than `points`.
+    negative_points: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_bank_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("question_bank_item_versions.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
 
     options: Mapped[list["QuestionOption"]] = relationship(
         "QuestionOption", lazy="raise", order_by="QuestionOption.order_index", viewonly=True
     )
+    answer_key: Mapped["QuestionAnswerKey | None"] = relationship(
+        "QuestionAnswerKey", lazy="raise", uselist=False, viewonly=True
+    )
+
+
+class QuestionAnswerKey(UUIDPrimaryKeyMixin, Base):
+    """Private grading data for a text-answer question (accepted short
+    answers, grader notes, explanation), kept out of `questions` so the
+    candidate-facing loaders never touch it. Choice questions keep their key
+    on `QuestionOption.is_correct`, which no public schema exposes.
+    Tenancy is derived through question -> assessment."""
+
+    __tablename__ = "question_answer_keys"
+
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("questions.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    accepted_answers: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    case_sensitive: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    grading_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class QuestionOption(UUIDPrimaryKeyMixin, Base):
@@ -168,6 +264,22 @@ class CandidateAnswer(UUIDPrimaryKeyMixin, Base):
         UUID(as_uuid=True), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     selected_option_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    # Free-text answer for SHORT_ANSWER / DESCRIPTIVE / CODING questions.
+    text_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Grading: set at submission for automatically graded questions, by a
+    # grader (assessment_grading_service) for manual ones. NULL
+    # `awarded_points` = not graded yet.
+    is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    awarded_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    grading_method: Mapped[GradingMethod | None] = mapped_column(
+        Enum(GradingMethod, name="grading_method", native_enum=True), nullable=True
+    )
+    graded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    graded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # HR-only; never shown to the candidate.
+    grader_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AssessmentResult(UUIDPrimaryKeyMixin, Base):
@@ -177,13 +289,20 @@ class AssessmentResult(UUIDPrimaryKeyMixin, Base):
         UUID(as_uuid=True),
         ForeignKey("assessment_invitations.id", ondelete="CASCADE"),
         nullable=False,
+        # A unique *constraint* (uq_…), as migration 89d2c5e04700 created it.
         unique=True,
-        index=True,
     )
     score: Mapped[int] = mapped_column(Integer, nullable=False)
     max_score: Mapped[int] = mapped_column(Integer, nullable=False)
     percentage: Mapped[int] = mapped_column(Integer, nullable=False)
-    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # NULL only while `grading_status` is PENDING_MANUAL_REVIEW.
+    passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    grading_status: Mapped[ResultGradingStatus] = mapped_column(
+        Enum(ResultGradingStatus, name="result_grading_status", native_enum=True),
+        nullable=False,
+        default=ResultGradingStatus.FINAL,
+        server_default=ResultGradingStatus.FINAL.value,
+    )
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

@@ -42,7 +42,7 @@
   width: 3rem;
   height: 3rem;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--color-primary-solid), var(--color-accent, var(--color-primary)));
+  background: var(--color-primary-solid);
   color: var(--color-on-primary);
   box-shadow: var(--shadow-card);
   flex-shrink: 0;
@@ -51,7 +51,7 @@
 /* --- quick actions (reuses .quick-grid / .module-card from dashboard.css) */
 
 .ai-quick-action-icon {
-  background: linear-gradient(135deg, var(--color-primary-soft), transparent);
+  background: var(--color-primary-soft);
 }
 
 /* --- chat / query panel -------------------------------------------------- */
@@ -131,10 +131,105 @@
   gap: 0.75rem;
 }
 
+/* Pipeline-summary answer. `white-space: normal` undoes the assistant
+   bubble's pre-line so JSX whitespace doesn't leak into the layout. */
 .ai-pipeline-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 0.75rem;
+  white-space: normal;
+  min-width: 0;
+}
+
+.ai-pipeline-kpis {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 0.75rem;
+}
+
+.ai-pipeline-kpis .stat-value {
+  font-size: 1.6rem;
+}
+
+.ai-pipeline-section {
+  min-width: 0;
+}
+
+.ai-pipeline-section h3 {
+  margin: 0 0 0.25rem;
+}
+
+.ai-pipeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ai-pipeline-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(2rem, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.ai-pipeline-row .badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-pipeline-bar {
+  height: 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.ai-pipeline-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.ai-pipeline-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.ai-pipeline-job {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ai-pipeline-job:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.ai-pipeline-job .ai-pipeline-count {
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+}
+
+.ai-pipeline-job-title {
+  overflow-wrap: anywhere;
+  font-weight: var(--weight-medium);
+}
+
+.ai-pipeline-empty,
+.ai-pipeline-fallback {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  white-space: normal;
 }
 
 /* --- match result card ---------------------------------------------------- */

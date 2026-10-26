@@ -15,6 +15,9 @@ class PublicQuestionOption(BaseModel):
 
 
 class PublicQuestion(BaseModel):
+    """Never includes correct options, accepted answers, grading notes,
+    explanations or negative-marking internals beyond the marks shown."""
+
     id: uuid.UUID
     prompt: str
     type: QuestionType
@@ -36,11 +39,13 @@ class PublicInvitationView(BaseModel):
 
 class AnswerSubmission(BaseModel):
     question_id: uuid.UUID
-    selected_option_ids: list[uuid.UUID] = Field(default_factory=list)
+    selected_option_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
+    #: For short-answer, descriptive and coding questions.
+    text_answer: str | None = Field(default=None, max_length=20000)
 
 
 class SubmitAnswersRequest(BaseModel):
-    answers: list[AnswerSubmission]
+    answers: list[AnswerSubmission] = Field(max_length=500)
 
 
 class PublicSubmissionResult(BaseModel):

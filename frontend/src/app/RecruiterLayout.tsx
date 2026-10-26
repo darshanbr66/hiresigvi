@@ -12,7 +12,10 @@ const WORKSPACE_ITEMS: NavItem[] = [
   { to: "/recruiter/candidates", label: "Candidates", icon: "candidates" },
   { to: "/recruiter/applications", label: "Applications", icon: "applications" },
   { to: "/recruiter/assessments", label: "Assessments", icon: "assessments" },
+  { to: "/recruiter/question-bank", label: "Question Bank", icon: "questionBank" },
+  { to: "/recruiter/programs", label: "Programs", icon: "program" },
   { to: "/recruiter/campus-drives", label: "Campus Drives", icon: "campus" },
+  { to: "/recruiter/institutions", label: "Institutions", icon: "institution" },
   { to: "/recruiter/notes", label: "Notes", icon: "notes" },
   { to: "/recruiter/calendar", label: "Calendar", icon: "calendar" },
 ];

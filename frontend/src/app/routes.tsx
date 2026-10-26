@@ -23,6 +23,7 @@ function page<T extends Record<string, ComponentType>>(
 const CandidatePlaceholderPage = page(() => import("../features/candidate/CandidatePlaceholderPage"), "CandidatePlaceholderPage");
 const AssessmentTakingPage = page(() => import("../features/careers/AssessmentTakingPage"), "AssessmentTakingPage");
 const CampusDriveApplyPage = page(() => import("../features/careers/CampusDriveApplyPage"), "CampusDriveApplyPage");
+const ProgramApplyPage = page(() => import("../features/careers/ProgramApplyPage"), "ProgramApplyPage");
 const CareersPage = page(() => import("../features/careers/CareersPage"), "CareersPage");
 const JobDetailPage = page(() => import("../features/careers/JobDetailPage"), "JobDetailPage");
 const OrganizationsPage = page(() => import("../features/admin/organizations/OrganizationsPage"), "OrganizationsPage");
@@ -32,6 +33,11 @@ const ApplicationDetailPage = page(() => import("../features/recruiter/applicati
 const ApplicationsPage = page(() => import("../features/recruiter/applications/ApplicationsPage"), "ApplicationsPage");
 const AssessmentDetailPage = page(() => import("../features/recruiter/assessments/AssessmentDetailPage"), "AssessmentDetailPage");
 const AssessmentsPage = page(() => import("../features/recruiter/assessments/AssessmentsPage"), "AssessmentsPage");
+const AttemptReviewPage = page(() => import("../features/recruiter/assessments/AttemptReviewPage"), "AttemptReviewPage");
+const InstitutionsPage = page(() => import("../features/recruiter/institutions/InstitutionsPage"), "InstitutionsPage");
+const ProgramDetailPage = page(() => import("../features/recruiter/programs/ProgramDetailPage"), "ProgramDetailPage");
+const ProgramsPage = page(() => import("../features/recruiter/programs/ProgramsPage"), "ProgramsPage");
+const QuestionBankPage = page(() => import("../features/recruiter/questionBank/QuestionBankPage"), "QuestionBankPage");
 const CalendarPage = page(() => import("../features/recruiter/calendar/CalendarPage"), "CalendarPage");
 const TalkToAdminPage = page(() => import("../features/recruiter/adminMessages/TalkToAdminPage"), "TalkToAdminPage");
 const CampusDriveDetailPage = page(() => import("../features/recruiter/campusDrives/CampusDriveDetailPage"), "CampusDriveDetailPage");
@@ -79,6 +85,7 @@ export function AppRoutes() {
         </Route>
         <Route path="/assessment/:token" element={<AssessmentTakingPage />} />
         <Route path="/campus-drive/:token" element={<CampusDriveApplyPage />} />
+        <Route path="/programs/:programId" element={<ProgramApplyPage />} />
         <Route path="/candidate/*" element={<CandidatePlaceholderPage />} />
 
         <Route path="/recruiter/login" element={<LoginPage />} />
@@ -101,7 +108,12 @@ export function AppRoutes() {
           <Route path="applications" element={<ApplicationsPage />} />
           <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
           <Route path="assessments" element={<AssessmentsPage />} />
+          <Route path="assessments/attempts/:invitationId" element={<AttemptReviewPage />} />
           <Route path="assessments/:assessmentId" element={<AssessmentDetailPage />} />
+          <Route path="question-bank" element={<QuestionBankPage />} />
+          <Route path="programs" element={<ProgramsPage />} />
+          <Route path="programs/:programId" element={<ProgramDetailPage />} />
+          <Route path="institutions" element={<InstitutionsPage />} />
           <Route path="campus-drives" element={<CampusDrivesPage />} />
           <Route path="campus-drives/:driveId" element={<CampusDriveDetailPage />} />
           <Route path="reports" element={<ReportsPage />} />

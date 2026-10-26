@@ -7,10 +7,12 @@ Nothing here is real-person data; the job title carries "(Demo)" so it can
 never be mistaken for a real opening.
 """
 
+from app.models.job import EmploymentType
+
 DEMO_JOB_TITLE = "Full Stack Developer – MERN (Demo)"
 DEMO_JOB_DEPARTMENT = "Engineering"
 DEMO_JOB_LOCATION = "Chennai, India (Hybrid)"
-DEMO_JOB_EMPLOYMENT_TYPE = "Full-time"
+DEMO_JOB_EMPLOYMENT_TYPE = EmploymentType.FULL_TIME
 
 DEMO_JOB_DESCRIPTION = """\
 About the role

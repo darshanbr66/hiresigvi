@@ -68,6 +68,15 @@ const RECOMMENDATION_BADGE: Record<string, string> = {
 
 const STATUSES_REQUIRING_CONFIRMATION: ApplicationStatus[] = ["REJECTED"];
 
+/** A result with answers still waiting for a grader has no pass/fail yet. */
+function resultLabel(passed: boolean | null): string {
+  return passed === null ? "AWAITING GRADING" : passed ? "PASSED" : "FAILED";
+}
+
+function resultBadge(passed: boolean | null): string {
+  return passed === null ? "badge-warn" : passed ? "badge-active" : "badge-danger";
+}
+
 export function ApplicationDetailPage() {
   const { applicationId = "" } = useParams<{ applicationId: string }>();
   const { accessToken } = useAuth();
@@ -537,7 +546,7 @@ export function ApplicationDetailPage() {
                       onChange={(e) => setSelectedAssessmentId(e.target.value)}
                     >
                       <option value="">Select an assessment…</option>
-                      {assessmentsQuery.data?.map((a) => (
+                      {assessmentsQuery.data?.filter((a) => a.status !== "DRAFT").map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.title}
                         </option>
@@ -625,12 +634,14 @@ export function ApplicationDetailPage() {
                             {attempt.result && (
                               <>
                                 {" "}
-                                — Score: {attempt.result.percentage}% —{" "}
-                                <span
-                                  className={`badge ${attempt.result.passed ? "badge-active" : "badge-danger"}`}
-                                >
-                                  {attempt.result.passed ? "PASSED" : "FAILED"}
-                                </span>
+                                — Score: {attempt.result.percentage}%
+                                {attempt.result.passed === null ? " so far" : ""} —{" "}
+                                <span className={`badge ${resultBadge(attempt.result.passed)}`}>
+                                  {resultLabel(attempt.result.passed)}
+                                </span>{" "}
+                                <Link to={`/recruiter/assessments/attempts/${attempt.id}`}>
+                                  {attempt.result.passed === null ? "Grade answers" : "Review answers"}
+                                </Link>
                               </>
                             )}
                             {!attempt.result && (
@@ -792,10 +803,8 @@ export function ApplicationDetailPage() {
                   {assessmentInvitationQuery.data.result ? (
                     <>
                       {assessmentInvitationQuery.data.result.percentage}% —{" "}
-                      <span
-                        className={`badge ${assessmentInvitationQuery.data.result.passed ? "badge-active" : "badge-danger"}`}
-                      >
-                        {assessmentInvitationQuery.data.result.passed ? "PASSED" : "FAILED"}
+                      <span className={`badge ${resultBadge(assessmentInvitationQuery.data.result.passed)}`}>
+                        {resultLabel(assessmentInvitationQuery.data.result.passed)}
                       </span>
                     </>
                   ) : (
@@ -853,7 +862,7 @@ export function ApplicationDetailPage() {
                     style={{ marginLeft: "1.6rem" }}
                   >
                     <option value="">Select an assessment…</option>
-                    {assessmentsQuery.data?.map((a) => (
+                    {assessmentsQuery.data?.filter((a) => a.status !== "DRAFT").map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.title}
                       </option>

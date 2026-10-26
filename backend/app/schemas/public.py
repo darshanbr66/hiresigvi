@@ -1,10 +1,12 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.models.candidate import CandidateType
+from app.models.job import CompensationPeriod, EmploymentType, WorkMode
 
 
 class PublicOrganizationSummary(BaseModel):
@@ -19,18 +21,36 @@ class PublicOrganizationSummary(BaseModel):
 
 
 class PublicJobSummary(BaseModel):
+    """What a job card shows: enough for a candidate to tell an internship,
+    a part-time and a full-time opening apart before opening one."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     title: str
     department: str | None
     location: str | None
-    employment_type: str | None
+    employment_type: EmploymentType | None
+    work_mode: WorkMode | None = None
+    duration_months: int | None = None
+    is_paid: bool | None = None
+    compensation_min: Decimal | None = None
+    compensation_max: Decimal | None = None
+    compensation_currency: str | None = None
+    compensation_period: CompensationPeriod | None = None
+    hours_per_week: int | None = None
     openings_count: int
     created_at: datetime
 
 
 class PublicJobDetail(PublicJobSummary):
+    work_schedule: str | None = None
+    min_experience_years: int | None = None
+    max_experience_years: int | None = None
+    eligibility_criteria: str | None = None
+    conversion_to_full_time: bool | None = None
+    expected_joining_date: date | None = None
+    employment_terms: str | None = None
     # None when the recruiter has hidden the JD from the public listing —
     # the text itself is never deleted (app/models/job.py::description_visible),
     # this is a presentation omission enforced here, not just in the UI.

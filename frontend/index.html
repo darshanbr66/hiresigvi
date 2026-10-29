@@ -36,9 +36,13 @@
   </head>
   <body>
     <!-- HireZ startup screen: shown until the first real screen is ready,
-         then faded out and removed (src/shared/lib/brandLoading.ts). -->
+         then faded out and removed (src/shared/lib/brandLoading.ts). The
+         ring rotates around the Z; the Z is its own layer and never moves. -->
     <div id="brand-loading" class="brand-loading" role="status" aria-label="Loading HireZ">
-      <span class="brand-loading-z" aria-hidden="true">Z</span>
+      <span class="brand-loading-mark" aria-hidden="true">
+        <span class="brand-loading-ring"></span>
+        <span class="brand-loading-z">Z</span>
+      </span>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

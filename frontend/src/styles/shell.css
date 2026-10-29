@@ -66,14 +66,14 @@
   display: none;
 }
 
-/* the rail keeps the header row's height; only the toggle fits, centred */
+/* The rail keeps the header row's height (so the nav starts at the same
+   place in both states) and shows [toggle][Z] centred as a pair: 36px
+   toggle + 4px gap + the ~16px compact mark fit the rail's 59px inner
+   width with room to spare, so nothing clips or overlaps. */
 .sidebar-collapsed .sidebar-brand {
   justify-content: center;
+  gap: 0.25rem;
   padding-inline: 0;
-}
-
-.sidebar-collapsed .brand-lockup {
-  display: none;
 }
 
 .sidebar-collapsed .sidebar-link {
@@ -220,6 +220,41 @@
 .wordmark-md { font-size: 1.375rem; }
 .wordmark-lg { font-size: 1.75rem; }
 
+/* The compact mark (Wordmark variant="mark"): the wordmark's indigo "Z" on
+   its own, a touch larger and heavier so it holds up as a standalone
+   symbol. Centred on its box rather than sitting on the text baseline. */
+.wordmark-mark {
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.wordmark-mark .wordmark-z {
+  margin-left: 0;
+}
+
+/* Collapsing/expanding swaps the full wordmark for the compact mark (they
+   are keyed in AppShell.tsx): the incoming form fades in instead of
+   snapping. Opacity/transform only — the row's size never changes, so
+   nothing below it moves. Reduced motion drops the duration (tokens.css). */
+.brand-lockup > .wordmark {
+  transform-origin: left center;
+  animation: brand-lockup-in var(--dur-base) var(--ease-out) both;
+}
+
+.brand-lockup > .wordmark-mark {
+  transform-origin: center;
+}
+
+@keyframes brand-lockup-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
 .brand-name {
   font-family: var(--font-display);
   font-size: 0.9rem;
@@ -260,8 +295,7 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-strong) transparent;
+  /* scrollbar styling comes from the global rules in index.css */
   /* room for the focus ring and the thin scrollbar */
   margin-inline: -0.25rem;
   padding-inline: 0.25rem;
@@ -270,16 +304,6 @@
      the padding above keeps everything at rest fully opaque */
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 0.5rem, #000 calc(100% - 0.5rem), transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 0.5rem, #000 calc(100% - 0.5rem), transparent);
-}
-
-.sidebar-nav::-webkit-scrollbar {
-  width: 8px;
-}
-
-.sidebar-nav::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: var(--color-border-strong) padding-box;
 }
 
 /* the pinned header is opaque, so links scrolling beneath it never show

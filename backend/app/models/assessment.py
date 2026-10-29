@@ -304,6 +304,10 @@ class AssessmentResult(UUIDPrimaryKeyMixin, Base):
         server_default=ResultGradingStatus.FINAL.value,
     )
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: The pass mark (percentage) this attempt is judged against — fixed at
+    #: submission, so pass/fail is reproducible and editing the test later
+    #: can't change it.
+    pass_score_applied: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class MonitoringEventType(StrEnum):

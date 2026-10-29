@@ -1,71 +1,185 @@
 # Frontend design system
 
-Visual language, motion rules, the 3D hero, and how they are kept fast and
+Visual language, motion rules, the home-page hero, and how they are kept fast and
 accessible. This describes what is implemented; it is not a roadmap.
 
-## Identity: "Signal"
+## Identity: HireZ
 
-The product is a *talent graph* — people, jobs and skills as nodes, matches as
-edges. That one motif is reused everywhere: the logo mark, the sliding nav
-indicator, timelines, the hiring-process spine, the ambient network artwork,
-the org-chart lines and the 3D hero.
+The product is **HireZ**. Its identity is a **text-only wordmark**
+(`shared/components/Wordmark.tsx`): "Hire" in the ink colour and the "Z" in
+brand indigo (`--color-wordmark-z`), display face, weight 750, tight
+tracking (-0.05em), upright — no italic, gradient, symbol or image. There is no image
+logo, no mark and no placeholder box anywhere in the UI; the collapsed
+sidebar rail uses the compact "HZ" form. The accessible name is always
+"HireZ". The browser tab reads "HireZ" on the home page and "<Page> · HireZ"
+inside the app.
 
-- **One brand hue** (signal blue), **one warm accent** (amber, "the human in
-  the loop" — the hired stage, a matched candidate, a human-decision step),
-  and cool ink neutrals. Semantic colours (success / warning / danger / info /
-  neutral) carry meaning only.
-- **The public site is Sigvitas-first.** The landing page, hero and careers
-  pages carry the Sigvitas name and its mark; "AI Recruitment Platform" is the
-  name of the recruiter product and is not the public brand. The network /
-  3D motif is there to say *intelligence behind the recruiting*, not to rename
-  the site. The logo mark echoes the shipped favicon (brand tile, circuit
-  nodes, magnifier, person).
-- **Dark is designed, not inverted**: a neutral graphite surface scale
-  (`--color-bg` #0f1115 < `--color-surface` #171a20 < `--color-surface-raised`
-  #1d2129) rather than blue-tinted near-black; hairline borders do the
-  separating and shadows stay flat; the brand blue is kept for actions,
-  links and focus; status colours are desaturated so badges read on dark
-  without glowing.
-- **The recruiter workspace is quiet.** The network/talent-graph artwork and
-  soft brand glows belong to the public site. Inside `/recruiter` there is no
-  page-wide glow, no frosted top bar, no gradient header card or gradient
-  empty states, and key-figure cards don't lift on hover (they aren't
-  clickable); colour is reserved for status and actions.
+- **Indigo is the brand.** Neutral surfaces (off-white / zinc) and
+  charcoal / off-white ink carry the page; indigo (`#4F46E5`, hover
+  `#4338CA`, soft surface `#EEF2FF`) marks primary actions, links, focus,
+  the wordmark's Z, the active nav item and key icons. **Teal** (`#0D9488`)
+  is the one supporting accent: the selected-nav bar, section kickers and
+  small supporting details. Secondary buttons stay neutral and bordered, so
+  there is one clear primary action.
+- **Status has its own colours.** Semantic tokens (success / warning /
+  danger / info / neutral) carry meaning only, and the recruitment pipeline
+  has a dedicated stage palette (below).
+- **No decoration for its own sake.** No 3D, no ambient network artwork, no
+  frosted/glass bars, no gradient washes or glows; depth is hairlines and
+  restrained shadows. Bars and headers are solid surfaces.
+- **Brand research.** No official colour specification for a parent brand
+  could be verified (the company site exposes only image logos), so the
+  palette is an independent choice. Every value lives in `tokens.css`;
+  changing the brand means changing those values only.
+- **Company vs product.** HireZ is the product name. SIGVITAS remains the
+  company name where it is the actual organization: its careers page
+  (`/org/sigvitas`), the footer copyright, the candidate-facing pages (which
+  show the *hiring organization's* name, not the product's) and the Sigvi
+  assistant. API titles, the CLI and environment variables were not renamed.
 
 ## Tokens (`frontend/src/styles/tokens.css`)
 
-The single source of truth. Pre-existing names (`--color-bg`, `--color-surface`,
-`--color-primary`, …) are kept, so every page inherits the palette. Additive
-tokens: type scale (`--text-*`, three weights only), radii, elevation
-(`--shadow-card/raised/popover`), motion (`--dur-*`, `--ease-*`), and the
-talent-graph category palette (`--kind-*`), which the 3D scene, the SVG poster
-and the legend all read — so they can never drift apart.
+The single source of truth; pre-existing token names are kept so every screen
+inherits the palette. Light / dark values:
 
-Typography uses one family everywhere: the platform UI face (`--font-sans` /
-`--font-display`: Segoe UI Variable, SF Pro, Roboto). No webfont is loaded.
-The public site (landing, careers, Sigvi) adds a small fluid scale:
-`--text-display` (hero, 36–52px), `--text-headline` (section titles, 26–34px)
-and `--text-lead` (intro paragraphs, 17–19px), with matching
-`--leading-*` / `--tracking-*` tokens. Display and headline sizes use the
-medium weight (500), and headlines are a single ink colour. Brand blue is
-reserved for actions and links, not for headline words or eyebrows, which are
-muted small caps (`--tracking-caps`).
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--color-primary-solid` (hover) | #4f46e5 (#4338ca) | #5850ec (#4f46e5) | primary buttons, solid indicators |
+| `--color-on-primary` | #ffffff | #ffffff | text on primary fills |
+| `--color-primary` (hover) | #4f46e5 (#4338ca) | #a5b4fc (#c7d2fe) | links, active nav text, indigo icons |
+| `--color-brand` / `-brand-soft` / `-brand-soft-border` | #4f46e5 / #eef2ff / #c7d2fe | #818cf8 / #1f1e3d / #34336a | brand graphics, soft indigo tiles |
+| `--color-wordmark-z` | #4f46e5 | #818cf8 | the Z in "HireZ" |
+| `--color-accent` / `-text` | #0d9488 / #0f766e | #2dd4bf / #5eead4 | teal: selected-nav bar, kickers, supporting details |
+| `--color-focus` | #4f46e5 | #818cf8 | focus ring (global `:focus-visible`) |
+| `--glow-brand` / `--glow-accent` | indigo 22% / teal 10% | indigo 22% / teal 9% | the hero glow behind the product preview |
+| `--shadow-brand` | indigo-tinted | indigo-tinted | primary-button hover lift |
+| `--color-bg` / `-bg-subtle` | #f6f7f8 / #eef0f2 | #111214 / #151619 | canvas, neutral bands |
+| `--color-surface` / `-surface-raised` | #ffffff / #ffffff | #1a1b1f / #202126 | cards, panels, shell |
+| `--color-border` / `-border-strong` | #e3e5e8 / #cfd2d7 | #2a2b30 / #37393f | hairlines |
+| `--shadow-card` / `-raised` / `-popover` | layered, 2–22% charcoal | layered, 40–75% black | resting cards / lifted panels / floating UI |
+| `--canvas-grid` / `--canvas-light` | 5% ink / 85% white | 4% white / 4% white | the faint grid and soft light behind sign-in and the hero |
+| `--weight-display` | 650 | 650 | page and section headings |
+| `--color-input-border` | #7d838c | #6c717b | form-control outlines (3:1) |
+| `--color-text` / `-text-muted` | #15181d / #565c66 | #ebecee / #a4a8b0 | text |
+| `--color-{danger,success,active,inactive,warn,info,interview}-{bg,text}` | | | badges and alerts |
+| `--kind-*` | | | categorical (org-chart departments, calendar kinds) — not status |
 
-`--color-primary` is for text/links; `--color-primary-solid` is the fill behind
-white text (buttons). They are separate so each clears WCAG AA in each theme.
+### Recruitment pipeline stages
 
-Form controls use `--color-input-border` and `--color-input-bg`: the outline
-is 3:1 against its surface in both themes (WCAG 1.4.11), which the general
-`--color-border-strong` hairline is not. Radii are 6 / 8 / 10 / 14 px
-(`--radius-sm/md/lg/xl`).
+One mapping (`shared/lib/statusTone.ts`): `pipelineStage(status)` maps the
+API status to a stage, `pipelineColor(status)` gives the stage's token, and
+`statusTone(status)` gives the badge tone. Unknown statuses fall back to
+neutral. Used by the overview and reports charts, the AI pipeline panel,
+the recent-activity timeline, `PipelineTrack` (current node and mini bar),
+status badges and the home page.
 
-**Contrast is audited, not eyeballed**: every text and graphic token pair in
-both themes was checked against WCAG (4.5:1 text, 3:1 graphics) directly from
-`tokens.css`; all 56 pairs pass. (The audit found and fixed two: the light
-"matched" amber on the hero stage, and the dark primary button's hover fill.)
-The graphite dark palette was re-checked the same way: body text 15.6:1 on
-the page and 13.3:1 on raised surfaces, muted text 6.4–6.9:1, links 8.1:1,
-white on the primary button 5.1:1, every status text on its badge 6.8–9.3:1.
+| Stage | Statuses | Token (light / dark) |
+|---|---|---|
+| Applied | APPLIED | `--pipeline-applied` #7b8698 / #8d98ab (neutral) |
+| Screening | UNDER_REVIEW, SCREENING | `--pipeline-screening` #b7791f / #e0a83a (amber) |
+| Assessment | ASSESSMENT_INVITED / STARTED / COMPLETED | `--pipeline-assessment` #2b6cc4 / #6ea0f0 (blue) |
+| Interview | SHORTLISTED, INTERVIEW | `--pipeline-interview` #6d4fd8 / #a58df7 (violet) |
+| Selected | SELECTED | `--pipeline-selected` #2f8f5b / #55c48a (green) |
+| Hired | HIRED | `--pipeline-hired` #15703f / #3fb877 (deep green) |
+| Rejected | REJECTED | `--pipeline-rejected` #c13030 / #ef7d7d (red) |
+| On hold | AI_SCREENED_OUT (advisory) | `--pipeline-hold` #a5762a / #c9a24a (muted amber) |
+
+Stage colour is never the only signal: stage names, counts and percentages
+stay visible next to every bar, dot and badge.
+
+### Type, shape, depth
+
+One family (the platform UI face; no webfont), a fixed scale (`--text-*`)
+plus a fluid public scale (`--text-display`, `--text-headline`,
+`--text-lead`). Page and section headings use `--weight-display` (650) with
+tight tracking (-0.03em / -0.02em) and balanced wrapping. Radii 6 / 8 / 10 /
+14 px. Depth is layered and low-opacity: a hairline border plus
+`--shadow-card` at rest, `--shadow-raised` for lifted panels (sign-in card,
+hero preview), `--shadow-popover` for floating UI; dark mode adds a 4% top
+highlight instead of heavier shadows. The shell (sidebar, top bar) and cards
+sit on the surface colour above the canvas, so the dashboard reads in layers
+in both themes.
+
+### Sign-in (`features/auth/LoginPage.tsx`, `styles/auth.css`)
+
+A centered card (max 25rem) on the canvas: monochrome wordmark, "Sign in",
+one line on who signs in, the two fields and a full-width primary button,
+with a note that staff accounts come from the organization admin. Behind it,
+`--canvas-grid` lines fade out radially from a `--canvas-light` pool with
+two faint `--glow-brand` / `--glow-accent` pools; the card stays solid (no
+glass) with a soft brand shadow, a fine indigo-to-teal hairline on its top
+edge and a short rise-in. Inputs darken their border on hover, show an
+indigo focus ring, and turn red only for the browser's own validation after
+the user has interacted (`:user-invalid`). While signing in, the button
+shows a spinner and the form is `aria-busy`; an error alert rises in.
+Back-to-home and the theme toggle sit in a light top bar. Authentication,
+validation, errors and redirects are unchanged; no credentials appear in the
+UI.
+
+### Sidebar scrolling (`styles/shell.css`)
+
+The page frame never scrolls: `.app-shell` is the viewport height and only
+`.content` scrolls. Inside the sidebar, only the link list (`.sidebar-nav`)
+scrolls — the header row and footer stay fixed — with a thin
+themed scrollbar, `overscroll-behavior: contain` (the page doesn't scroll
+when the list hits its end) and a short fade at the list's top and bottom
+edges. The `<aside>` itself is `overflow: hidden`. The phone drawer leaves
+room for the safe-area inset.
+
+The header is one compact row (`.sidebar-brand`, 36px): the collapse/expand
+button on the far left, the HireZ wordmark beside it, both vertically
+centred; the nav starts 12px below. The toggle is a borderless 36px icon
+button with the same corner radius and hover fill as a nav link. On the
+collapsed 72px rail only the toggle fits, so it sits centred in the same
+row and the wordmark is hidden (the rail never widens). Phones have no
+toggle: the drawer header is the wordmark with the close button on the
+right.
+
+### Startup screen (`index.html`, `styles/loading.css`, `shared/lib/brandLoading.ts`)
+
+A cold load never shows a blank page: `index.html` contains a full-screen
+`#brand-loading` overlay with one large "Z" (display face, weight 800,
+`clamp(7rem, 26vmin, 11.5rem)`) on `--color-bg`. The letter is filled by a
+gradient clipped to its shape — `--color-wordmark-z` with a band of
+`--color-accent` — and a 2.2s `background-position` loop sweeps the band
+from left to right; the band starts and ends off the letter, so the loop is
+seamless. A tiny inline script applies a saved theme choice before first
+paint (same key as `ThemeContext`), so the overlay matches the theme.
+
+Lifecycle: it stays until real route content has committed (`AppReady`
+inside the router's Suspense boundary) and nothing holds it
+(`HoldBrandLoading`): a protected route restoring the session, the sign-in
+page while the session is checked or a signed-in redirect is pending, and
+the code-loading fallback. It then fades out (280ms), leaves the
+accessibility tree at once and is removed; while shown, `#root` is `inert`.
+Route changes never bring it back, and there is no artificial delay — a
+fast start is just a short fade. Fail-safe: it leaves after 6s whatever
+happens, revealing the app's own loading text or error state. Reduced
+motion: a static indigo Z, removed without a fade. Forced colours: a plain
+system-coloured Z.
+
+### Key figures (`shared/components/MetricCard.tsx`)
+
+Value first, label second, context third. The icon (the project's own
+`Icon` set) sits at full strength on a small tinted tile in the top-right
+corner, coloured by the card's meaning (stage colours for selected / hired /
+rejected / assessment, teal for the lead figure, muted gray for neutral
+ones), with a matching 2px top edge — recognizable at a glance in both
+themes, small enough not to compete with the figure. Used by the overview
+and reports. Values are always real API figures.
+
+### Contrast (measured)
+
+Every text and graphic pair the system relies on was computed from
+`tokens.css` for both themes (WCAG 2.2: 4.5:1 text, 3:1 large text and
+non-text UI) — 146 pairs, all pass (white on the indigo button 6.3:1 light
+/ 5.6:1 dark; indigo on its soft tiles 5.6:1 / 8.0:1; both ends of the
+headline gradient pass as large text). For example: primary button text 15.8:1
+(light) / 14.5:1 (dark); metric icons on their tiles 3.2–5.7:1 (light) and
+5.1–7.2:1 (dark); the focus ring 3.9–4.2:1 / 6.7–7.3:1; every pipeline stage
+at least 3.35:1 against cards; org-chart connectors and search-dimmed text
+pass in both themes. The small wordmark is 19px bold so it qualifies as
+large text.
 
 ## Motion rules
 
@@ -75,9 +189,11 @@ continuity. Only `transform`/`opacity` animate; movement is ≤ ~14px.
 | Primitive | Where | Behaviour |
 |---|---|---|
 | `PageTransition` | recruiter/admin shell | 200ms fade + 6px rise on route change; entrance only, never waits on an outgoing page |
-| `Reveal` | landing, careers | scroll-in with direction and stagger; latches; visible immediately without IntersectionObserver |
+| `Reveal` / `useInView` | landing, careers | scroll-in with direction and stagger; latches. Fail-open: visible without IntersectionObserver, if creating the observer throws, and — for an element too tall to ever show `threshold` of itself — as soon as any of it is on screen |
+| Home hero | public home | headline, copy and actions rise in, then the product preview (320ms later), then its two small cards (scale/opacity). Afterwards only those two cards drift a few px on slow 7s/9s cycles, and the layers follow the pointer by a few px (fine pointer, ≥1000px wide). Entrance, drift and parallax use `scale`/`opacity`, `transform` and `translate` respectively, so they never fight |
+| Capability cards, journey | public home | cards stagger in; on hover a faint indigo wash, a 2px lift and a filled icon tile. The "how it works" line draws itself left to right, then the four steps follow it in |
+| Header | public home | turns lightly frosted once content scrolls beneath it — the one use of blur |
 | `AnimatedNumber` | dashboard figures | counts up when first seen and on change; **renders the true value at once** for reduced motion / no rAF / no IO |
-| `Magnetic` | hero + closing CTA | a few px of pull toward a fine pointer; off for touch and reduced motion |
 | Skeletons | every list/page | shapes mirror the real layout (stat grid, list, table, org chart) |
 | FLIP | org chart | after a reorder, cards glide to their new place (same department only) |
 | `PipelineTrack` | application detail, candidate detail | the eight hiring stages with the real status marked; the connector fills and the new stage arrives when the status changes. Display only — moving an application is still "Move to…". Scrolls sideways on phones, centred on the current stage |
@@ -87,8 +203,10 @@ continuity. Only `transform`/`opacity` animate; movement is ≤ ~14px.
 
 **Reduced motion** is global: `tokens.css` collapses all durations and
 animation counts under `prefers-reduced-motion`, and `Reveal`/`AnimatedNumber`/
-`Magnetic`/FLIP/the 3D scene each opt out explicitly. Verified in a real
-browser: zero running animations page-wide.
+FLIP each opt out explicitly; the home page's drift and parallax only exist
+under `prefers-reduced-motion: no-preference` and above 560px. Verified in a
+real browser (headless Edge): two infinite animations on the home page with
+motion allowed, zero with reduced motion, and every reveal visible.
 
 Not done, deliberately: dialogs have an entrance but **no exit animation**.
 `Modal` closes synchronously (`onClose` is called immediately and its tests pin
@@ -96,44 +214,33 @@ that); delaying it to play an exit would change a tested contract across a
 dozen dialogs for a cosmetic gain. Parent-driven closes would also still
 snap, so a partial version would look inconsistent.
 
-## The 3D hero (`frontend/src/features/public/hero/`)
+## The public home page
 
-Three layers, so almost all of it is testable without a GPU:
+`features/public/PublicHomePage.tsx` + `styles/home.css`. Short and
+outward-facing: header (wordmark, four section links, theme, staff sign-in),
+hero, five core capabilities as a card grid (three across, then two wider)
+beside a short lead, a four-step "how it works" as step cards, a short campus-recruitment section, a neutral closing band (staff
+sign-in, open roles) and a minimal footer with the SIGVITAS copyright.
+Internal operating rules — approvals, separation of duties, audit
+mechanics, tenancy, grading and status rules — are deliberately not on the
+public page; they live in the signed-in product and the docs. No
+testimonials, logos, statistics or integrations.
 
-1. **`networkLayout.ts`** — pure and deterministic (seeded): orbits, nodes per
-   category (candidates, jobs, skills, assessments, organizations, AI
-   analysis), ring links, spokes to the core, candidate↔job "match" pairs and
-   the particle field. Two densities (`full`, `reduced`).
-2. **`network3d.ts`** — the imperative Three.js scene (used directly; no React
-   renderer). One `InstancedMesh` per category, link/ring geometry static in
-   each orbit's local space (only Group transforms animate), a handful of live
-   match beams, one `Points` field. Reacts to pointer (parallax + per-node
-   proximity), scroll (drifts back and fades), theme (re-reads the palette
-   with no reload) and the legend (highlights a category). Pointer/scroll are
-   smoothed with exponential damping.
-3. **`HeroScene.tsx`** — lifecycle: the SVG **poster** (`NetworkPoster.tsx`,
-   the same layout drawn flat) is the first paint; Three.js is a separate chunk
-   fetched after first paint when idle; the canvas fades in when ready.
-
-**Fallbacks** — the poster is a complete experience, not an error state: it is
-what shows for reduced motion, for browsers without WebGL, if the chunk fails
-to load, and if the GPU context is lost.
-
-**Composition** — the scene is a quiet companion to the headline, not a second
-hero: one hue family (the `--kind-*` palette, the amber match beam as the only
-warm accent), low opacities, calm materials, ~33 nodes on desktop. It sits
-right of the copy at ≥ 1100px and never behind text; below that it stacks under
-the copy in its own block. The legend and proof line are plain text, not chips.
-
-**Performance** — the 3D chunk is *not* requested at first paint; the render
-loop runs only while the hero is on screen and the tab is visible; pixel ratio
-is capped (lower on phones) and shed if frames run slow; everything is disposed
-on unmount. Phones/tablets use the `reduced` density, no per-node proximity,
-and a stacked layout (copy first, scene in its own block — never behind text).
-
-The **only new dependency** is `three` (+ `@types/three`, dev). Nothing in the
-project provided 3D/WebGL or animation; react-three-fiber and drei were not
-added.
+The hero visual (`HeroProductPreview.tsx`) is a layered preview of the
+product itself, in HTML/CSS: an application panel (stage badge, the six real
+pipeline stages as a compact track with the current stage in its pipeline
+colour, the next step), with an assessment card (indigo edge and icon tile)
+and an interview-feedback card (teal) resting on its corners. Behind it, a
+large, soft indigo radial glow with a smaller teal tint (`--glow-*`) sits at
+z-index -1 — always behind the cards, clipped by the hero. The headline's
+second line uses a restrained indigo-to-teal text gradient (solid text in
+forced-colours mode). Capability icons sit on soft indigo tiles; the "how it
+works" track starts solid indigo and fades to a hairline. Names in the
+preview are placeholder lines; there are no scores, counts or rates. It is
+one image to assistive tech (role="img" with a description). Under 560px the
+resting cards follow the panel instead of overlapping. The earlier Three.js
+scene, network artwork and simple SVG pipeline were removed (with the
+`three` dependency).
 
 ## Sigvi (the public AI assistant)
 
@@ -180,8 +287,9 @@ the recruiter app.
 
 Skip link, focus-visible ring, `aria-current` navigation, a phone drawer that
 is `inert` while closed, closes on Escape and route change, and moves focus to
-its close button. The 3D canvas/poster are `aria-hidden`; the legend is a real
-button group (`aria-pressed`, hover **and** focus). Org-chart reordering keeps
+its close button. Focus uses a solid `--color-focus` ring; the active nav item
+is marked by background, weight and an accent bar (not colour alone); the home
+illustration has a title and description. Org-chart reordering keeps
 its keyboard alternative (Arrow Up/Down on the handle). Status is never colour
 alone (badge dots, shape-coded legend swatches). The assessment shows real
 progress derived from the candidate's answers and does **not** invent a timer —

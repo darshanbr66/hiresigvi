@@ -273,7 +273,11 @@ Scholarship & Paid Training Program) owns a carrier `Job`, so program
 applications are ordinary `Application`s with every existing identity and
 pipeline rule; `ProgramEnrollment` carries the program-specific state
 (eligibility, scholarship, training, offer, agreement, bond) under the
-transition tables in `app/workflows/program_workflow.py`.
+transition tables in `app/workflows/program_workflow.py`. Funding
+proposals/approvals, fee obligations, training milestones, agreement terms
+and the employment review hang off the enrollment; interview rounds are the
+platform-wide `application_interviews` (any application), and fee/funding
+arithmetic is the pure module `app/services/program_finance.py`.
 
 ## 9. Campus hiring
 

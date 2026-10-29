@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { ThemeToggle } from "../features/theme/ThemeToggle";
 import { Avatar } from "../shared/components/Avatar";
-import { Icon, LogoMark, type IconName } from "../shared/components/Icon";
+import { Icon, type IconName } from "../shared/components/Icon";
 import { PageTransition } from "../shared/components/PageTransition";
 import { RouteFallback } from "../shared/components/RouteFallback";
+import { Wordmark } from "../shared/components/Wordmark";
 import { useMediaQuery } from "../shared/hooks/useMediaQuery";
 
 const SIDEBAR_COLLAPSED_KEY = "ai-recruitment-sidebar-collapsed";
@@ -63,6 +64,8 @@ export function AppShell({
   variant = "recruiter",
   notificationBell,
 }: {
+  /** Product name — the top-bar title when no nav item matches the route.
+   * The sidebar header shows the HireZ wordmark (hidden on the collapsed rail). */
   brandTitle: string;
   /** Small label above the page title in the top bar, e.g. "Recruiter Portal". */
   contextLabel: string;
@@ -144,6 +147,12 @@ export function AppShell({
     .sort((a, b) => b.to.length - a.to.length)
     .find((item) => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)));
 
+  // The browser tab names the page and the product ("Jobs · HireZ").
+  const pageTitle = current?.label ?? brandTitle;
+  useEffect(() => {
+    document.title = pageTitle === "HireZ" ? "HireZ" : `${pageTitle} · HireZ`;
+  }, [pageTitle]);
+
   // Move the sliding indicator to whichever link React Router marked active.
   // `isCollapsed` is a dependency because collapsing drops the section labels
   // out of the DOM and shortens every link: the links all shift up, so a
@@ -196,10 +205,28 @@ export function AppShell({
         // the accessibility tree instead of leaving invisible focus stops.
         inert={drawerHidden}
       >
+        {/* One compact row: [collapse/expand] [HireZ]. On the 72px rail only
+            the toggle fits, so the wordmark is hidden there (CSS) and the
+            toggle centres in the same row. Phones get the drawer's close
+            button instead of the toggle. */}
         <div className="sidebar-brand">
+          {!isPhone && (
+            <button
+              type="button"
+              className="sidebar-collapse-toggle"
+              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-pressed={isCollapsed}
+              onClick={toggleCollapsed}
+              onMouseEnter={(e) => showTooltip(e, isCollapsed ? "Expand sidebar" : "Collapse sidebar", "right")}
+              onMouseLeave={hideTooltip}
+              onFocus={(e) => showTooltip(e, isCollapsed ? "Expand sidebar" : "Collapse sidebar", "right")}
+              onBlur={hideTooltip}
+            >
+              <Icon name={isCollapsed ? "sidebar-expand" : "sidebar-collapse"} size={18} />
+            </button>
+          )}
           <span className="brand-lockup">
-            <LogoMark />
-            <span className="brand-name">{brandTitle}</span>
+            <Wordmark />
           </span>
           <button
             ref={closeRef}
@@ -211,22 +238,6 @@ export function AppShell({
             <Icon name="x" size={18} />
           </button>
         </div>
-
-        {!isPhone && (
-          <button
-            type="button"
-            className="sidebar-collapse-toggle"
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-pressed={isCollapsed}
-            onClick={toggleCollapsed}
-            onMouseEnter={(e) => showTooltip(e, isCollapsed ? "Expand sidebar" : "Collapse sidebar", "right")}
-            onMouseLeave={hideTooltip}
-            onFocus={(e) => showTooltip(e, isCollapsed ? "Expand sidebar" : "Collapse sidebar", "right")}
-            onBlur={hideTooltip}
-          >
-            <Icon name={isCollapsed ? "sidebar-expand" : "sidebar-collapse"} size={16} />
-          </button>
-        )}
 
         <nav className="sidebar-nav" ref={navRef} onScroll={hideTooltip}>
           <span

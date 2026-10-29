@@ -3,10 +3,15 @@ import type { ReactNode } from "react";
 import {
   APPROVED_TRAINING_DURATIONS,
   EDUCATION_LEVEL_LABELS,
+  FUNDING_TYPE_LABELS,
+  PROGRAM_AFFILIATION_METHODS,
+  type AffiliationMethod,
   type EducationLevel,
+  type FundingType,
   type ProgramResponse,
   type ProgramUpdateRequest,
 } from "../../../types/program";
+import { splitFee } from "./finance";
 import { listAssessments } from "../assessments/api";
 import { listInstitutions } from "../institutions/api";
 
@@ -49,6 +54,10 @@ export interface ProgramFormValue {
   tracksTraining: boolean;
   tracksEmployment: boolean;
   requiresAgreement: boolean;
+  fundingType: FundingType | "";
+  fundingValue: string;
+  independentApproval: boolean;
+  affiliationMethod: AffiliationMethod;
 }
 
 function toLocalInput(iso: string | null): string {
@@ -95,6 +104,10 @@ export function programToFormValue(program: ProgramResponse): ProgramFormValue {
     tracksTraining: program.tracks_training,
     tracksEmployment: program.tracks_employment,
     requiresAgreement: program.requires_agreement,
+    fundingType: program.company_funding_type ?? "",
+    fundingValue: program.company_funding_value ?? "",
+    independentApproval: program.funding_requires_independent_approval,
+    affiliationMethod: program.affiliation_verification_method,
   };
 }
 
@@ -142,6 +155,10 @@ export function toProgramPayload(value: ProgramFormValue): ProgramUpdateRequest 
     tracks_training: value.tracksTraining,
     tracks_employment: value.tracksEmployment,
     requires_agreement: value.requiresAgreement,
+    company_funding_type: value.fundingType || null,
+    company_funding_value: value.fundingType ? orNull(value.fundingValue) : null,
+    funding_requires_independent_approval: value.independentApproval,
+    affiliation_verification_method: value.affiliationMethod,
   };
 }
 
@@ -228,7 +245,10 @@ export function ProgramForm({
     });
   }
 
-  const flag = (key: "tracksFeePayments" | "tracksTraining" | "tracksEmployment" | "requiresAgreement", label: string) => (
+  const flag = (
+    key: "tracksFeePayments" | "tracksTraining" | "tracksEmployment" | "requiresAgreement" | "independentApproval",
+    label: string,
+  ) => (
     <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
       <input
         type="checkbox"
@@ -297,6 +317,22 @@ export function ProgramForm({
           <span className="field-hint">Hold Ctrl (⌘ on Mac) to select several.</span>
         </label>
         {text("eligibilityNotes", "Other eligibility notes shown to candidates", { rows: 2 })}
+        <label className="field">
+          <span>Institution membership verification</span>
+          <select
+            value={value.affiliationMethod}
+            onChange={(e) => patch({ affiliationMethod: e.target.value as AffiliationMethod })}
+            disabled={disabled}
+          >
+            {PROGRAM_AFFILIATION_METHODS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+          <span className="field-hint">
+            A typed institution name is never treated as verified. Candidates can be marked eligible
+            only after their membership is verified (unless set to not required).
+          </span>
+        </label>
       </Section>
 
       <Section title="Training and fee" hint="The training is paid by the candidate. Enter the fee only once it is finalized; until then publish only business-approved wording.">
@@ -325,7 +361,7 @@ export function ProgramForm({
         {text("feeDisclosure", "Approved fee wording (when the amount isn't final)", { rows: 2, placeholder: "e.g. The training fee will be confirmed in writing before enrollment." })}
       </Section>
 
-      <Section title="Scholarship" hint="Selected candidates become eligible for scholarship consideration. Eligibility, approval and disbursement are recorded separately.">
+      <Section title="Scholarship / company funding" hint="Selected candidates may become eligible for company funding of their training fee. Eligibility, the funding proposal, its approval and the funding applied are recorded separately — passing the test or the interview never approves funding. The maximum below caps any single award.">
         <div className="field-row">
           {text("scholarshipMin", "Amount / minimum (finalized)", { type: "number" })}
           {text("scholarshipMax", "Maximum (finalized)", { type: "number" })}
@@ -334,6 +370,36 @@ export function ProgramForm({
         {text("scholarshipRules", "Scholarship eligibility and approval rules", { rows: 2 })}
         {text("scholarshipTiming", "Disbursement timing (once finalized)", { rows: 2 })}
         {text("scholarshipDisclosure", "Approved scholarship wording (when the amount isn't final)", { rows: 2 })}
+        <div className="field-row">
+          <label className="field">
+            <span>
+              Standard company funding <span className="optional-mark">(Optional — not decided yet = leave empty)</span>
+            </span>
+            <select
+              value={value.fundingType}
+              onChange={(e) => patch({ fundingType: e.target.value as FundingType | "" })}
+              disabled={disabled}
+            >
+              <option value="">Not configured</option>
+              {(Object.keys(FUNDING_TYPE_LABELS) as FundingType[]).map((t) => (
+                <option key={t} value={t}>{FUNDING_TYPE_LABELS[t]}</option>
+              ))}
+            </select>
+          </label>
+          {value.fundingType && text("fundingValue", value.fundingType === "PERCENTAGE" ? "Percentage of the fee" : "Amount (fee currency)", { type: "number" })}
+        </div>
+        {value.fundingType && value.fundingValue && value.trainingFeeAmount && (() => {
+          const split = splitFee(value.trainingFeeAmount, value.fundingType, value.fundingValue);
+          return typeof split === "string" ? (
+            <p className="field-error" role="alert">{split}</p>
+          ) : (
+            <p className="field-hint" data-testid="funding-preview">
+              Per candidate: company {split.companyContribution}, candidate pays {split.candidatePayable} of{" "}
+              {split.fee} {value.trainingFeeCurrency}. Each award still needs an approved proposal.
+            </p>
+          );
+        })()}
+        {flag("independentApproval", "Funding must be approved by someone other than the person who proposed it")}
       </Section>
 
       <Section title="Employment and commitment" hint="Scholarship recipients agree to a commitment under the company's approved agreement. The platform tracks the agreement; it never writes the terms.">

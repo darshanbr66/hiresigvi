@@ -810,3 +810,16 @@
     transform: none;
   }
 }
+
+/* Sigvi floats over the home and careers pages. On phones its round
+   launcher permanently covers the bottom-right corner, so those pages get
+   clearance at the end: the last call to action and the footer can always
+   be scrolled clear of it (safe-area aware). The widget itself is unchanged. */
+@media (max-width: 640px) {
+  .landing::after,
+  .public-page::after {
+    content: "";
+    display: block;
+    height: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}

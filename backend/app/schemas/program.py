@@ -3,17 +3,24 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.text import collapse_whitespace
 from app.models.application import ApplicationStatus
 from app.models.assessment import ResultGradingStatus
 from app.models.candidate import EducationLevel
+from app.models.institution import AffiliationStatus, AffiliationVerificationMethod
+from app.models.interview import InterviewOutcome, InterviewStatus
 from app.models.program import (
     APPROVED_TRAINING_DURATIONS,
     AgreementStatus,
     DisbursementStatus,
     EligibilityStatus,
+    EmploymentReviewStatus,
+    FundingRevisionKind,
+    FundingRevisionStatus,
+    FundingType,
+    MilestoneStatus,
     OfferStatus,
     PaymentMethod,
     PaymentRecordStatus,
@@ -93,6 +100,26 @@ class _ProgramFields(BaseModel):
     tracks_training: bool | None = None
     tracks_employment: bool | None = None
     requires_agreement: bool | None = None
+
+    company_funding_type: FundingType | None = None
+    company_funding_value: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    funding_requires_independent_approval: bool | None = None
+    affiliation_verification_method: AffiliationVerificationMethod | None = None
+
+    @field_validator("affiliation_verification_method")
+    @classmethod
+    def _program_method(
+        cls, value: AffiliationVerificationMethod | None
+    ) -> AffiliationVerificationMethod | None:
+        # Programs have no college-provided student list, and the evidence
+        # methods are recorded per decision, not configured.
+        if value is not None and value not in (
+            AffiliationVerificationMethod.NONE,
+            AffiliationVerificationMethod.EMAIL_DOMAIN,
+            AffiliationVerificationMethod.MANUAL,
+        ):
+            raise ValueError("Choose not required, institution email domain, or manual review.")
+        return value
 
     @field_validator("training_fee_currency", "scholarship_currency")
     @classmethod
@@ -213,6 +240,10 @@ class ProgramResponse(BaseModel):
     tracks_training: bool
     tracks_employment: bool
     requires_agreement: bool
+    company_funding_type: FundingType | None = None
+    company_funding_value: Decimal | None = None
+    funding_requires_independent_approval: bool = True
+    affiliation_verification_method: AffiliationVerificationMethod = AffiliationVerificationMethod.NONE
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -275,6 +306,8 @@ class PublicProgramView(BaseModel):
     employment_pathway: str | None
     bond_duration_months: int | None
     bond_terms_summary: str | None
+    company_funding_type: FundingType | None = None
+    company_funding_value: Decimal | None = None
     has_assessment: bool
     interview_stages: list[str]
     required_documents: list[str]
@@ -367,6 +400,103 @@ class DisbursementResponse(BaseModel):
     updated_at: datetime
 
 
+class FundingRevisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    revision_number: int
+    kind: FundingRevisionKind
+    status: FundingRevisionStatus
+    fee_amount: Decimal
+    currency: str
+    funding_type: FundingType
+    funding_value: Decimal
+    company_contribution_amount: Decimal
+    candidate_payable_amount: Decimal
+    reason: str | None
+    proposed_by_user_id: uuid.UUID | None
+    decided_by_user_id: uuid.UUID | None
+    decided_at: datetime | None
+    decision_note: str | None
+    created_at: datetime
+
+
+class MilestoneResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    description: str | None
+    due_on: date | None
+    status: MilestoneStatus
+    completed_on: date | None
+    note: str | None
+    overdue: bool = False
+    created_at: datetime
+
+
+class AffiliationSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    status: AffiliationStatus
+    method: AffiliationVerificationMethod | None
+    institution_id: uuid.UUID | None
+    reviewed_by_user_id: uuid.UUID | None
+    reviewed_at: datetime | None
+    review_note: str | None
+
+
+class InterviewResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    application_id: uuid.UUID
+    stage: str
+    scheduled_at: datetime
+    duration_minutes: int | None
+    location: str | None
+    interviewer_user_id: uuid.UUID | None
+    interviewer_name: str | None = None
+    status: InterviewStatus
+    outcome: InterviewOutcome | None
+    rating: int | None
+    #: Withheld (None, `feedback_restricted` True) from users who may not
+    #: read it.
+    feedback: str | None
+    feedback_restricted: bool = False
+    cancellation_reason: str | None
+    recorded_at: datetime | None
+    created_at: datetime
+
+
+class InterviewScheduleRequest(BaseModel):
+    stage: str = Field(min_length=1, max_length=150)
+    #: Must carry a timezone (e.g. ...Z) so it is stored as the right instant.
+    scheduled_at: AwareDatetime
+    duration_minutes: int | None = Field(default=None, ge=5, le=600)
+    location: str | None = Field(default=None, max_length=500)
+    interviewer_user_id: uuid.UUID | None = None
+
+
+class InterviewOutcomeRequest(BaseModel):
+    outcome: InterviewOutcome
+    rating: int | None = Field(default=None, ge=1, le=5)
+    feedback: str | None = Field(default=None, max_length=10000)
+
+
+class InterviewListResponse(BaseModel):
+    items: list[InterviewResponse]
+    #: The viewer's interview permission codes, so the UI offers only
+    #: actions the server accepts (it still re-checks every one).
+    viewer_permissions: list[str]
+
+
+class InterviewCloseRequest(BaseModel):
+    status: Literal[InterviewStatus.CANCELLED, InterviewStatus.NO_SHOW]
+    reason: str | None = Field(default=None, max_length=2000)
+
+
 class EnrollmentResultSummary(BaseModel):
     """Staff-only test outcome (never on a candidate-facing schema)."""
 
@@ -374,6 +504,7 @@ class EnrollmentResultSummary(BaseModel):
     passed: bool | None
     grading_status: ResultGradingStatus
     attempt_number: int
+    pass_score_applied: int | None = None
 
 
 class EnrollmentResponse(BaseModel):
@@ -406,25 +537,64 @@ class EnrollmentResponse(BaseModel):
     approved_scholarship_currency: str | None
     scholarship_decided_at: datetime | None
     scholarship_decision_note: str | None
+    affiliation: AffiliationSummary | None = None
     training_status: TrainingStatus
     training_duration_months: int | None
     training_start_date: date | None
     training_end_date: date | None
+    training_enrolled_at: datetime | None = None
+    training_completed_on: date | None = None
+    training_outcome_note: str | None = None
+    milestones: list[MilestoneResponse] = []
+    milestones_overdue: int = 0
+    next_milestone_due: date | None = None
+    employment_review_status: EmploymentReviewStatus = EmploymentReviewStatus.NOT_STARTED
+    employment_role_title: str | None = None
+    employment_department_id: uuid.UUID | None = None
+    employment_proposed_start_date: date | None = None
+    employment_decided_at: datetime | None = None
+    employment_decision_note: str | None = None
+    employee_id: uuid.UUID | None = None
     offer_status: OfferStatus
     offer_made_at: datetime | None
     joined_on: date | None
     agreement_status: AgreementStatus
     agreement_reference: str | None
+    agreement_version: str | None = None
+    agreement_terms_snapshot: dict[str, object] | None = None
+    #: False when the approved funding changed after the agreement was sent.
+    agreement_terms_current: bool | None = None
+    agreement_sent_at: datetime | None = None
     agreement_signed_on: date | None
+    agreement_effective_date: date | None = None
+    agreement_expiry_date: date | None = None
+    agreement_status_note: str | None = None
     agreement_document_filename: str | None
     agreement_document_uploaded_at: datetime | None
     bond_duration_months: int | None
     bond_start_date: date | None
     bond_end_date: date | None
+    bond_applies_reason: str | None = None
+    interviews: list[InterviewResponse] = []
+    #: The program/interview permission codes the *viewer* holds, so the UI
+    #: offers only actions the server will accept (it still re-checks).
+    viewer_permissions: list[str] = []
+    # Finance: left empty / None for users without program.finance.manage.
+    finance_visible: bool = False
+    fee_amount: Decimal | None = None
+    fee_currency: str | None = None
+    fee_due_date: date | None = None
+    company_contribution_amount: Decimal | None = None
+    candidate_payable_amount: Decimal | None = None
+    balance_due: Decimal | None = None
+    payment_status: str | None = None
+    funding_terms_accepted_revision: int | None = None
+    funding_terms_accepted_at: datetime | None = None
     fee_paid_total: Decimal = Decimal("0")
     disbursed_total: Decimal = Decimal("0")
     fee_payments: list[FeePaymentResponse] = []
     disbursements: list[DisbursementResponse] = []
+    funding_revisions: list[FundingRevisionResponse] = []
 
 
 class EligibilityReviewRequest(BaseModel):
@@ -437,24 +607,60 @@ class ScholarshipEligibilityRequest(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
-class ScholarshipDecisionRequest(BaseModel):
-    decision: Literal[ScholarshipStatus.APPROVED, ScholarshipStatus.DECLINED]
-    approved_amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
-    currency: str | None = None
+class AffiliationReviewRequest(BaseModel):
+    status: AffiliationStatus
+    #: The evidence checked, for VERIFIED.
+    method: AffiliationVerificationMethod | None = None
     note: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("currency")
-    @classmethod
-    def _check_currency(cls, value: str | None) -> str | None:
-        return _currency(value)
+
+class FundingProposalRequest(BaseModel):
+    funding_type: FundingType
+    value: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    reason: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
-    def _amount_for_approval(self) -> "ScholarshipDecisionRequest":
-        if self.decision == ScholarshipStatus.APPROVED and (
-            self.approved_amount is None or self.currency is None
-        ):
-            raise ValueError("Enter the approved scholarship amount and currency.")
+    def _percentage(self) -> "FundingProposalRequest":
+        if self.funding_type == FundingType.PERCENTAGE and self.value > 100:
+            raise ValueError("A funding percentage can't be more than 100%.")
         return self
+
+
+class FundingDecisionRequest(BaseModel):
+    decision: Literal[FundingRevisionStatus.APPROVED, FundingRevisionStatus.REJECTED]
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class FundingWithdrawRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class FundingAcceptanceRequest(BaseModel):
+    accepted_on: date
+
+
+class FeeObligationRequest(BaseModel):
+    due_date: date | None = None
+
+
+class MilestoneCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=5000)
+    due_on: date | None = None
+
+
+class MilestoneUpdateRequest(BaseModel):
+    status: MilestoneStatus
+    completed_on: date | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class EmploymentReviewRequest(BaseModel):
+    status: EmploymentReviewStatus
+    role_title: str | None = Field(default=None, max_length=255)
+    department_id: uuid.UUID | None = None
+    proposed_start_date: date | None = None
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class DisbursementCreateRequest(BaseModel):
@@ -514,6 +720,8 @@ class TrainingUpdateRequest(BaseModel):
     duration_months: int | None = None
     start_date: date | None = None
     end_date: date | None = None
+    completed_on: date | None = None
+    note: str | None = Field(default=None, max_length=2000)
 
     @field_validator("duration_months")
     @classmethod
@@ -535,7 +743,9 @@ class JoiningRequest(BaseModel):
 class AgreementUpdateRequest(BaseModel):
     status: AgreementStatus
     reference: str | None = Field(default=None, max_length=255)
+    version: str | None = Field(default=None, max_length=100)
     signed_on: date | None = None
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class BondUpdateRequest(BaseModel):
@@ -570,3 +780,19 @@ class ProgramReport(BaseModel):
     offers_accepted: int
     joined: int
     agreements_signed: int
+    affiliation_pending: int = 0
+    funding_proposed: int = 0
+    #: Money totals only when every fixed fee is in one currency.
+    fee_currency: str | None = None
+    total_fees: Decimal | None = None
+    total_company_contribution: Decimal | None = None
+    total_candidate_payable: Decimal | None = None
+    total_fees_paid: Decimal | None = None
+    payments_overdue: int = 0
+    payments_completed: int = 0
+    training_withdrawn: int = 0
+    training_terminated: int = 0
+    milestones_overdue: int = 0
+    employment_in_review: int = 0
+    employment_approved: int = 0
+    employment_not_proceeding: int = 0

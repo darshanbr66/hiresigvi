@@ -4,7 +4,6 @@ import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { Icon, type IconName } from "../../shared/components/Icon";
-import { NetworkBackdrop } from "../../shared/components/NetworkBackdrop";
 import { Reveal } from "../../shared/components/Reveal";
 import { Skeleton } from "../../shared/components/Skeleton";
 import { PublicHeader } from "../public/PublicHeader";
@@ -82,7 +81,6 @@ export function CareersPage() {
       <PublicHeader title={orgName} />
       <main className="public-shell">
         <header className="public-hero">
-          <NetworkBackdrop seed={9} count={28} />
           <p className="section-eyebrow">{orgName} Careers</p>
           <h1>Open roles</h1>
           <p className="muted">

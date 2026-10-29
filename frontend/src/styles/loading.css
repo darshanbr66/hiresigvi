@@ -1,0 +1,87 @@
+/*
+ * HireZ startup screen (markup in index.html, lifecycle in
+ * shared/lib/brandLoading.ts). One large "Z" on the theme's canvas, filled
+ * with the wordmark indigo; a soft teal-into-light band of light sweeps
+ * across it from left to right, starting and ending off the letter so the
+ * loop has no visible jump. Only `background-position` animates, on a single
+ * glyph. Reduced motion: the same Z, static.
+ */
+
+.brand-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: var(--color-bg);
+  opacity: 1;
+  transition: opacity 280ms var(--ease-out);
+}
+
+.brand-loading.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* the id selector outranks index.html's :where() rule (specificity 0) */
+#brand-loading > .brand-loading-z {
+  visibility: visible;
+}
+
+.brand-loading-z {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(7rem, 26vmin, 11.5rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  /* the letter is painted by the gradient below, clipped to its shape:
+     wordmark indigo, with a band of the brand teal (brighter in dark mode,
+     deeper in light — both legible on their canvas) */
+  color: var(--color-wordmark-z);
+  background-image: linear-gradient(
+    100deg,
+    var(--color-wordmark-z) 0%,
+    var(--color-wordmark-z) 35%,
+    color-mix(in srgb, var(--color-accent) 55%, var(--color-wordmark-z)) 44%,
+    var(--color-accent) 50%,
+    color-mix(in srgb, var(--color-accent) 55%, var(--color-wordmark-z)) 56%,
+    var(--color-wordmark-z) 65%,
+    var(--color-wordmark-z) 100%
+  );
+  /* 4x the glyph: at 100% the band sits wholly left of the letter, at 0%
+     wholly right of it — both ends are plain indigo, so each cycle
+     restarts seamlessly */
+  background-size: 400% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 18px 40px var(--glow-brand));
+  user-select: none;
+  animation: brand-loading-sweep 2.2s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
+@keyframes brand-loading-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-loading-z {
+    animation: none;
+  }
+}
+
+/* forced colours: no clipped gradient, just a plain system-coloured Z */
+@media (forced-colors: active) {
+  .brand-loading-z {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    filter: none;
+  }
+}

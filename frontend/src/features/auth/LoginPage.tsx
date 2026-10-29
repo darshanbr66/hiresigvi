@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate, type Location } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
-import { Icon, LogoMark } from "../../shared/components/Icon";
-import { NetworkBackdrop } from "../../shared/components/NetworkBackdrop";
+import { HoldBrandLoading } from "../../shared/components/BrandLoading";
+import { Icon } from "../../shared/components/Icon";
+import { Spinner } from "../../shared/components/Spinner";
+import { Wordmark } from "../../shared/components/Wordmark";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useAuth } from "./AuthContext";
 
@@ -23,7 +25,12 @@ export function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (status === "authenticated") {
-    return <Navigate to={isSuperAdmin ? "/admin" : "/recruiter"} replace />;
+    return (
+      <>
+        <HoldBrandLoading />
+        <Navigate to={isSuperAdmin ? "/admin" : "/recruiter"} replace />
+      </>
+    );
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -43,72 +50,74 @@ export function LoginPage() {
   }
 
   return (
-    <div className="auth-shell">
-      <Link to="/" className="auth-home-link">
-        &larr; Back to Home
-      </Link>
-      <ThemeToggle />
+    <div className="signin">
+      {/* On a cold start, a still-signed-in user is redirected as soon as
+          the session restores; the startup screen covers the form until
+          then (and through the redirect above) so it doesn't flash. The
+          form itself renders as before. */}
+      {status === "loading" && <HoldBrandLoading />}
+      <div className="signin-canvas" aria-hidden="true" />
+      <header className="signin-top">
+        <Link to="/" className="signin-back">
+          <Icon name="arrow-right" size={16} className="signin-back-icon" />
+          Back to home
+        </Link>
+        <ThemeToggle />
+      </header>
 
-      <aside className="auth-brand" aria-hidden="true">
-        <NetworkBackdrop seed={3} count={40} />
-        <div className="auth-brand-inner">
-          <LogoMark size={44} />
-          <h2>Recruitment intelligence, with people in the loop.</h2>
-          <ul>
-            <li>
-              <Icon name="sparkles" size={16} /> AI-assisted screening, always recruiter-reviewed
-            </li>
-            <li>
-              <Icon name="shield" size={16} /> Every decision traceable to its application
-            </li>
-            <li>
-              <Icon name="eye" size={16} /> Assessments with transparent monitoring
-            </li>
-          </ul>
+      <main className="signin-main">
+        <div className="signin-card">
+          <Link to="/" className="signin-brand" aria-label="HireZ home">
+            <Wordmark size="md" />
+          </Link>
+          <h1>Sign in</h1>
+          <p className="signin-lead">
+            For recruiters, hiring managers, interviewers and organization admins.
+          </p>
+
+          <form onSubmit={handleSubmit} className="signin-form">
+            <label className="field">
+              <span>Email</span>
+              <input
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </label>
+
+            <label className="field">
+              <span>Password</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </label>
+
+            {error && (
+              <p className="alert alert-error" role="alert">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="btn btn-primary signin-submit"
+              disabled={isSubmitting}
+              aria-busy={isSubmitting}
+            >
+              {isSubmitting ? <Spinner label="Signing in…" /> : "Sign in"}
+            </button>
+          </form>
         </div>
-      </aside>
-
-      <div className="auth-card">
-        <p className="eyebrow">AI Recruitment Platform</p>
-        <h1>Sign in</h1>
-        <p className="muted">Recruiters, hiring managers, and organization admins sign in here.</p>
-
-        <form onSubmit={handleSubmit}>
-          <label className="field">
-            <span>Email</span>
-            <input
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </label>
-
-          <label className="field">
-            <span>Password</span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </label>
-
-          {error && (
-            <p className="alert alert-error" role="alert">
-              {error}
-            </p>
-          )}
-
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      </div>
+        <p className="signin-note">Staff accounts are created by your organization&apos;s admin.</p>
+      </main>
     </div>
   );
 }

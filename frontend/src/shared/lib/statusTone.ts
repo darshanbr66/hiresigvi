@@ -1,29 +1,78 @@
 /**
- * One tone per application stage, used everywhere a stage appears (badges,
- * pipeline bars, timelines), so a status never changes colour between pages.
- * Colour follows meaning: progress is blue, a positive outcome green, a
- * negative one red, and the final human success — hired — the warm accent.
+ * One mapping from an application status to its recruitment-pipeline stage,
+ * and from a stage to its colour — used everywhere a stage appears (badges,
+ * pipeline bars, timelines, legends), so a status never changes colour
+ * between pages. The status always comes from the API value, never from a
+ * display label; an unknown or newly added status falls back to neutral.
+ *
+ * Stages: applied (neutral) → screening (amber) → assessment (blue) →
+ * interview (violet) → selected / hired (green); rejected (red); hold
+ * (muted amber — the advisory AI_SCREENED_OUT, which HR can override).
+ * Colour is never the only signal: every use keeps the stage name visible.
  */
-export type Tone = "neutral" | "info" | "brand" | "success" | "danger" | "accent" | "warn";
+export type Tone = "neutral" | "info" | "brand" | "success" | "danger" | "accent" | "warn" | "interview";
 
-const TONES: Record<string, Tone> = {
-  APPLIED: "neutral",
-  // Advisory, not final — HR can override it back into review.
-  AI_SCREENED_OUT: "warn",
-  UNDER_REVIEW: "info",
-  SCREENING: "info",
-  ASSESSMENT_INVITED: "brand",
-  ASSESSMENT_STARTED: "brand",
-  ASSESSMENT_COMPLETED: "brand",
-  SHORTLISTED: "brand",
-  INTERVIEW: "brand",
-  SELECTED: "success",
-  REJECTED: "danger",
-  HIRED: "accent",
+export type PipelineStage =
+  | "applied"
+  | "screening"
+  | "assessment"
+  | "interview"
+  | "selected"
+  | "hired"
+  | "rejected"
+  | "hold";
+
+const STAGE_OF: Record<string, PipelineStage> = {
+  APPLIED: "applied",
+  AI_SCREENED_OUT: "hold",
+  UNDER_REVIEW: "screening",
+  SCREENING: "screening",
+  ASSESSMENT_INVITED: "assessment",
+  ASSESSMENT_STARTED: "assessment",
+  ASSESSMENT_COMPLETED: "assessment",
+  SHORTLISTED: "interview",
+  INTERVIEW: "interview",
+  SELECTED: "selected",
+  REJECTED: "rejected",
+  HIRED: "hired",
+};
+
+export const PIPELINE_STAGE_LABELS: Record<PipelineStage, string> = {
+  applied: "Applied",
+  screening: "Screening",
+  assessment: "Assessment",
+  interview: "Interview",
+  selected: "Selected",
+  hired: "Hired",
+  rejected: "Rejected",
+  hold: "On hold",
+};
+
+/** The pipeline stage of an API status; null when the status is unknown. */
+export function pipelineStage(status: string): PipelineStage | null {
+  return STAGE_OF[status] ?? null;
+}
+
+/** A CSS colour (theme-aware token) for a status's stage — neutral fallback. */
+export function pipelineColor(status: string): string {
+  const stage = pipelineStage(status);
+  return stage ? `var(--pipeline-${stage})` : "var(--pipeline-applied)";
+}
+
+const STAGE_TONE: Record<PipelineStage, Tone> = {
+  applied: "neutral",
+  screening: "warn",
+  assessment: "info",
+  interview: "interview",
+  selected: "success",
+  hired: "success",
+  rejected: "danger",
+  hold: "warn",
 };
 
 export function statusTone(status: string): Tone {
-  return TONES[status] ?? "neutral";
+  const stage = pipelineStage(status);
+  return stage ? STAGE_TONE[stage] : "neutral";
 }
 
 const BADGE_CLASS: Record<Tone, string> = {
@@ -34,6 +83,7 @@ const BADGE_CLASS: Record<Tone, string> = {
   danger: "badge-danger",
   accent: "badge-accent",
   warn: "badge-warn",
+  interview: "badge-interview",
 };
 
 export function toneBadgeClass(tone: Tone): string {
@@ -42,12 +92,13 @@ export function toneBadgeClass(tone: Tone): string {
 
 const TONE_COLOR: Record<Tone, string> = {
   neutral: "var(--color-text-muted)",
-  info: "var(--kind-job)",
+  info: "var(--pipeline-assessment)",
   brand: "var(--color-primary)",
   success: "var(--color-active-text)",
   danger: "var(--color-danger)",
   accent: "var(--color-accent)",
   warn: "var(--color-warn-text)",
+  interview: "var(--pipeline-interview)",
 };
 
 /** A CSS colour for fills (bars, dots) — theme-aware through the tokens. */

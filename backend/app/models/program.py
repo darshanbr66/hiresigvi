@@ -22,6 +22,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -44,7 +45,7 @@ from app.db.base import Base
 from app.db.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.assessment import Assessment
 from app.models.candidate import EducationLevel
-from app.models.institution import Institution
+from app.models.institution import AffiliationVerificationMethod, Institution
 from app.models.job import Job
 
 #: The only training durations the business has approved (months).
@@ -52,6 +53,15 @@ APPROVED_TRAINING_DURATIONS: frozenset[int] = frozenset({6, 12})
 #: The approved default commitment for scholarship recipients (months);
 #: HR can change it per program, it is never applied silently.
 DEFAULT_BOND_DURATION_MONTHS = 36
+
+
+class FundingType(StrEnum):
+    """How company funding (the scholarship) is expressed: a fixed amount,
+    or a percentage of the candidate's training fee. The value itself is a
+    business decision HR configures — the platform has no default."""
+
+    FIXED_AMOUNT = "FIXED_AMOUNT"
+    PERCENTAGE = "PERCENTAGE"
 
 
 class ProgramStatus(StrEnum):
@@ -85,6 +95,15 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
         CheckConstraint(
             "bond_duration_months IS NULL OR bond_duration_months > 0",
             name="ck_recruitment_programs_bond_duration_positive",
+        ),
+        CheckConstraint(
+            "(company_funding_type IS NULL) = (company_funding_value IS NULL)",
+            name="ck_recruitment_programs_funding_complete",
+        ),
+        CheckConstraint(
+            "company_funding_value IS NULL OR (company_funding_value > 0 AND "
+            "(company_funding_type <> 'PERCENTAGE' OR company_funding_value <= 100))",
+            name="ck_recruitment_programs_funding_value_valid",
         ),
     )
 
@@ -134,6 +153,18 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
     scholarship_eligibility_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     scholarship_disbursement_timing: Mapped[str | None] = mapped_column(Text, nullable=True)
     scholarship_disclosure: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The program's standard company-funding terms, pre-filled into each
+    #: proposal (a proposal may differ, within the scholarship range). NULL
+    #: until the business decides — never defaulted by the platform.
+    company_funding_type: Mapped[FundingType | None] = mapped_column(
+        Enum(FundingType, name="program_funding_type", native_enum=True), nullable=True
+    )
+    company_funding_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    #: Separation of duties: whoever approves a funding proposal must not be
+    #: the person who proposed it.
+    funding_requires_independent_approval: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
     # --- Employment pathway and commitment ---
     employment_pathway: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -167,6 +198,21 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
     )
     candidate_disclosures: Mapped[str | None] = mapped_column(Text, nullable=True)
     terms_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: How an applicant's membership of their institution is checked
+    #: (docs/programs.md § 3a). NONE = not required, never "verified".
+    #: Programs that existed before this column keep NONE (server default);
+    #: new ones default to a manual check.
+    affiliation_verification_method: Mapped[AffiliationVerificationMethod] = mapped_column(
+        Enum(
+            AffiliationVerificationMethod,
+            name="affiliation_verification_method",
+            native_enum=True,
+            create_type=False,
+        ),
+        nullable=False,
+        default=AffiliationVerificationMethod.MANUAL,
+        server_default=AffiliationVerificationMethod.NONE.value,
+    )
 
     # --- Which optional stages this program tracks ---
     tracks_fee_payments: Mapped[bool] = mapped_column(
@@ -243,7 +289,11 @@ class ScholarshipStatus(StrEnum):
     payment is tracked separately as disbursements."""
 
     NOT_STARTED = "NOT_STARTED"
+    #: Eligible for consideration; no funding terms proposed yet.
     PENDING = "PENDING"
+    #: Terms proposed (a `ProgramFundingRevision` in PROPOSED), awaiting an
+    #: authorized approver.
+    PROPOSED = "PROPOSED"
     APPROVED = "APPROVED"
     DECLINED = "DECLINED"
 
@@ -253,7 +303,10 @@ class TrainingStatus(StrEnum):
     ENROLLED = "ENROLLED"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
+    #: The company ended the training (terminated).
     DISCONTINUED = "DISCONTINUED"
+    #: The candidate left the training.
+    WITHDRAWN = "WITHDRAWN"
 
 
 class OfferStatus(StrEnum):
@@ -265,12 +318,29 @@ class OfferStatus(StrEnum):
 
 
 class AgreementStatus(StrEnum):
+    """NOT_REQUIRED -> PENDING (being prepared) -> SENT (awaiting the
+    candidate's acceptance) -> SIGNED (accepted) / DECLINED. VOID cancels an
+    unsigned agreement; a signed one ends as EXPIRED (its term ran out) or
+    TERMINATED (ended early, reason recorded)."""
+
     NOT_REQUIRED = "NOT_REQUIRED"
     PENDING = "PENDING"
     SENT = "SENT"
     SIGNED = "SIGNED"
     DECLINED = "DECLINED"
     VOID = "VOID"
+    EXPIRED = "EXPIRED"
+    TERMINATED = "TERMINATED"
+
+
+class EmploymentReviewStatus(StrEnum):
+    """The company's decision whether to progress a participant to
+    full-time employment — separate from, and required before, an offer."""
+
+    NOT_STARTED = "NOT_STARTED"
+    IN_REVIEW = "IN_REVIEW"
+    APPROVED = "APPROVED"
+    NOT_PROCEEDING = "NOT_PROCEEDING"
 
 
 class ProgramEnrollment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
@@ -297,6 +367,30 @@ class ProgramEnrollment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, 
         CheckConstraint(
             "bond_end_date IS NULL OR bond_start_date IS NULL OR bond_end_date > bond_start_date",
             name="ck_program_enrollments_bond_dates_ordered",
+        ),
+        CheckConstraint(
+            "fee_amount IS NULL OR (fee_amount >= 0 AND fee_currency IS NOT NULL)",
+            name="ck_program_enrollments_fee_obligation_valid",
+        ),
+        CheckConstraint(
+            "company_contribution_amount IS NULL OR (company_contribution_amount >= 0 "
+            "AND fee_amount IS NOT NULL AND company_contribution_amount <= fee_amount)",
+            name="ck_program_enrollments_contribution_within_fee",
+        ),
+        CheckConstraint(
+            "candidate_payable_amount IS NULL OR (fee_amount IS NOT NULL AND "
+            "candidate_payable_amount = fee_amount - COALESCE(company_contribution_amount, 0))",
+            name="ck_program_enrollments_payable_consistent",
+        ),
+        CheckConstraint(
+            "training_completed_on IS NULL OR training_start_date IS NULL "
+            "OR training_completed_on >= training_start_date",
+            name="ck_program_enrollments_training_completion_after_start",
+        ),
+        CheckConstraint(
+            "agreement_expiry_date IS NULL OR agreement_effective_date IS NULL "
+            "OR agreement_expiry_date > agreement_effective_date",
+            name="ck_program_enrollments_agreement_dates_ordered",
         ),
         CheckConstraint(
             "(agreement_document_storage_path IS NULL) = "
@@ -387,6 +481,24 @@ class ProgramEnrollment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, 
     )
     scholarship_decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # The candidate's training-fee obligation, fixed (snapshotted from the
+    # program) the first time it is needed, so later program edits never
+    # rewrite it. `company_contribution_amount` is the approved funding
+    # applied to the fee; `candidate_payable_amount` = fee - contribution.
+    fee_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    fee_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    fee_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    company_contribution_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    candidate_payable_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Which approved funding revision the candidate accepted, and when.
+    # Changing accepted terms needs an approved AMENDMENT revision.
+    funding_terms_accepted_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    funding_terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Training.
     training_status: Mapped[TrainingStatus] = mapped_column(
         Enum(TrainingStatus, name="training_status", native_enum=True),
@@ -396,7 +508,39 @@ class ProgramEnrollment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, 
     )
     training_duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     training_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Planned end (start + duration unless HR enters a date).
     training_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    training_enrolled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    training_completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    training_outcome_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Employment review: the separate, approved decision to progress a
+    # participant to full-time employment (before any offer).
+    employment_review_status: Mapped[EmploymentReviewStatus] = mapped_column(
+        Enum(EmploymentReviewStatus, name="program_employment_review_status", native_enum=True),
+        nullable=False,
+        default=EmploymentReviewStatus.NOT_STARTED,
+        server_default=EmploymentReviewStatus.NOT_STARTED.value,
+    )
+    employment_role_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    employment_department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True
+    )
+    employment_proposed_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    employment_decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    employment_decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    employment_decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The team-hierarchy employee record — linked (or created) only when the
+    #: candidate actually joins, never earlier.
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Full-time employment.
     offer_status: Mapped[OfferStatus] = mapped_column(
@@ -418,7 +562,23 @@ class ProgramEnrollment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, 
         server_default=AgreementStatus.NOT_REQUIRED.value,
     )
     agreement_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: The company-approved agreement/template version HR sent.
+    agreement_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    #: The terms as they stood when the agreement was sent (fee, approved
+    #: contribution, payable amount, bond duration, funding revision), so a
+    #: later program or template edit never alters what was agreed.
+    agreement_terms_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    agreement_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     agreement_signed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    agreement_effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    agreement_expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Why the agreement was declined, voided or ended early.
+    agreement_status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why the bond applies to this participant (recorded when funding is
+    #: approved) — the bond is never imposed without company funding.
+    bond_applies_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     agreement_document_storage_provider: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )
@@ -435,6 +595,142 @@ class ProgramEnrollment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, 
 
     program: Mapped[RecruitmentProgram] = relationship(
         RecruitmentProgram, lazy="raise", viewonly=True
+    )
+
+
+class FundingRevisionKind(StrEnum):
+    INITIAL = "INITIAL"
+    #: Changed terms before the candidate accepted them.
+    REVISION = "REVISION"
+    #: Changed terms after the candidate accepted them — needs a reason and
+    #: the candidate's renewed acceptance.
+    AMENDMENT = "AMENDMENT"
+
+
+class FundingRevisionStatus(StrEnum):
+    PROPOSED = "PROPOSED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    WITHDRAWN = "WITHDRAWN"
+    #: An approved revision replaced by a later approved one.
+    SUPERSEDED = "SUPERSEDED"
+
+
+class ProgramFundingRevision(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+    """One proposal of company-funding terms for one participant, and its
+    decision. Append-only history: the fee, the funding basis and the
+    computed contribution / payable amounts are kept as they were, so a
+    later fee or policy change never rewrites a past decision."""
+
+    __tablename__ = "program_funding_revisions"
+    __table_args__ = (
+        Index(
+            "uq_program_funding_revisions_enrollment_number",
+            "enrollment_id",
+            "revision_number",
+            unique=True,
+        ),
+        # At most one open proposal per participant.
+        Index(
+            "uq_program_funding_revisions_one_proposed",
+            "enrollment_id",
+            unique=True,
+            postgresql_where="status = 'PROPOSED'",
+        ),
+        CheckConstraint("fee_amount >= 0", name="ck_program_funding_revisions_fee_non_negative"),
+        CheckConstraint(
+            "funding_value > 0 AND (funding_type <> 'PERCENTAGE' OR funding_value <= 100)",
+            name="ck_program_funding_revisions_value_valid",
+        ),
+        CheckConstraint(
+            "company_contribution_amount >= 0 AND company_contribution_amount <= fee_amount",
+            name="ck_program_funding_revisions_contribution_within_fee",
+        ),
+        CheckConstraint(
+            "candidate_payable_amount = fee_amount - company_contribution_amount",
+            name="ck_program_funding_revisions_payable_consistent",
+        ),
+    )
+
+    enrollment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("program_enrollments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[FundingRevisionKind] = mapped_column(
+        Enum(FundingRevisionKind, name="program_funding_revision_kind", native_enum=True),
+        nullable=False,
+    )
+    status: Mapped[FundingRevisionStatus] = mapped_column(
+        Enum(FundingRevisionStatus, name="program_funding_revision_status", native_enum=True),
+        nullable=False,
+        default=FundingRevisionStatus.PROPOSED,
+        server_default=FundingRevisionStatus.PROPOSED.value,
+    )
+    fee_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    funding_type: Mapped[FundingType] = mapped_column(
+        Enum(FundingType, name="program_funding_type", native_enum=True, create_type=False),
+        nullable=False,
+    )
+    funding_value: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    company_contribution_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    candidate_payable_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proposed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MilestoneStatus(StrEnum):
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    MISSED = "MISSED"
+
+
+class TrainingMilestone(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+    """A checkpoint in one participant's training (a module, a progress
+    review, an internal assessment, an attendance review…) that staff track
+    to completion. "Overdue" = PENDING past its due date — derived, never
+    stored."""
+
+    __tablename__ = "training_milestones"
+    __table_args__ = (
+        CheckConstraint(
+            "(status = 'COMPLETED') = (completed_on IS NOT NULL)",
+            name="ck_training_milestones_completion_date",
+        ),
+    )
+
+    enrollment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("program_enrollments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[MilestoneStatus] = mapped_column(
+        Enum(MilestoneStatus, name="training_milestone_status", native_enum=True),
+        nullable=False,
+        default=MilestoneStatus.PENDING,
+        server_default=MilestoneStatus.PENDING.value,
+    )
+    completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
 

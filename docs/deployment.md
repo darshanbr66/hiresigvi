@@ -236,6 +236,50 @@ query with `UndefinedColumn` on a database that doesn't have it yet, whereas
 migrating first only makes employee *creation* by the previous code version
 fail until the deploy finishes.
 
+**Program funding, training, interviews (`5e6f70819203`).** Additive:
+new columns on `recruitment_programs` / `program_enrollments` (all nullable
+or with defaults), three new tenant tables with RLS
+(`program_funding_revisions`, `training_milestones`,
+`application_interviews`), program support on
+`campus_affiliation_verifications` (two columns become nullable, guarded by
+check constraints that every existing row already satisfies),
+`assessment_results.pass_score_applied` (backfilled from each result's
+assessment), permissions `interview.read`, `interview.manage`,
+`program.employment.approve` granted to the **system** roles, and new enum
+values (scholarship PROPOSED, training WITHDRAWN, agreement
+EXPIRED/TERMINATED, two affiliation evidence methods, notification
+INTERVIEW_ASSIGNED). No new environment variables.
+
+- Enum values are added in an `autocommit_block` (PostgreSQL requires a new
+  value to be committed before use). When several migrations are pending in
+  one `alembic upgrade head`, the ones before this point are committed at
+  that moment; a failure later in this migration leaves the database at
+  `4d5e6f708192` plus the (harmless, unused) new enum values, and re-running
+  the deploy completes it.
+- Run it **before** the matching backend goes live (the start command
+  already does): the new code selects the new columns.
+- Existing programs keep `affiliation_verification_method = NONE`, so
+  in-flight applicants are not suddenly blocked on verification. Existing
+  approvals made with the old one-step scholarship endpoint keep working
+  (agreements can still be sent and signed; applied funding is respected by
+  later revisions).
+- Behaviour that is now stricter for participants already in the pipeline:
+  selection needs recorded interview outcomes for every configured stage,
+  an offer needs an approved employment review, fee payments need a fixed
+  fee obligation (which needs the finalized fee), and a signed agreement can
+  no longer be voided (expire/terminate instead).
+- After deploying: organization-specific custom roles (if any) don't get the
+  new permissions automatically — grant them where wanted; and assign
+  `program.finance.manage` / `program.employment.approve` holders before HR
+  uses funding approval and employment decisions.
+- Verified locally: `upgrade` / `downgrade -1` / `upgrade` (twice), and a
+  two-migration run (`downgrade 3c4d5e6f7081` → `upgrade head`) with
+  existing job/result data unchanged; `alembic check` reports no drift.
+  Downgrade deletes program affiliation records and INTERVIEW_ASSIGNED
+  notifications (the old schema/code has no place for them) and maps new
+  enum values back to the closest old one; the values themselves stay on the
+  types (PostgreSQL can't drop enum values).
+
 **Candidate intake (`b4c5d6e7f8a9`).** Changes the following:
 
 - adds `AI_SCREENED_OUT` / `HR_MATCH` to the application enums;

@@ -4,7 +4,6 @@ import { useParams } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
 import { Icon } from "../../shared/components/Icon";
-import { NetworkBackdrop } from "../../shared/components/NetworkBackdrop";
 import type { MonitoringEventCreate } from "../../types/assessment";
 import { PublicHeader } from "../public/PublicHeader";
 import { MonitoringConsentScreen } from "./MonitoringConsentScreen";
@@ -92,7 +91,6 @@ export function AssessmentTakingPage() {
 
   return (
     <div className="public-page assess-page">
-      <NetworkBackdrop seed={4} count={30} className="assess-backdrop" />
       <PublicHeader title={invitationQuery.data?.organization_name ?? "Careers"} />
       <div className="public-shell assess-shell">
         {invitationQuery.isPending && <p role="status">Loading assessment…</p>}

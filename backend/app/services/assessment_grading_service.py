@@ -115,6 +115,11 @@ def totals(questions: list[Question], answers: list[CandidateAnswer]) -> Totals:
 
 
 def apply_totals(result: AssessmentResult, figures: Totals, *, pass_score: int) -> None:
+    """`pass_score` is fixed onto the result the first time (at submission),
+    so manual grading finished later is judged against the pass mark the
+    attempt was taken under, not whatever the test says today."""
+    if result.pass_score_applied is None:
+        result.pass_score_applied = pass_score
     result.score = figures.score
     result.max_score = figures.max_score
     result.percentage = figures.percentage
@@ -123,7 +128,7 @@ def apply_totals(result: AssessmentResult, figures: Totals, *, pass_score: int) 
         result.passed = None
     else:
         result.grading_status = ResultGradingStatus.FINAL
-        result.passed = figures.percentage >= pass_score
+        result.passed = figures.percentage >= result.pass_score_applied
     result.evaluated_at = datetime.now(UTC)
 
 

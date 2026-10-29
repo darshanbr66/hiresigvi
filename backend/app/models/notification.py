@@ -26,6 +26,9 @@ class NotificationType(StrEnum):
     #: A calendar event's reminder firing (Phase E) — kept in the same enum
     #: rather than a parallel notification concept, per "do not duplicate".
     CALENDAR_REMINDER = "CALENDAR_REMINDER"
+    #: A user was assigned as interviewer on an application's interview
+    #: (app/services/interview_service.py::schedule).
+    INTERVIEW_ASSIGNED = "INTERVIEW_ASSIGNED"
 
 
 class Notification(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):

@@ -244,6 +244,11 @@ in the linked docs):
 /api/v1/recruiter/assessments/{id}/status | /{id}/preview | /pending-review
 /api/v1/recruiter/assessments/attempts/{invitation_id}/review | /grades     -- § 6
 /api/v1/recruiter/programs[/{id}] , /{id}/status, /{id}/report, /{id}/enrollments[/{eid}/<action>]  -- docs/programs.md
+    <action>: eligibility, affiliation, invite-assessment, interview-completed, scholarship-eligibility,
+              funding-proposals[/{rev}/decision|/withdraw], funding-acceptance, fee-obligation,
+              fee-payments[/{id}/void], disbursements[/{id}], training, milestones[/{id}],
+              employment-review, offer, joining, agreement[/document], bond
+/api/v1/recruiter/applications/{id}/interviews[/{interview_id}/outcome|/close]   -- docs/recruitment-workflow.md § 2a
 ```
 
 All resolve `organization_id` from the authenticated principal — never from

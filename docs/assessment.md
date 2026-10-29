@@ -243,8 +243,14 @@ review page (`GET /recruiter/assessments/attempts/{invitation_id}/review`,
 award 0..points per answer — the server refuses more — with an optional
 staff-only comment. Grader, method (AUTO/MANUAL) and time are kept per
 answer. When the last answer is graded the result becomes FINAL and
-pass/fail is computed against `pass_score`. Candidates never see per-answer
-marks, comments or keys.
+pass/fail is computed against the pass mark **fixed on the result at
+submission** (`assessment_results.pass_score_applied`, migration
+`5e6f70819203`; existing results were backfilled from their assessment), so
+a pass/fail decision is reproducible and shown to HR as "X% against a pass
+mark of Y%". An assessment's **pass mark and question set can't be changed
+once it has been sent to anyone** (409 `pass_score_locked` / create a new
+assessment instead). Candidates never see per-answer marks, comments or
+keys.
 
 ## 7. Interaction with the application workflow
 

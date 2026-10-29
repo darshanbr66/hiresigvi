@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { PIPELINE_STAGES as STAGES, pipelineStageIndex } from "../lib/pipelineStages";
-import { humanizeStatus } from "../lib/statusTone";
+import { humanizeStatus, pipelineColor } from "../lib/statusTone";
 import { Icon } from "./Icon";
 
 /**
@@ -18,6 +18,8 @@ export function PipelineTrack({ status, compact = false }: { status: string; com
   const current = pipelineStageIndex(status);
   const rejected = status === "REJECTED";
   const scroller = useRef<HTMLDivElement>(null);
+  // The current stage wears its pipeline colour (the same as every chart).
+  const stageStyle = { "--stage-color": pipelineColor(status) } as CSSProperties;
 
   // On a narrow screen the track scrolls sideways; bring the current stage to
   // the middle so "where is this application" is answered without scrolling.
@@ -33,6 +35,7 @@ export function PipelineTrack({ status, compact = false }: { status: string; com
     return (
       <div
         className={`pipeline-mini${rejected ? " is-rejected" : ""}${status === "HIRED" ? " is-hired" : ""}`}
+        style={stageStyle}
         role="img"
         aria-label={
           current < 0
@@ -51,7 +54,7 @@ export function PipelineTrack({ status, compact = false }: { status: string; com
   }
 
   return (
-    <div ref={scroller} className={`pipeline${rejected ? " is-rejected" : ""}`}>
+    <div ref={scroller} className={`pipeline${rejected ? " is-rejected" : ""}`} style={stageStyle}>
       <ol className="pipeline-track" aria-label="Application pipeline">
         {STAGES.map((stage, index) => {
           const state = current < 0 ? "todo" : index < current ? "done" : index === current ? "current" : "todo";

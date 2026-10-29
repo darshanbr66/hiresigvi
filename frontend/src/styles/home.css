@@ -1,0 +1,944 @@
+/*
+ * The HireZ home page (features/public/PublicHomePage.tsx). Shares the nav,
+ * hero frame and footer with the careers pages (landing.css); this file holds
+ * the home page's own layout. Neutral surfaces, charcoal ink, one muted-teal
+ * accent used sparingly. No gradients, glows, blue bands or decorative
+ * shapes — hierarchy comes from type, spacing and hairlines.
+ */
+
+.home {
+  --home-width: 1120px;
+  --home-gutter: clamp(1rem, 4vw, 2.5rem);
+}
+
+/* --- hero ------------------------------------------------------------------ */
+
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  min-height: auto;
+  padding: clamp(6rem, 11vw, 7.5rem) var(--home-gutter) clamp(3.5rem, 6vw, 5rem);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* the same quiet canvas as sign-in: a faint grid in a soft pool of light,
+   centred behind the product preview */
+.home-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40rem 28rem at 72% 45%, var(--canvas-light), transparent 70%),
+    linear-gradient(var(--canvas-grid) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px) 0 0 / 32px 32px;
+  -webkit-mask-image: radial-gradient(52rem 36rem at 72% 45%, #000 20%, transparent 72%);
+  mask-image: radial-gradient(52rem 36rem at 72% 45%, #000 20%, transparent 72%);
+}
+
+/* same content column as the sections below (their width minus gutters) */
+.home-hero-inner {
+  max-width: calc(var(--home-width) - 2 * var(--home-gutter));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(2rem, 5vw, 4.5rem);
+}
+
+.home-hero .hero-title {
+  max-width: 17ch;
+  margin: 0 0 1.1rem;
+  font-size: var(--text-display);
+  font-weight: 650;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+}
+
+/* the second phrase takes its own line and steps back in the muted ink —
+   contrast, not colour */
+.home-hero-accent {
+  display: block;
+  /* a restrained indigo-to-teal sweep; both ends hold >= 3:1 as large text */
+  background: linear-gradient(100deg, var(--color-brand) 0%, var(--color-brand) 35%, var(--color-accent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@media (forced-colors: active) {
+  .home-hero-accent {
+    background: none;
+    color: CanvasText;
+  }
+}
+
+.home-hero .hero-sub {
+  max-width: 30rem;
+  margin: 0 0 1.75rem;
+  font-size: var(--text-lead);
+  line-height: var(--leading-lead);
+  color: var(--color-text-muted);
+}
+
+.home-hero-visual {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+}
+
+/* The glow: a large, soft indigo pool centred behind the product preview,
+   with a smaller teal tint lower left for depth. Always behind the cards
+   (z-index -1), never over text, clipped by the hero (no overflow). */
+.home-hero-visual::before,
+.home-hero-visual::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+}
+
+.home-hero-visual::before {
+  inset: -18% -14% -18% -10%;
+  background: radial-gradient(closest-side, var(--glow-brand), transparent);
+}
+
+.home-hero-visual::after {
+  width: 55%;
+  height: 55%;
+  left: -6%;
+  bottom: -10%;
+  background: radial-gradient(closest-side, var(--glow-accent), transparent);
+}
+
+/* --- the product preview (HeroProductPreview.tsx) ------------------------
+   A main application panel with two smaller cards resting on its corners.
+   Real product pieces (badges, stage colours, icons), placeholder lines for
+   anything that would be personal data. Depth comes from the shared shadow
+   tokens and a hairline — no glow, no glass. */
+
+/* top/bottom clearance so the resting cards overlap only the panel's edge
+   and placeholder content, never its badge or stage track */
+.hp {
+  position: relative;
+  padding: 3.6rem 1.5rem 2.75rem 2.25rem;
+}
+
+.hp-window {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  padding: 1.25rem 1.35rem 1.4rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  /* clear separation from the canvas: the shared lift plus a faint brand-tinted
+     falloff underneath */
+  box-shadow:
+    var(--shadow-raised),
+    0 40px 70px -40px var(--glow-brand),
+    var(--highlight-top);
+}
+
+.hp-window-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.hp-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.hp-identity {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.hp-line {
+  display: block;
+  max-width: 100%;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.hp-line-strong {
+  height: 0.55rem;
+  background: var(--color-border-strong);
+}
+
+.hp-badge {
+  flex-shrink: 0;
+}
+
+/* compact stage track */
+.hp-track {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hp-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.hp-stage + .hp-stage::before {
+  content: "";
+  position: absolute;
+  top: 0.45rem;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--color-border-strong);
+  z-index: 0;
+}
+
+.hp-stage.is-done + .hp-stage::before,
+.hp-stage.is-done + .hp-stage.is-current::before {
+  background: var(--color-text-muted);
+}
+
+.hp-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border-strong);
+  color: var(--color-surface);
+}
+
+.hp-stage.is-done .hp-node {
+  background: var(--color-text);
+  border-color: var(--color-text);
+}
+
+.hp-stage.is-current .hp-node {
+  border-color: var(--color-surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pipeline-interview) 30%, transparent);
+}
+
+.hp-stage-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+}
+
+.hp-stage.is-done .hp-stage-label,
+.hp-stage.is-current .hp-stage-label {
+  color: var(--color-text);
+}
+
+.hp-stage.is-current .hp-stage-label {
+  font-weight: var(--weight-strong);
+}
+
+/* next step */
+.hp-next {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+}
+
+.hp-next-icon,
+.hp-float-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.hp-next-text,
+.hp-float-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.hp-next-title,
+.hp-float-title {
+  font-size: var(--text-label);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
+}
+
+.hp-next-meta,
+.hp-float-meta {
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hp-next-action {
+  flex-shrink: 0;
+  padding: 0.3rem 0.65rem;
+  border-radius: var(--radius-md);
+  background: var(--color-brand-soft);
+  border: 1px solid var(--color-brand-soft-border);
+  color: var(--color-primary);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-strong);
+}
+
+.hp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.15rem 0.1rem 0;
+}
+
+/* the two resting cards */
+.hp-float {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: min(17.5rem, 62%);
+  padding: 0.75rem 0.85rem;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover), var(--highlight-top);
+}
+
+/* the resting cards carry the brand: an indigo (assessment) or teal
+   (feedback) icon tile and a top edge in the same hue */
+.hp-float {
+  border-top: 2px solid var(--hp-float-hue, var(--color-border));
+}
+
+.hp-float-assessment {
+  --hp-float-hue: var(--color-brand);
+}
+
+.hp-float-feedback {
+  --hp-float-hue: var(--color-accent);
+}
+
+.hp-float-assessment .hp-float-icon {
+  background: var(--color-brand-soft);
+  border-color: var(--color-brand-soft-border);
+  color: var(--color-primary);
+}
+
+.hp-float-feedback .hp-float-icon {
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  color: var(--color-accent-text);
+}
+
+.hp-float .hp-line {
+  height: 0.38rem;
+}
+
+.hp-float-assessment {
+  top: 0;
+  right: 0;
+}
+
+.hp-float-feedback {
+  bottom: 0;
+  left: 0;
+}
+
+.hp-float-feedback .hp-float-text {
+  gap: 0.35rem;
+}
+
+/* --- sections ---------------------------------------------------------------- */
+
+.home-section {
+  position: relative;
+  isolation: isolate;
+  max-width: var(--home-width);
+  margin: 0 auto;
+  padding: clamp(3.25rem, 7vw, 5rem) var(--home-gutter);
+}
+
+/* a full-bleed neutral band that keeps the centred column */
+.home-section-muted::before {
+  content: "";
+  position: absolute;
+  inset: 0 -100vmax;
+  z-index: -1;
+  background: var(--color-bg-subtle);
+  border-block: 1px solid var(--color-border);
+}
+
+.home-kicker {
+  margin: 0 0 0.75rem;
+  font-size: var(--text-meta);
+  font-weight: var(--weight-strong);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-accent-text);
+}
+
+.home-heading {
+  margin: 0;
+  max-width: 18ch;
+  font-size: var(--text-headline);
+  font-weight: 650;
+  line-height: var(--leading-headline);
+  letter-spacing: var(--tracking-headline);
+  color: var(--color-text);
+}
+
+.home-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: start;
+}
+
+.home-intro-center {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.home-intro-center .home-heading {
+  max-width: none;
+  margin-inline: auto;
+}
+
+/* intro with a short lead beside the heading */
+.home-intro-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  align-items: end;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  margin-bottom: 2.25rem;
+}
+
+.home-intro-lead {
+  margin: 0;
+  max-width: 30rem;
+  font-size: var(--text-lead);
+  line-height: var(--leading-lead);
+  color: var(--color-text-muted);
+}
+
+/* capabilities: a grid of cards — three across, then two wider ones */
+.home-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-capability-card {
+  position: relative;
+  grid-column: span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1.35rem 1.35rem 1.45rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card), var(--highlight-top);
+  overflow: hidden;
+}
+
+.home-capability-card:nth-child(n + 4) {
+  grid-column: span 3;
+}
+
+/* a faint indigo wash that rises in on hover — feedback, not decoration */
+.home-capability-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(28rem 12rem at 0% 0%, var(--color-primary-soft), transparent 70%);
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.home-capability-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.home-capability-card.is-visible {
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.home-capability-card:hover {
+  border-color: var(--color-brand-soft-border);
+  box-shadow: var(--shadow-raised), var(--highlight-top);
+  transform: translateY(-2px);
+}
+
+.home-capability-card:hover::before {
+  opacity: 1;
+}
+
+.home-capability-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.4rem;
+  border-radius: var(--radius-md);
+  background: var(--color-brand-soft);
+  border: 1px solid var(--color-brand-soft-border);
+  color: var(--color-primary);
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+.home-capability-card:hover .home-capability-icon {
+  background: var(--color-primary-solid);
+  border-color: var(--color-primary-solid);
+  color: var(--color-on-primary);
+}
+
+.home-capability-card h3,
+.home-journey-step h3 {
+  margin: 0;
+  font-size: var(--text-card-title);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+.home-capability-card p,
+.home-journey-step p {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.55;
+}
+
+/* how it works: four step cards on a track that draws itself in */
+.home-journey {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-journey::before {
+  content: "";
+  position: absolute;
+  top: 2.35rem;
+  left: 2rem;
+  right: 2rem;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--color-brand), var(--color-brand-soft-border) 60%, var(--color-border-strong));
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 900ms var(--ease-out) 150ms;
+}
+
+.home-journey-wrap.is-visible .home-journey::before {
+  transform: scaleX(1);
+}
+
+.home-journey-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.25rem 1.25rem 1.35rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card), var(--highlight-top);
+  /* steps follow the line in, one after another */
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+  transition-delay: calc(var(--step, 0) * 120ms + 200ms), calc(var(--step, 0) * 120ms + 200ms), 0ms;
+}
+
+.home-journey-wrap.is-visible .home-journey-step {
+  opacity: 1;
+  transform: none;
+}
+
+.home-journey-step:hover {
+  border-color: var(--color-brand-soft-border);
+}
+
+.home-journey-index {
+  display: inline-grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  margin-bottom: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-brand-soft-border);
+  background: var(--color-brand-soft);
+  font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-surface);
+}
+
+.home-journey-step:first-child .home-journey-index {
+  background: var(--color-primary-solid);
+  border-color: var(--color-primary-solid);
+  color: var(--color-on-primary);
+}
+
+/* campus */
+.home-campus-body p {
+  margin: 0 0 1.25rem;
+  max-width: 34rem;
+  font-size: var(--text-lead);
+  line-height: var(--leading-lead);
+  color: var(--color-text-muted);
+}
+
+.home-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-checklist li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+}
+
+.home-checklist svg {
+  color: var(--color-accent-text);
+}
+
+/* closing call to action: a neutral band with one soft indigo/teal pool
+   of light behind the heading */
+.home-closing {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(3.5rem, 8vw, 5.5rem) var(--home-gutter);
+  background: var(--color-bg-subtle);
+  border-top: 1px solid var(--color-border);
+}
+
+.home-closing::before {
+  content: "";
+  position: absolute;
+  inset: -40% 10%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(closest-side at 40% 50%, var(--glow-brand), transparent),
+    radial-gradient(closest-side at 65% 55%, var(--glow-accent), transparent);
+  opacity: 0.5;
+}
+
+.home-closing-inner {
+  max-width: 40rem;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.home-closing .home-heading {
+  margin: 0 auto 0.75rem;
+}
+
+.home-closing p {
+  margin: 0 auto 1.75rem;
+  max-width: 32rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.home-closing .hero-actions {
+  justify-content: center;
+}
+
+.home .landing-footer {
+  max-width: calc(var(--home-width) - 2 * var(--home-gutter));
+  padding-inline: 0;
+}
+
+.home .landing-footer .wordmark {
+  font-size: 1.1875rem;
+}
+
+/* --- motion -----------------------------------------------------------------
+   One choreography: the headline, copy and actions rise in (landing.css),
+   then the product preview, then its two cards. Afterwards only the two
+   small cards drift (different, slow cycles; a few px), and the layers
+   follow the pointer by a few px (HeroProductPreview.tsx sets --px/--py).
+   Entrance uses opacity/scale, the drift `transform`, parallax `translate`
+   — three independent properties, so nothing fights. Reduced motion and
+   small screens: no drift, no parallax; tokens.css makes entrances instant. */
+
+.home-hero-visual {
+  animation: rise-in 900ms var(--ease-out) 320ms both;
+}
+
+.hp-float {
+  animation: hp-arrive 700ms var(--ease-out) both;
+}
+
+.hp-float-assessment {
+  animation-delay: 620ms;
+}
+
+.hp-float-feedback {
+  animation-delay: 760ms;
+}
+
+@keyframes hp-arrive {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes hp-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (min-width: 561px) {
+  .hp-float-assessment {
+    animation:
+      hp-arrive 700ms var(--ease-out) 620ms both,
+      hp-drift 7s ease-in-out 1.4s infinite;
+  }
+
+  .hp-float-feedback {
+    animation:
+      hp-arrive 700ms var(--ease-out) 760ms both,
+      hp-drift 9s ease-in-out 2.2s infinite;
+  }
+
+  .hp-float,
+  .home-hero-visual::before {
+    transition: translate 700ms var(--ease-out);
+  }
+
+  .hp-window {
+    translate: calc(var(--px, 0) * -4px) calc(var(--py, 0) * -3px);
+  }
+
+  .hp-float-assessment {
+    translate: calc(var(--px, 0) * 9px) calc(var(--py, 0) * 7px);
+  }
+
+  .hp-float-feedback {
+    translate: calc(var(--px, 0) * 12px) calc(var(--py, 0) * 9px);
+  }
+
+  .home-hero-visual::before {
+    translate: calc(var(--px, 0) * -14px) calc(var(--py, 0) * -10px);
+  }
+}
+
+/* the preview lifts a touch when the pointer is over it */
+.hp-window {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    translate 700ms var(--ease-out);
+}
+
+.home-hero-visual:hover .hp-window {
+  box-shadow:
+    var(--shadow-raised),
+    0 46px 80px -40px var(--glow-brand),
+    var(--highlight-top);
+}
+
+/* the sticky nav turns lightly frosted once the page scrolls under it —
+   the one place glass is used, and only where content passes beneath */
+.home .landing-nav.is-scrolled {
+  background: color-mix(in srgb, var(--color-surface) 84%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  backdrop-filter: saturate(160%) blur(12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-journey::before {
+    transform: none;
+  }
+
+  .home-journey-step {
+    opacity: 1;
+    transform: none;
+  }
+
+  .home-capability-card:hover {
+    transform: none;
+  }
+}
+
+/* --- responsive ------------------------------------------------------------ */
+
+@media (max-width: 1000px) {
+  .home-hero-inner,
+  .home-columns,
+  .home-intro-split {
+    grid-template-columns: 1fr;
+  }
+
+  .home-capability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-capability-card,
+  .home-capability-card:nth-child(n + 4) {
+    grid-column: auto;
+  }
+
+  .home-capability-card:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .home-hero .hero-title {
+    max-width: 17ch;
+  }
+
+  .home-hero-visual {
+    max-width: 36rem;
+  }
+
+  .home-journey {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 2rem;
+  }
+
+  .home-journey::before {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-capability-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-capability-card:last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 1160px) {
+  .home .landing-footer {
+    margin-inline: var(--home-gutter);
+  }
+}
+
+@media (max-width: 560px) {
+  /* small screens: the resting cards follow the panel instead of overlapping */
+  .hp {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0;
+  }
+
+  .hp-float {
+    position: static;
+    width: 100%;
+  }
+
+  .hp-window {
+    padding-inline: 1rem;
+  }
+
+  .hp-stage-label {
+    font-size: 0.6rem;
+    letter-spacing: -0.01em;
+  }
+}
+
+@media (max-width: 720px) {
+  .home-hero {
+    padding-top: 5.75rem;
+  }
+
+  .home-journey {
+    grid-template-columns: 1fr;
+  }
+
+  .home-hero .hero-actions .btn-lg,
+  .home-closing .hero-actions .btn-lg {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}

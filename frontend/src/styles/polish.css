@@ -249,18 +249,12 @@ select:disabled {
 }
 
 .pipeline-stage.is-current .pipeline-node {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  box-shadow: 0 0 0 4px var(--color-primary-ring);
+  border-color: var(--stage-color, var(--color-primary));
+  color: var(--color-text);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--stage-color, var(--color-primary)) 22%, transparent);
   animation: node-arrive var(--dur-slow) var(--ease-out);
 }
 
-.pipeline-stage.is-final.is-current .pipeline-node {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-  color: var(--color-accent-text);
-  box-shadow: 0 0 0 4px var(--color-accent-soft);
-}
 
 @keyframes node-arrive {
   0% {
@@ -322,12 +316,8 @@ select:disabled {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--color-primary);
+  background: var(--stage-color, var(--color-primary));
   transition: width var(--dur-slow) var(--ease-out);
-}
-
-.pipeline-mini.is-hired .pipeline-mini-fill {
-  background: var(--color-accent);
 }
 
 .pipeline-mini.is-rejected .pipeline-mini-fill {

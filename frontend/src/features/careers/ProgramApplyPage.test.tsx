@@ -52,6 +52,8 @@ const unfinalized: PublicProgramView = {
   employment_pathway: null,
   bond_duration_months: 36,
   bond_terms_summary: null,
+  company_funding_type: null,
+  company_funding_value: null,
   has_assessment: true,
   interview_stages: ["Technical interview"],
   required_documents: [],

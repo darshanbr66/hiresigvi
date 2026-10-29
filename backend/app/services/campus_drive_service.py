@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.core.security import generate_opaque_token, hash_opaque_token
 from app.models.application import Application, ApplicationStatus
 from app.models.assessment import (
@@ -82,6 +82,15 @@ async def _resolve_institution(
 def _check_verification_method(
     method: AffiliationVerificationMethod, institution: Institution
 ) -> None:
+    if method in (
+        AffiliationVerificationMethod.STUDENT_ID_DOCUMENT,
+        AffiliationVerificationMethod.COORDINATOR_CONFIRMATION,
+    ):
+        # Evidence labels recorded on a manual decision, not drive settings.
+        raise UnprocessableError(
+            "Choose not required, email domain, student list or manual review.",
+            code="invalid_verification_method",
+        )
     if method == AffiliationVerificationMethod.EMAIL_DOMAIN and not institution.email_domains:
         raise ConflictError(
             f'"{institution.name}" has no official email domain on record, so email-domain '

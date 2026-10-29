@@ -1,4 +1,4 @@
-import { humanizeStatus, statusTone, toneBadgeClass, toneColor } from "../../../shared/lib/statusTone";
+import { humanizeStatus, pipelineColor, statusTone, toneBadgeClass } from "../../../shared/lib/statusTone";
 import { normalizePipelineStats } from "./presentation";
 
 /** Structured rendering of a pipeline-summary answer's `pipeline_stats`.
@@ -51,7 +51,7 @@ export function PipelineStatsPanel({ stats }: { stats: unknown }) {
                     <span className={toneBadgeClass(tone)}>{humanizeStatus(status)}</span>
                     <span className="ai-pipeline-bar" aria-hidden="true">
                       <span
-                        style={{ width: `${(count / maxStatusCount) * 100}%`, background: toneColor(tone) }}
+                        style={{ width: `${(count / maxStatusCount) * 100}%`, background: pipelineColor(status) }}
                       />
                     </span>
                     <span className="ai-pipeline-count">{count}</span>

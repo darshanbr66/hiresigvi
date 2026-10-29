@@ -3,18 +3,12 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
-import { AnimatedNumber } from "../../../shared/components/AnimatedNumber";
 import { BarList } from "../../../shared/components/BarList";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { Icon, type IconName } from "../../../shared/components/Icon";
 import { SkeletonCard, SkeletonList, SkeletonStatGrid } from "../../../shared/components/Skeleton";
-import {
-  humanizeStatus,
-  statusTone,
-  toneBadgeClass,
-  toneColor,
-  type Tone,
-} from "../../../shared/lib/statusTone";
+import { MetricCard } from "../../../shared/components/MetricCard";
+import { humanizeStatus, pipelineColor, statusTone, toneBadgeClass } from "../../../shared/lib/statusTone";
 import { useAuth } from "../../auth/AuthContext";
 import { listApplications } from "../applications/api";
 import { getReportOverview } from "../reports/api";
@@ -26,35 +20,6 @@ const QUICK_LINKS: { to: string; title: string; description: string; icon: IconN
   { to: "/recruiter/assessments", title: "Assessments", description: "Send skills tests to candidates.", icon: "assessments" },
   { to: "/recruiter/campus-drives", title: "Campus Drives", description: "Run a mass-hiring event for a college.", icon: "campus" },
 ];
-
-function StatCard({
-  label,
-  value,
-  caption,
-  icon,
-  tone,
-}: {
-  label: string;
-  value: number;
-  caption?: string;
-  icon: IconName;
-  tone: Tone;
-}) {
-  return (
-    <div className={`stat-card stat-tone-${tone}`}>
-      <div className="stat-head">
-        <span className="stat-label">{label}</span>
-        <span className="stat-icon" aria-hidden="true">
-          <Icon name={icon} size={18} />
-        </span>
-      </div>
-      <span className="stat-value">
-        <AnimatedNumber value={value} />
-      </span>
-      {caption && <span className="stat-caption">{caption}</span>}
-    </div>
-  );
-}
 
 function shareOf(part: number, whole: number): string | undefined {
   return whole > 0 ? `${Math.round((part / whole) * 100)}% of candidates` : undefined;
@@ -122,45 +87,45 @@ export function OverviewPage() {
 
       {report && (
         <section className="stat-grid" aria-label="Key figures">
-          <StatCard
+          <MetricCard
             label="Candidates"
             value={report.total_candidates}
-            caption={`${report.total_applications} ${report.total_applications === 1 ? "application" : "applications"}`}
+            context={`${report.total_applications} ${report.total_applications === 1 ? "application" : "applications"}`}
             icon="candidates"
             tone="brand"
           />
-          <StatCard
+          <MetricCard
             label="Selected Candidates"
             value={report.selected_candidates}
-            caption={shareOf(report.selected_candidates, report.total_candidates)}
+            context={shareOf(report.selected_candidates, report.total_candidates)}
             icon="check"
             tone="success"
           />
-          <StatCard
+          <MetricCard
             label="Rejected Candidates"
             value={report.rejected_candidates}
-            caption={shareOf(report.rejected_candidates, report.total_candidates)}
+            context={shareOf(report.rejected_candidates, report.total_candidates)}
             icon="x"
             tone="danger"
           />
-          <StatCard
+          <MetricCard
             label="Hired Candidates"
             value={report.hired_candidates}
-            caption={shareOf(report.hired_candidates, report.total_candidates)}
+            context={shareOf(report.hired_candidates, report.total_candidates)}
             icon="user"
-            tone="accent"
+            tone="success"
           />
-          <StatCard
+          <MetricCard
             label="Assessment invitations"
             value={report.assessments.total_invitations}
-            caption={`${report.assessments.submitted} submitted`}
+            context={`${report.assessments.submitted} submitted`}
             icon="send"
             tone="info"
           />
-          <StatCard
+          <MetricCard
             label="Campus drives"
             value={report.campus_drives.length}
-            caption={`${report.campus_drives.reduce((sum, drive) => sum + drive.application_count, 0)} applications`}
+            context={`${report.campus_drives.reduce((sum, drive) => sum + drive.application_count, 0)} applications`}
             icon="campus"
             tone="neutral"
           />
@@ -184,7 +149,7 @@ export function OverviewPage() {
                   count: row.count,
                 }))}
                 total={report.total_applications}
-                tone={(status) => toneColor(statusTone(status))}
+                tone={(status) => pipelineColor(status)}
                 showShare
               />
             ))}
@@ -206,7 +171,7 @@ export function OverviewPage() {
                     className="timeline-item"
                     style={{ "--i": index } as React.CSSProperties}
                   >
-                    <span className="timeline-dot" style={{ borderColor: toneColor(statusTone(application.status)) }} />
+                    <span className="timeline-dot" style={{ borderColor: pipelineColor(application.status) }} />
                     <div>
                       <Link to={`/recruiter/applications/${application.id}`}>
                         {application.candidate_full_name}

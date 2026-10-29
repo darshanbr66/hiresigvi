@@ -13,6 +13,7 @@ import {
   EDUCATION_LEVEL_LABELS,
   PROGRAM_STATUS_LABELS,
   PROGRAM_TRANSITIONS,
+  type EnrollmentResponse,
   type ProgramReport,
   type ProgramStatus,
 } from "../../../types/program";
@@ -25,6 +26,8 @@ import {
   updateProgram,
 } from "./api";
 import { EnrollmentPanel } from "./EnrollmentPanel";
+import { formatMoney } from "./finance";
+import { StateBadge } from "./panelParts";
 import { ProgramForm, programToFormValue, toProgramPayload, type ProgramFormValue } from "./ProgramForm";
 import { PROGRAM_STATUS_BADGE } from "./presentation";
 
@@ -36,8 +39,11 @@ const ACTION_LABELS: Record<ProgramStatus, string> = {
   ARCHIVED: "Archive",
 };
 
-const REPORT_ITEMS: { key: keyof ProgramReport; label: string }[] = [
+type CountKey = { [K in keyof ProgramReport]: ProgramReport[K] extends number ? K : never }[keyof ProgramReport];
+
+const REPORT_ITEMS: { key: CountKey; label: string }[] = [
   { key: "applications", label: "Applications" },
+  { key: "affiliation_pending", label: "Verification pending" },
   { key: "eligibility_pending", label: "Eligibility review" },
   { key: "eligible", label: "Eligible" },
   { key: "not_eligible", label: "Not eligible" },
@@ -49,17 +55,37 @@ const REPORT_ITEMS: { key: keyof ProgramReport; label: string }[] = [
   { key: "interview_completed", label: "Interviews completed" },
   { key: "selected", label: "Selected" },
   { key: "not_selected", label: "Not selected" },
-  { key: "scholarship_eligible", label: "Scholarship eligible" },
-  { key: "scholarship_pending", label: "Scholarship pending" },
-  { key: "scholarship_approved", label: "Scholarship approved" },
-  { key: "scholarship_declined", label: "Scholarship declined" },
+  { key: "scholarship_eligible", label: "Funding eligible" },
+  { key: "funding_proposed", label: "Funding awaiting approval" },
+  { key: "scholarship_approved", label: "Funding approved" },
+  { key: "scholarship_declined", label: "Funding declined" },
+  { key: "payments_completed", label: "Fees settled" },
+  { key: "payments_overdue", label: "Payments overdue" },
   { key: "training_enrolled", label: "Training enrolled" },
   { key: "training_in_progress", label: "Training in progress" },
+  { key: "milestones_overdue", label: "Milestones overdue" },
   { key: "training_completed", label: "Training completed" },
+  { key: "training_withdrawn", label: "Training withdrawn" },
+  { key: "employment_in_review", label: "Employment review" },
+  { key: "employment_approved", label: "Employment approved" },
   { key: "offers_made", label: "Offers made" },
   { key: "offers_accepted", label: "Offers accepted" },
   { key: "joined", label: "Joined full-time" },
   { key: "agreements_signed", label: "Agreements signed" },
+];
+
+type ParticipantView = "all" | "verification" | "funding" | "trainees" | "milestones" | "payments" | "completed" | "employment";
+
+/** Quick HR views over the loaded participants (every value is server data). */
+const PARTICIPANT_VIEWS: { value: ParticipantView; label: string; test: (e: EnrollmentResponse) => boolean }[] = [
+  { value: "all", label: "All participants", test: () => true },
+  { value: "verification", label: "Institution verification pending", test: (e) => e.affiliation?.status === "PENDING" },
+  { value: "funding", label: "Funding awaiting approval", test: (e) => e.scholarship_status === "PROPOSED" },
+  { value: "trainees", label: "Active trainees", test: (e) => ["ENROLLED", "IN_PROGRESS"].includes(e.training_status) },
+  { value: "milestones", label: "Overdue milestones", test: (e) => e.milestones_overdue > 0 },
+  { value: "payments", label: "Overdue payments", test: (e) => e.payment_status === "OVERDUE" },
+  { value: "completed", label: "Completed training", test: (e) => e.training_status === "COMPLETED" },
+  { value: "employment", label: "Employment review / offer", test: (e) => ["IN_REVIEW", "APPROVED"].includes(e.employment_review_status) || e.offer_status === "OFFERED" },
 ];
 
 const money = (amount: string | null, currency: string | null) =>
@@ -77,6 +103,7 @@ export function ProgramDetailPage() {
   const [statusError, setStatusError] = useState<{ message: string; problems: string[] } | null>(null);
   const [confirming, setConfirming] = useState<ProgramStatus | null>(null);
   const [openEnrollment, setOpenEnrollment] = useState<string | null>(null);
+  const [view, setView] = useState<ParticipantView>("all");
 
   const key = ["recruiter", "programs", programId];
   const programQuery = useQuery({ queryKey: key, queryFn: () => getProgram(programId, token), enabled: accessToken !== null });
@@ -284,10 +311,33 @@ export function ProgramDetailPage() {
         ) : (
           <p role="status">Loading report…</p>
         )}
+        {reportQuery.isSuccess && reportQuery.data.fee_currency && reportQuery.data.total_fees !== null && (
+          <div className="funnel-grid" aria-label="Fee totals">
+            {([
+              ["Fees fixed", reportQuery.data.total_fees],
+              ["Company contribution", reportQuery.data.total_company_contribution],
+              ["Candidates payable", reportQuery.data.total_candidate_payable],
+              ["Paid by candidates", reportQuery.data.total_fees_paid],
+            ] as const).map(([label, amount]) => (
+              <div key={label} className="funnel-stat">
+                <span className="funnel-stat-value">{formatMoney(amount, reportQuery.data.fee_currency)}</span>
+                <span className="funnel-stat-label">{label}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="card stack-sm">
-        <h2>Participants</h2>
+        <div className="toolbar" style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>Participants</h2>
+          <label className="field" style={{ margin: 0 }}>
+            <span className="sr-only">Show</span>
+            <select aria-label="Show participants" value={view} onChange={(ev) => setView(ev.target.value as ParticipantView)}>
+              {PARTICIPANT_VIEWS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            </select>
+          </label>
+        </div>
         {enrollmentsQuery.isPending && <p role="status">Loading…</p>}
         {enrollmentsQuery.isError && <Alert>Could not load participants.</Alert>}
         {enrollmentsQuery.isSuccess && enrollmentsQuery.data.length === 0 && (
@@ -303,12 +353,14 @@ export function ProgramDetailPage() {
                   <th>Stage</th>
                   <th>Eligibility</th>
                   <th>Test</th>
-                  <th>Scholarship</th>
+                  <th>Funding</th>
+                  <th>Training</th>
+                  {enrollmentsQuery.data[0].finance_visible && <th>Fee</th>}
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {enrollmentsQuery.data.map((e) => (
+                {enrollmentsQuery.data.filter(PARTICIPANT_VIEWS.find((v) => v.value === view)!.test).map((e) => (
                   <tr key={e.id}>
                     <td>
                       <Link to={`/recruiter/applications/${e.application_id}`}>{e.candidate_full_name}</Link>
@@ -328,7 +380,28 @@ export function ProgramDetailPage() {
                           : `${e.latest_result.passed ? "Passed" : "Failed"} (${e.latest_result.percentage}%)`
                         : "—"}
                     </td>
-                    <td>{humanizeStatus(e.scholarship_status)}</td>
+                    <td><StateBadge value={e.scholarship_status} /></td>
+                    <td>
+                      <StateBadge value={e.training_status} />
+                      {e.milestones_overdue > 0 && (
+                        <span className="cell-sub">{e.milestones_overdue} milestone(s) overdue</span>
+                      )}
+                      {e.next_milestone_due && e.milestones_overdue === 0 && (
+                        <span className="cell-sub">next due {e.next_milestone_due}</span>
+                      )}
+                    </td>
+                    {e.finance_visible && (
+                      <td>
+                        {e.payment_status && e.payment_status !== "NOT_APPLICABLE" ? (
+                          <>
+                            <StateBadge value={e.payment_status} />
+                            <span className="cell-sub">due {formatMoney(e.balance_due, e.fee_currency)}</span>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    )}
                     <td>
                       <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpenEnrollment(e.id)}>
                         {canManage ? "Manage" : "View"}

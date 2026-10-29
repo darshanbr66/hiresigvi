@@ -34,9 +34,10 @@ and appends an `ApplicationStatusHistory` row — so no call site can move an
 application into an invalid state or skip the history write.
 
 Applications that belong to a recruitment program get extra gates on top of
-the table (eligibility review, passing selection test, completed interview,
-accepted offer), checked by `app/workflows/program_workflow.py::check_application_transition`
-on every status change — see `docs/programs.md` § 4.
+the table (verified institution + eligibility review, passing selection
+test, recorded interview outcomes, accepted offer), checked by
+`app/workflows/program_workflow.py::check_application_transition` on every
+status change — see `docs/programs.md` § 4.
 
 ## 2. Application status model
 
@@ -114,6 +115,41 @@ Notes:
 - **`ApplicationSource.HR_MATCH`** marks an application HR created by
   matching an existing candidate to another job (§ 6). It is a source, not a
   status: the new application starts at `APPLIED` like any other.
+
+## 2a. Interviews
+
+`application_interviews` (`app/models/interview.py`,
+`app/services/interview_service.py`, migration `5e6f70819203`) records each
+interview round of any application: stage, scheduled time, duration,
+location/link, interviewer, status (SCHEDULED → COMPLETED / CANCELLED /
+NO_SHOW), the interviewer's outcome (PASS / FAIL / ON_HOLD), an optional
+1–5 rating and staff-only feedback.
+
+- Only a SHORTLISTED or INTERVIEW application can have an interview
+  scheduled; scheduling the first one moves SHORTLISTED → INTERVIEW through
+  `change_status`, so every gate (including a program's passed-test gate)
+  applies.
+- One SCHEDULED interview per stage at a time (partial unique index).
+- The outcome is recorded once (feedback required unless PASS) by the
+  assigned interviewer or an `interview.manage` user; corrections are a new
+  interview. Cancelling needs a reason.
+- **An outcome is advisory input — it never changes the application
+  status.** Selecting or rejecting stays an explicit status change.
+- Feedback is returned only to `interview.manage` users and to the
+  interviewer who wrote it; the activity log records the outcome, not the
+  feedback text.
+- API: `GET/POST /api/v1/recruiter/applications/{id}/interviews`,
+  `POST …/{interview_id}/outcome`, `POST …/{interview_id}/close`.
+- Times must carry a timezone (e.g. `…Z`); a naive time is refused (422).
+- Assigning an interviewer (other than yourself) creates an in-app
+  `INTERVIEW_ASSIGNED` notification for them, linking to the application —
+  in the same transaction as the interview. No email is sent automatically.
+- The candidate is invited with the existing Interview Invitation email
+  template (manual composer).
+- UI: the **Interviews** card on every application page (and inside a
+  program participant's panel, with the program's stages), driven by the
+  `viewer_permissions` returned with the list
+  (`GET …/interviews` → `{items, viewer_permissions}`).
 
 ## 3. Candidate-visible projection
 

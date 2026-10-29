@@ -275,18 +275,29 @@ async def assessment_has_invitations(db: AsyncSession, assessment_id: uuid.UUID)
 async def update_assessment(
     db: AsyncSession, assessment: Assessment, payload: AssessmentUpdateRequest, *, actor: User
 ) -> Assessment:
-    """Title/instructions/duration/pass score can always change. The
-    question set can only be replaced wholesale while no invitation exists
+    """Title/instructions/duration can always change. The pass mark and the
+    question set (replaced wholesale) can only change while no invitation exists
     yet for this assessment (CLAUDE.md § 23: "Completed assessment attempts
     must not be modified accidentally when editing an assessment") — once
     one does, a 409 tells the caller to create a new assessment instead."""
     updates = payload.model_dump(exclude_unset=True, exclude={"questions"})
     replacing_questions = payload.questions is not None
 
-    if replacing_questions and await assessment_has_invitations(db, assessment.id):
+    sent = (
+        replacing_questions or updates.get("pass_score", assessment.pass_score) != assessment.pass_score
+    ) and await assessment_has_invitations(db, assessment.id)
+    if sent and replacing_questions:
         raise ConflictError(
             "This assessment's questions can't be changed once it has been sent to a "
             "candidate. Create a new assessment instead."
+        )
+    if sent:
+        # Candidates were (or are being) tested against the current pass
+        # mark; changing it would silently change who passes.
+        raise ConflictError(
+            "This assessment's pass mark can't be changed once it has been sent to a "
+            "candidate. Create a new assessment instead.",
+            code="pass_score_locked",
         )
 
     changed_fields = list(updates) + (["questions"] if replacing_questions else [])

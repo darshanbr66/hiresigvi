@@ -232,6 +232,8 @@ class AssessmentResultResponse(BaseModel):
     passed: bool | None
     grading_status: ResultGradingStatus = ResultGradingStatus.FINAL
     evaluated_at: datetime
+    #: The pass mark this attempt was judged against (recruiter-only).
+    pass_score_applied: int | None = None
 
 
 class AssessmentStatusChangeRequest(BaseModel):

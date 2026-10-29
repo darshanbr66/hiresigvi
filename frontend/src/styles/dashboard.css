@@ -1,7 +1,6 @@
 /*
- * Recruiter dashboard ("command center"). Figures are the hero: large,
- * tabular, one tone per meaning. Depth is layered — an ambient network behind
- * the greeting, cards that lift only when they are links.
+ * Recruiter dashboard. Figures are the hero: large, tabular, one tone per
+ * meaning (MetricCard). Cards lift only when they are links.
  */
 
 .command-header {
@@ -225,7 +224,7 @@
 
 .notification-item-unread {
   border-left-color: var(--color-primary);
-  background: linear-gradient(90deg, var(--color-primary-soft), transparent 40%), var(--color-surface);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
 }
 
 .notification-item-head {
@@ -319,7 +318,7 @@
 }
 
 .note-card-pinned {
-  background: linear-gradient(180deg, var(--color-accent-soft), transparent 45%), var(--color-surface);
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface));
   border-color: var(--color-accent);
 }
 
@@ -784,4 +783,80 @@
 .attendee-hint {
   margin: 0;
   font-size: var(--text-meta);
+}
+
+/* --- metric cards (shared/components/MetricCard.tsx) --------------------------
+   Value first, label second, context third. The icon names the card's
+   subject at a glance: full strength in its tone colour on a small tinted
+   tile in the top-right corner (>= 3:1 against the card in both themes),
+   sized so it never competes with the figure. */
+
+.stat-grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metric-card {
+  position: relative;
+  gap: 0.2rem;
+  padding: 1rem 1.15rem 1.05rem;
+  min-height: 0;
+  border-top: 2px solid var(--metric-edge, var(--color-border));
+}
+
+.metric-icon-tile {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--metric-fg, var(--color-text-muted)) 12%, var(--color-surface));
+  color: var(--metric-fg, var(--color-text-muted));
+  pointer-events: none;
+}
+
+.metric-value {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: var(--weight-strong);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  /* keep clear of the corner icon on narrow cards */
+  padding-right: 2.75rem;
+}
+
+.metric-label {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.metric-context {
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+/* Tone tints the icon and the 2px top edge only — never the figure. */
+.metric-tone-brand { --metric-fg: var(--color-brand); --metric-edge: var(--color-brand); }
+.metric-tone-success { --metric-fg: var(--pipeline-hired); --metric-edge: var(--pipeline-selected); }
+.metric-tone-danger { --metric-fg: var(--pipeline-rejected); --metric-edge: var(--pipeline-rejected); }
+.metric-tone-info { --metric-fg: var(--pipeline-assessment); --metric-edge: var(--pipeline-assessment); }
+.metric-tone-interview { --metric-fg: var(--pipeline-interview); --metric-edge: var(--pipeline-interview); }
+.metric-tone-warn { --metric-fg: var(--pipeline-screening); --metric-edge: var(--pipeline-screening); }
+.metric-tone-neutral { --metric-fg: var(--color-text-muted); --metric-edge: var(--color-border-strong); }
+
+@media (max-width: 1100px) {
+  .stat-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .metric-value {
+    font-size: 1.75rem;
+  }
 }

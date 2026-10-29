@@ -9,6 +9,16 @@ on an institution email domain (EMAIL_DOMAIN), or is on the college's
 student list for the drive (STUDENT_LIST) — and otherwise waits for an HR
 user's manual decision (VERIFIED or REJECTED, with a note). Every decision
 records method, reviewer and time, and is written to the activity log.
+
+Recruitment programs use the same record (`program_id` instead of
+`campus_drive_id`, docs/programs.md § 3a): the institution is the one the
+applicant chose from the registry (or NULL when they typed a name — then
+only a manual decision is possible), EMAIL_DOMAIN can verify automatically,
+and an HR decision names the evidence checked (student ID / document,
+placement-coordinator confirmation, or another manual check).
+
+Nobody can decide their own verification: a reviewer whose account email
+is the candidate's email is refused.
 """
 
 import uuid
@@ -19,7 +29,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
 from app.models.application import Application
 from app.models.campus_drive import CampusDrive
 from app.models.candidate import Candidate
@@ -29,6 +39,7 @@ from app.models.institution import (
     CampusAffiliationVerification,
     CampusDriveRosterEntry,
     Institution,
+    MANUAL_VERIFICATION_METHODS,
 )
 from app.models.user import User
 from app.services import activity_service, email_verification_service
@@ -112,6 +123,129 @@ async def open_verification(
     return record
 
 
+async def open_program_verification(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    program_id: uuid.UUID,
+    program_title: str,
+    method: AffiliationVerificationMethod,
+    institution_id: uuid.UUID | None,
+    institution_name: str,
+    application: Application,
+    candidate: Candidate,
+) -> CampusAffiliationVerification | None:
+    """Called once for a new program application (inside its transaction).
+    None when the program doesn't require verification. Automatic only for
+    EMAIL_DOMAIN with a *verified* candidate email on one of the registry
+    institution's domains — a typed institution name is never verified."""
+    if method == AffiliationVerificationMethod.NONE:
+        return None
+    record = CampusAffiliationVerification(
+        organization_id=organization_id,
+        application_id=application.id,
+        program_id=program_id,
+        institution_id=institution_id,
+        status=AffiliationStatus.PENDING,
+    )
+    if (
+        method == AffiliationVerificationMethod.EMAIL_DOMAIN
+        and institution_id is not None
+        and candidate.email_verified_at is not None
+    ):
+        institution = await db.get(Institution, institution_id)
+        if institution is not None and domain_matches(candidate.email, institution.email_domains):
+            record.status = AffiliationStatus.VERIFIED
+            record.method = AffiliationVerificationMethod.EMAIL_DOMAIN
+            record.reviewed_at = datetime.now(UTC)
+    db.add(record)
+    await db.flush()
+    await activity_service.record_activity(
+        db,
+        organization_id=organization_id,
+        actor=None,
+        action=(
+            "CAMPUS_AFFILIATION_VERIFIED"
+            if record.status == AffiliationStatus.VERIFIED
+            else "CAMPUS_AFFILIATION_PENDING"
+        ),
+        entity_type="application",
+        entity_id=application.id,
+        entity_label=f"{candidate.full_name} — {program_title}",
+        description=(
+            f"{candidate.full_name}'s membership of {institution_name} was verified automatically "
+            "(email domain match)."
+            if record.status == AffiliationStatus.VERIFIED
+            else f"{candidate.full_name}'s membership of {institution_name} is awaiting verification."
+        ),
+    )
+    return record
+
+
+def _guard_self_review(actor: User, candidate: Candidate | None) -> None:
+    if candidate is not None and actor.email.strip().lower() == candidate.email.strip().lower():
+        raise ForbiddenError("You can't decide the verification of your own application.")
+
+
+async def review_program_verification(
+    db: AsyncSession,
+    *,
+    record: CampusAffiliationVerification,
+    status: AffiliationStatus,
+    method: AffiliationVerificationMethod | None,
+    note: str | None,
+    actor: User,
+    context_label: str,
+) -> CampusAffiliationVerification:
+    """An HR decision on a program applicant's affiliation. VERIFIED names
+    the evidence checked; REJECTED needs a note; PENDING reopens a decided
+    record (e.g. the candidate sent new evidence — resubmission)."""
+    application = await db.get(Application, record.application_id)
+    candidate = await db.get(Candidate, application.candidate_id) if application else None
+    _guard_self_review(actor, candidate)
+    if status == AffiliationStatus.REJECTED and not (note and note.strip()):
+        raise ConflictError("A note is required when rejecting an affiliation.", code="note_required")
+    if status == record.status:
+        raise ConflictError(
+            f"This affiliation is already {status.value.lower()}.", code="affiliation_unchanged"
+        )
+    if status == AffiliationStatus.VERIFIED:
+        method = method or AffiliationVerificationMethod.MANUAL
+        if method not in MANUAL_VERIFICATION_METHODS:
+            raise UnprocessableError("Choose the evidence you checked to verify this affiliation.")
+
+    record.status = status
+    if status == AffiliationStatus.PENDING:
+        record.method = None
+    elif status == AffiliationStatus.VERIFIED:
+        record.method = method
+    else:
+        record.method = AffiliationVerificationMethod.MANUAL
+    record.reviewed_by_user_id = None if status == AffiliationStatus.PENDING else actor.id
+    record.reviewed_at = None if status == AffiliationStatus.PENDING else datetime.now(UTC)
+    record.review_note = note.strip() if note and note.strip() else None
+    await db.flush()
+    evidence = (
+        f" ({record.method.value.replace('_', ' ').lower()})"
+        if status == AffiliationStatus.VERIFIED and record.method
+        else ""
+    )
+    await activity_service.record_activity(
+        db,
+        organization_id=record.organization_id,
+        actor=actor,
+        action=_REVIEW_ACTIONS[status],
+        entity_type="application",
+        entity_id=record.application_id,
+        entity_label=f"{candidate.full_name if candidate else 'Candidate'} — {context_label}",
+        description=(
+            f"Institution membership marked {status.value.lower()} by {actor.full_name}{evidence}."
+        ),
+        reason=record.review_note,
+    )
+    return record
+
+
 async def get_for_application(
     db: AsyncSession, organization_id: uuid.UUID, application_id: uuid.UUID
 ) -> CampusAffiliationVerification | None:
@@ -189,6 +323,9 @@ async def review(
         raise NotFoundError("Verification record not found.")
     if status == AffiliationStatus.REJECTED and not (note and note.strip()):
         raise ConflictError("A note is required when rejecting an affiliation.", code="note_required")
+    application = await db.get(Application, record.application_id)
+    candidate = await db.get(Candidate, application.candidate_id) if application else None
+    _guard_self_review(actor, candidate)
 
     record.status = status
     record.method = None if status == AffiliationStatus.PENDING else AffiliationVerificationMethod.MANUAL
@@ -196,9 +333,6 @@ async def review(
     record.reviewed_at = None if status == AffiliationStatus.PENDING else datetime.now(UTC)
     record.review_note = note.strip() if note and note.strip() else None
     await db.flush()
-
-    application = await db.get(Application, record.application_id)
-    candidate = await db.get(Candidate, application.candidate_id) if application else None
     await activity_service.record_activity(
         db,
         organization_id=drive.organization_id,

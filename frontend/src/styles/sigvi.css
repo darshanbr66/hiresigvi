@@ -284,7 +284,6 @@
   padding: 1rem 0.9rem;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 
 .sigvi-row {

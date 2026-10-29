@@ -1,13 +1,19 @@
 /*
  * HireZ startup screen (markup in index.html, lifecycle in
- * shared/lib/brandLoading.ts). One large "Z" on the theme's canvas, filled
- * with the wordmark indigo; a soft teal-into-light band of light sweeps
- * across it from left to right, starting and ending off the letter so the
- * loop has no visible jump. Only `background-position` animates, on a single
- * glyph. Reduced motion: the same Z, static.
+ * shared/lib/brandLoading.ts). A bold, stationary indigo "Z" centred inside
+ * a thin circular track, with a highlight that travels around the track:
+ * transparent tail, wordmark indigo, rounded brand-teal head. Two layers —
+ * the ring rotates, the Z never moves. Only `transform` animates, on the
+ * ring's arc. Reduced motion: the same Z and a static arc.
  */
 
 .brand-loading {
+  /* one size drives the whole mark, so it stays in proportion from phones
+     to large desktops */
+  --brand-loader-size: clamp(6.5rem, 24vmin, 8.75rem);
+  --brand-loader-stroke: 3px;
+  --brand-loader-track: color-mix(in srgb, var(--color-wordmark-z) 14%, transparent);
+
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -24,64 +30,96 @@
 }
 
 /* the id selector outranks index.html's :where() rule (specificity 0) */
-#brand-loading > .brand-loading-z {
+#brand-loading > .brand-loading-mark {
   visibility: visible;
 }
 
-.brand-loading-z {
-  display: block;
-  font-family: var(--font-display);
-  font-size: clamp(7rem, 26vmin, 11.5rem);
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  /* the letter is painted by the gradient below, clipped to its shape:
-     wordmark indigo, with a band of the brand teal (brighter in dark mode,
-     deeper in light — both legible on their canvas) */
-  color: var(--color-wordmark-z);
-  background-image: linear-gradient(
-    100deg,
-    var(--color-wordmark-z) 0%,
-    var(--color-wordmark-z) 35%,
-    color-mix(in srgb, var(--color-accent) 55%, var(--color-wordmark-z)) 44%,
-    var(--color-accent) 50%,
-    color-mix(in srgb, var(--color-accent) 55%, var(--color-wordmark-z)) 56%,
-    var(--color-wordmark-z) 65%,
-    var(--color-wordmark-z) 100%
-  );
-  /* 4x the glyph: at 100% the band sits wholly left of the letter, at 0%
-     wholly right of it — both ends are plain indigo, so each cycle
-     restarts seamlessly */
-  background-size: 400% 100%;
-  background-position: 100% 0;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 18px 40px var(--glow-brand));
+.brand-loading-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--brand-loader-size);
+  height: var(--brand-loader-size);
   user-select: none;
-  animation: brand-loading-sweep 2.2s cubic-bezier(0.45, 0, 0.25, 1) infinite;
 }
 
-@keyframes brand-loading-sweep {
-  from {
-    background-position: 100% 0;
-  }
+/* The track: a thin, quiet circle in a wash of the wordmark indigo. */
+.brand-loading-ring {
+  position: absolute;
+  inset: 0;
+  border: var(--brand-loader-stroke) solid var(--brand-loader-track);
+  border-radius: 50%;
+}
+
+/* The highlight: a conic sweep cut down to the track's width by a radial
+   mask, plus a dot at the sweep's leading end for a rounded head. Drawn
+   over the track (it covers the border box) and rotated as one piece. */
+.brand-loading-ring::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--brand-loader-stroke));
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      circle at 50% calc(var(--brand-loader-stroke) / 2),
+      var(--color-accent) calc(var(--brand-loader-stroke) / 2),
+      transparent calc(var(--brand-loader-stroke) / 2 + 0.75px)
+    ),
+    conic-gradient(
+      transparent 0deg 210deg,
+      var(--color-wordmark-z) 300deg,
+      var(--color-accent) 360deg
+    );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--brand-loader-stroke) - 0.75px),
+    #000 calc(100% - var(--brand-loader-stroke))
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--brand-loader-stroke) - 0.75px),
+    #000 calc(100% - var(--brand-loader-stroke))
+  );
+  will-change: transform;
+  animation: brand-loading-spin 1.1s linear infinite;
+}
+
+/* Stationary, above the ring. Sized from the ring so the gap around it
+   stays balanced; nudged down slightly because a capital sits above the
+   centre of its line box. */
+.brand-loading-z {
+  position: relative;
+  display: block;
+  font-family: var(--font-display);
+  font-size: calc(var(--brand-loader-size) * 0.44);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--color-wordmark-z);
+  transform: translateY(0.02em);
+}
+
+@keyframes brand-loading-spin {
   to {
-    background-position: 0% 0;
+    transform: rotate(1turn);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brand-loading-z {
+  .brand-loading-ring::before {
     animation: none;
+    will-change: auto;
   }
 }
 
-/* forced colours: no clipped gradient, just a plain system-coloured Z */
+/* forced colours: the gradient arc can't follow the system palette, so
+   only the track (a system-coloured border) and a plain Z remain */
 @media (forced-colors: active) {
+  .brand-loading-ring::before {
+    display: none;
+  }
+
   .brand-loading-z {
-    background: none;
-    -webkit-text-fill-color: currentColor;
-    filter: none;
+    color: CanvasText;
   }
 }

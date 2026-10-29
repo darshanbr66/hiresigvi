@@ -9,9 +9,10 @@ The product is **HireZ**. Its identity is a **text-only wordmark**
 (`shared/components/Wordmark.tsx`): "Hire" in the ink colour and the "Z" in
 brand indigo (`--color-wordmark-z`), display face, weight 750, tight
 tracking (-0.05em), upright — no italic, gradient, symbol or image. There is no image
-logo, no mark and no placeholder box anywhere in the UI; the collapsed
-sidebar rail uses the compact "HZ" form. The accessible name is always
-"HireZ". The browser tab reads "HireZ" on the home page and "<Page> · HireZ"
+logo and no placeholder box anywhere in the UI; where the full word doesn't
+fit (the collapsed sidebar rail) the compact form is the wordmark's indigo
+"Z" on its own (`<Wordmark variant="mark" />`, weight 800). The accessible
+name is always "HireZ". The browser tab reads "HireZ" on the home page and "<Page> · HireZ"
 inside the app.
 
 - **Indigo is the brand.** Neutral surfaces (off-white / zinc) and
@@ -120,8 +121,8 @@ UI.
 
 The page frame never scrolls: `.app-shell` is the viewport height and only
 `.content` scrolls. Inside the sidebar, only the link list (`.sidebar-nav`)
-scrolls — the header row and footer stay fixed — with a thin
-themed scrollbar, `overscroll-behavior: contain` (the page doesn't scroll
+scrolls — the header row and footer stay fixed — with the shared
+auto-hiding scrollbar (below), `overscroll-behavior: contain` (the page doesn't scroll
 when the list hits its end) and a short fade at the list's top and bottom
 edges. The `<aside>` itself is `overflow: hidden`. The phone drawer leaves
 room for the safe-area inset.
@@ -130,20 +131,41 @@ The header is one compact row (`.sidebar-brand`, 36px): the collapse/expand
 button on the far left, the HireZ wordmark beside it, both vertically
 centred; the nav starts 12px below. The toggle is a borderless 36px icon
 button with the same corner radius and hover fill as a nav link. On the
-collapsed 72px rail only the toggle fits, so it sits centred in the same
-row and the wordmark is hidden (the rail never widens). Phones have no
-toggle: the drawer header is the wordmark with the close button on the
-right.
+collapsed 72px rail the same 36px row shows the toggle and the compact
+"Z" mark side by side, centred as a pair (the rail never widens, and the
+row height doesn't change, so the nav doesn't move). Swapping between the
+full wordmark and the mark fades the incoming form in (opacity/scale,
+`--dur-base`). Phones have no toggle and never collapse: the drawer header
+is the full wordmark with the close button on the right.
+
+### Scrollbars (`index.css`)
+
+On devices with a fine pointer that can hover, every scroll area keeps a
+constant 8px transparent gutter (so nothing shifts) and shows a slim,
+rounded thumb only while the pointer is over that area — including over
+the bar and while dragging — or while keyboard focus is inside it. The
+thumb is `--scrollbar-thumb`, a translucent wash of `--color-text-muted`
+(soft slate in light mode, lighter gray in dark), darkening to
+`--scrollbar-thumb-active` under the pointer. Chromium and Safari use the
+`::-webkit-scrollbar` parts; Firefox gets `scrollbar-width: thin` and
+`scrollbar-color` (set only where `::-webkit-scrollbar` is unsupported,
+because Chromium ignores the webkit parts on elements that set them), with
+no rounded-corner or thumb-hover control. Nothing transitions — scrollbar
+parts don't animate reliably across engines. Touch screens keep the
+platform's native overlay scrollbars. Scrolling is never disabled; the one
+deliberately hidden bar is the swipeable pipeline track.
 
 ### Startup screen (`index.html`, `styles/loading.css`, `shared/lib/brandLoading.ts`)
 
 A cold load never shows a blank page: `index.html` contains a full-screen
-`#brand-loading` overlay with one large "Z" (display face, weight 800,
-`clamp(7rem, 26vmin, 11.5rem)`) on `--color-bg`. The letter is filled by a
-gradient clipped to its shape — `--color-wordmark-z` with a band of
-`--color-accent` — and a 2.2s `background-position` loop sweeps the band
-from left to right; the band starts and ends off the letter, so the loop is
-seamless. A tiny inline script applies a saved theme choice before first
+`#brand-loading` overlay on `--color-bg`: a bold, stationary indigo "Z"
+(display face, weight 800, `--color-wordmark-z`) centred in a thin circular
+track (3px, a 14% wash of the wordmark indigo), sized together by one
+variable (`clamp(6.5rem, 24vmin, 8.75rem)`). A highlight travels around the
+track — a conic sweep from transparent through indigo to a rounded teal
+(`--color-accent`) head, cut to the track's width by a radial mask — on a
+1.1s linear `transform: rotate` loop. The ring and the Z are separate
+layers: only the ring rotates. A tiny inline script applies a saved theme choice before first
 paint (same key as `ThemeContext`), so the overlay matches the theme.
 
 Lifecycle: it stays until real route content has committed (`AppReady`
@@ -155,8 +177,8 @@ accessibility tree at once and is removed; while shown, `#root` is `inert`.
 Route changes never bring it back, and there is no artificial delay — a
 fast start is just a short fade. Fail-safe: it leaves after 6s whatever
 happens, revealing the app's own loading text or error state. Reduced
-motion: a static indigo Z, removed without a fade. Forced colours: a plain
-system-coloured Z.
+motion: the static Z and a static arc, removed without a fade. Forced
+colours: a plain system-coloured Z and track, no arc.
 
 ### Key figures (`shared/components/MetricCard.tsx`)
 

@@ -201,6 +201,51 @@ describe("AppShell", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the full wordmark expanded and the compact Z mark beside the toggle when collapsed", () => {
+    const { container } = renderShell();
+    const brand = container.querySelector(".sidebar-brand") as HTMLElement;
+
+    const full = within(brand).getByRole("img", { name: "HireZ" });
+    expect(full).toHaveTextContent("HireZ");
+    expect(full).not.toHaveClass("wordmark-mark");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    // Same header row: the toggle first, then the compact mark — still
+    // named "HireZ", showing only the indigo Z.
+    const mark = within(brand).getByRole("img", { name: "HireZ" });
+    expect(mark).toHaveClass("wordmark-mark");
+    expect(mark).toHaveTextContent(/^Z$/);
+    expect(mark.querySelector(".wordmark-z")).toBeInTheDocument();
+    const toggle = within(brand).getByRole("button", { name: "Expand sidebar" });
+    expect(toggle.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(within(brand).getByRole("img", { name: "HireZ" })).toHaveTextContent("HireZ");
+  });
+
+  it("keeps the full wordmark and the close button in the phone drawer, even with a stored collapse", () => {
+    localStorage.setItem("ai-recruitment-sidebar-collapsed", "true");
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("max-width: 720px"),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    try {
+      const { container } = renderShell();
+      const sidebar = container.querySelector(".sidebar") as HTMLElement;
+      expect(sidebar).not.toHaveClass("sidebar-collapsed");
+      const brand = container.querySelector(".sidebar-brand") as HTMLElement;
+      const wordmark = within(brand).getByRole("img", { name: "HireZ", hidden: true });
+      expect(wordmark).toHaveTextContent("HireZ");
+      expect(wordmark).not.toHaveClass("wordmark-mark");
+      expect(brand.querySelector(".sidebar-collapse-toggle")).toBeNull();
+      expect(brand.querySelector(".sidebar-close")).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("settles the collapse toggle on the first render after collapsing, with no navigation", () => {
     const { container } = renderShell();
     const sidebar = container.querySelector(".sidebar") as HTMLElement;

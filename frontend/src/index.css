@@ -5,35 +5,79 @@
   box-sizing: border-box;
 }
 
-/* Thin, theme-aware scrollbars everywhere — the sidebar, notification/notes
- * lists, modal/drawer bodies, the calendar grid, any long content area.
- * `scrollbar-width`/`scrollbar-color` cover Firefox; the `::-webkit-*`
- * pseudo-elements cover Chromium/WebKit. Never `scrollbar-width: none` /
- * `overflow: hidden` tricks — scrolling stays visually discoverable, just
- * not the bulky OS-default bar. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-strong) transparent;
+/* Scrollbars: slim, rounded and out of the way until wanted. On a device
+ * with a mouse/trackpad every scroll area keeps a thin, transparent gutter
+ * (constant size, so nothing shifts when a thumb appears) and reveals its
+ * thumb while the pointer is over it — including over the bar itself and
+ * while dragging — or while keyboard focus is inside it. Scrolling itself
+ * is never disabled or hidden: wheel, keyboard and touch work as before.
+ *
+ * - Chromium and Safari: the `::-webkit-scrollbar` parts (rounded thumb,
+ *   grows slightly under the pointer). Chromium ignores these on any element
+ *   that sets `scrollbar-width`/`scrollbar-color`, so those standard
+ *   properties are set only where `::-webkit-scrollbar` is unsupported.
+ * - Firefox: `scrollbar-width: thin` + `scrollbar-color` (no radius or
+ *   thumb-hover control there; the platform draws the thumb).
+ * - Chromium only re-resolves a scroller's `::-webkit-scrollbar-*` styles
+ *   when the scroller's own computed style changes; `:hover` alone doesn't
+ *   change it, so the thumb would never appear. Flipping `--scrollbar-reveal`
+ *   (registered as non-inherited, so only the hovered element restyles, not
+ *   its whole subtree) gives it that change. It has no other effect.
+ * - No transitions: scrollbar parts don't animate reliably across engines,
+ *   so the thumb simply appears.
+ * - Touch screens (no hover, coarse pointer) keep the platform's native
+ *   overlay scrollbars, which already appear while scrolling. */
+@property --scrollbar-reveal {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
 }
 
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+@media (hover: hover) and (pointer: fine) {
+  *:hover,
+  *:has(:focus-visible) {
+    --scrollbar-reveal: 1;
+  }
 
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
 
-*::-webkit-scrollbar-thumb {
-  background-color: var(--color-border-strong);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 
-*::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-text-muted);
+  *::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-color: transparent;
+    background-clip: padding-box;
+  }
+
+  *:hover::-webkit-scrollbar-thumb,
+  *:has(:focus-visible)::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+  }
+
+  *::-webkit-scrollbar-thumb:hover,
+  *::-webkit-scrollbar-thumb:active {
+    border-width: 1px;
+    background-color: var(--scrollbar-thumb-active);
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+
+    *:hover,
+    *:has(:focus-visible) {
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
+  }
 }
 
 html {

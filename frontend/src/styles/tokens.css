@@ -91,6 +91,11 @@
   --color-input-bg: #ffffff;
   --color-text: #15181d;
   --color-text-muted: #565c66;
+  /* Scrollbar thumb (index.css): a translucent wash of the muted ink — soft
+     slate on the light canvas; since it resolves against the theme's own
+     muted ink, a lighter gray in dark mode with no separate override. */
+  --scrollbar-thumb: color-mix(in srgb, var(--color-text-muted) 38%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--color-text-muted) 62%, transparent);
 
   /* Brand (indigo). `primary` is for text/links; `primary-solid` is the
      fill behind white text (buttons, active nav) — kept separate so both

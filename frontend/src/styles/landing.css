@@ -1,8 +1,9 @@
 /*
- * Public landing page. The hero is the product's one cinematic moment: a lit
- * stage, the recruitment-intelligence network, and the message. Everything
- * below it is calm and legible. Colours come from the theme tokens and the
- * shared `--kind-*` palette, so light and dark are each designed, not inverted.
+ * Public pages shared by the HireZ home page and the careers pages: the
+ * floating nav, the hero frame, section rhythm, role cards, the hiring
+ * process spine, feature cards and the closing call to action. The home
+ * page's own sections live in styles/home.css. Colours come from the theme
+ * tokens, so light and dark are each designed, not inverted.
  */
 
 .landing {
@@ -31,8 +32,7 @@
 
 .landing-nav.is-scrolled {
   padding-block: 0.6rem;
-  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
-  backdrop-filter: saturate(1.4) blur(14px);
+  background: var(--color-surface);
   border-bottom-color: var(--color-border);
 }
 
@@ -88,145 +88,6 @@
   padding: 6.5rem clamp(1rem, 4vw, 2.5rem) 3.5rem;
   background: var(--stage-bg);
   overflow: hidden;
-}
-
-/* The lit stage: a soft brand glow and faint concentric guides, both centred
-   where the network sits. The guides fade out with a mask so they never end
-   in a hard edge. */
-.hero-stage {
-  position: absolute;
-  inset: 0;
-  z-index: -3;
-  background: radial-gradient(52rem 40rem at 72% 46%, var(--stage-glow), transparent 70%);
-}
-
-.hero-stage::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: repeating-radial-gradient(
-    circle at 72% 46%,
-    transparent 0 4.5rem,
-    var(--stage-line) 4.5rem calc(4.5rem + 1px)
-  );
-  -webkit-mask-image: radial-gradient(circle at 72% 46%, #000 12%, transparent 68%);
-  mask-image: radial-gradient(circle at 72% 46%, #000 12%, transparent 68%);
-}
-
-.hero-scene {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-}
-
-.hero-scene-poster,
-.hero-scene-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.hero-scene-poster {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 2%;
-  transition: opacity 700ms var(--ease-out) 250ms;
-}
-
-.hero-scene-canvas {
-  display: block;
-  opacity: 0;
-  transition: opacity 900ms var(--ease-out);
-}
-
-.hero-scene[data-scene-status="ready"] .hero-scene-canvas {
-  opacity: 1;
-}
-
-.hero-scene[data-scene-status="ready"] .hero-scene-poster {
-  opacity: 0;
-}
-
-/* --- the static poster (loading state, reduced motion, no-WebGL fallback) --- */
-
-.network-poster {
-  width: min(54%, 720px);
-  height: auto;
-  max-height: 80%;
-  overflow: visible;
-}
-
-.poster-particle {
-  fill: var(--kind-particle);
-  opacity: 0.55;
-}
-
-.poster-ring {
-  fill: none;
-  stroke-width: 0.018;
-  stroke-opacity: 0.4;
-}
-
-.poster-link {
-  stroke: var(--kind-candidate);
-  stroke-width: 0.012;
-  stroke-opacity: 0.3;
-}
-
-.poster-match {
-  stroke: var(--kind-match);
-  stroke-width: 0.03;
-  stroke-dasharray: 0.13 0.1;
-  stroke-opacity: 0.9;
-}
-
-.poster-node {
-  fill: var(--kind-candidate);
-  transition: opacity var(--dur-base) var(--ease-out);
-}
-
-.poster-node[data-kind="job"] {
-  fill: var(--kind-job);
-}
-
-.poster-node[data-kind="skill"] {
-  fill: var(--kind-skill);
-}
-
-.poster-node[data-kind="assessment"] {
-  fill: var(--kind-assessment);
-}
-
-.poster-node[data-kind="organization"] {
-  fill: var(--kind-organization);
-}
-
-.poster-node[data-matched] {
-  fill: var(--kind-match);
-}
-
-.poster-core-body {
-  fill: var(--kind-ai);
-}
-
-.poster-core-wire {
-  fill: none;
-  stroke: var(--kind-ai);
-  stroke-width: 0.03;
-  stroke-opacity: 0.6;
-}
-
-/* A legend category lights up; everything else steps back. */
-.network-poster[data-highlight="candidate"] .poster-node:not([data-kind="candidate"]),
-.network-poster[data-highlight="job"] .poster-node:not([data-kind="job"]),
-.network-poster[data-highlight="skill"] .poster-node:not([data-kind="skill"]),
-.network-poster[data-highlight="assessment"] .poster-node:not([data-kind="assessment"]),
-.network-poster[data-highlight="organization"] .poster-node:not([data-kind="organization"]),
-.network-poster[data-highlight="ai"] .poster-node {
-  opacity: 0.14 !important;
 }
 
 /* --- hero content ------------------------------------------------------------ */
@@ -295,46 +156,11 @@
   transform: translateX(4px);
 }
 
-/* Proof points are plain text, not pills: the page has one set of buttons
-   (the CTAs) and one set of controls (the legend) — everything else is copy. */
-.hero-proof {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 1.25rem;
-  margin: 1.75rem 0 0;
-  padding: 0;
-  list-style: none;
-  color: var(--color-text-muted);
-  font-size: 0.875rem;
-}
-
-.hero-proof li + li::before {
-  content: "";
-  display: inline-block;
-  width: 3px;
-  height: 3px;
-  margin-right: 1.25rem;
-  vertical-align: middle;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.6;
-}
-
-.hero-proof-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--color-text);
-  font-weight: var(--weight-medium);
-}
-
 /* Page-load entrance: the copy arrives in reading order, once. */
 .hero-eyebrow,
 .hero-title,
 .hero-sub,
-.hero-actions,
-.hero-proof {
+.hero-actions {
   animation: rise-in 700ms var(--ease-out) both;
 }
 
@@ -348,98 +174,6 @@
 
 .hero-actions {
   animation-delay: 260ms;
-}
-
-.hero-proof {
-  animation-delay: 350ms;
-}
-
-/* --- legend ---------------------------------------------------------------- */
-
-.hero-legend {
-  position: absolute;
-  /* Clear of the fixed "Ask Sigvi" launcher in the bottom-right corner
-     (about 9rem wide plus its 1.25rem gap), which used to sit on top of the
-     last legend items. */
-  right: 12rem;
-  bottom: 1.75rem;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  max-width: 31rem;
-  animation: rise-in 700ms var(--ease-out) 450ms both;
-}
-
-.legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.7rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-family: inherit;
-  font-size: 0.75rem;
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
-}
-
-.legend-item:hover,
-.legend-item[aria-pressed="true"] {
-  border-color: var(--color-border-strong);
-  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
-  color: var(--color-text);
-}
-
-.legend-item[aria-pressed="true"] {
-  border-color: var(--color-primary);
-}
-
-.legend-item:active {
-  transform: scale(0.97);
-}
-
-/* Swatch shapes echo the shapes in the scene, so the legend is readable
-   without colour: diamond = job, square = assessment, hexagon = organization. */
-.legend-swatch {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 999px;
-  background: var(--kind-candidate);
-}
-
-.legend-swatch[data-kind="job"] {
-  background: var(--kind-job);
-  border-radius: 1px;
-  transform: rotate(45deg) scale(0.9);
-}
-
-.legend-swatch[data-kind="skill"] {
-  background: var(--kind-skill);
-  width: 0.45rem;
-  height: 0.45rem;
-}
-
-.legend-swatch[data-kind="assessment"] {
-  background: var(--kind-assessment);
-  border-radius: 2px;
-}
-
-.legend-swatch[data-kind="organization"] {
-  background: var(--kind-organization);
-  border-radius: 0;
-  clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%);
-}
-
-.legend-swatch[data-kind="ai"] {
-  background: var(--kind-ai);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--kind-ai) 28%, transparent);
 }
 
 /* --- sections ----------------------------------------------------------------- */
@@ -754,13 +488,6 @@
   text-align: center;
 }
 
-.landing-final-cta .network-backdrop {
-  z-index: -1;
-  opacity: 0.7;
-  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, #000 0%, transparent 72%);
-  mask-image: radial-gradient(ellipse at 50% 50%, #000 0%, transparent 72%);
-}
-
 .landing-final-inner h2 {
   margin: 0 0 0.6rem;
   font-size: var(--text-headline);
@@ -828,8 +555,7 @@
 
 /* --- tablet / phone: intentionally composed, not shrunk ------------------------ */
 
-/* Stacked hero (tablet and phone): copy first, then the network in a block of
-   its own. The scene never sits under text — legibility comes before spectacle. */
+/* Stacked hero (tablet and phone): copy first, then the illustration below. */
 @media (max-width: 1100px) {
   .hero {
     flex-direction: column;
@@ -838,49 +564,8 @@
     padding-bottom: 1.5rem;
   }
 
-  .hero-stage {
-    background: radial-gradient(38rem 30rem at 50% 82%, var(--stage-glow), transparent 70%);
-  }
-
-  .hero-stage::before {
-    background: repeating-radial-gradient(
-      circle at 50% 82%,
-      transparent 0 4.5rem,
-      var(--stage-line) 4.5rem calc(4.5rem + 1px)
-    );
-    -webkit-mask-image: radial-gradient(circle at 50% 82%, #000 12%, transparent 68%);
-    mask-image: radial-gradient(circle at 50% 82%, #000 12%, transparent 68%);
-  }
-
   .hero-inner {
     order: 1;
-  }
-
-  .hero-scene {
-    position: relative;
-    inset: auto;
-    order: 2;
-    height: clamp(19rem, 64vw, 32rem);
-    margin: 1.75rem auto 0;
-    width: 100%;
-    max-width: 44rem;
-  }
-
-  .hero-scene-poster {
-    justify-content: center;
-    padding: 0;
-  }
-
-  .network-poster {
-    width: 100%;
-    max-height: 100%;
-  }
-
-  .hero-legend {
-    position: static;
-    justify-content: flex-start;
-    max-width: none;
-    margin-top: 2.25rem;
   }
 }
 
@@ -914,13 +599,5 @@
     flex: 1 1 100%;
     text-align: center;
     justify-content: center;
-  }
-
-  .legend-item {
-    padding: 0.35rem 0.65rem;
-  }
-
-  .hero-scene {
-    height: clamp(17rem, 78vw, 24rem);
   }
 }

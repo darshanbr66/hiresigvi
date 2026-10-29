@@ -38,6 +38,7 @@ const TYPE_LABEL: Record<NotificationType, string> = {
   ANNOUNCEMENT: "Announcement",
   DIRECT_MESSAGE: "Message",
   CALENDAR_REMINDER: "Reminder",
+  INTERVIEW_ASSIGNED: "Interview",
 };
 
 const TYPE_BADGE: Record<NotificationType, string> = {
@@ -46,6 +47,7 @@ const TYPE_BADGE: Record<NotificationType, string> = {
   ANNOUNCEMENT: "badge-accent",
   DIRECT_MESSAGE: "badge-active",
   CALENDAR_REMINDER: "badge-warn",
+  INTERVIEW_ASSIGNED: "badge-info",
 };
 
 function relatedEntityLink(notification: NotificationResponse): { to: string; label: string } | null {

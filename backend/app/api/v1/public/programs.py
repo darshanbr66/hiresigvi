@@ -82,6 +82,8 @@ def _public_view(program: RecruitmentProgram, organization: Organization) -> Pub
         employment_pathway=program.employment_pathway,
         bond_duration_months=program.bond_duration_months,
         bond_terms_summary=program.bond_terms_summary,
+        company_funding_type=program.company_funding_type,
+        company_funding_value=program.company_funding_value,
         has_assessment=program.assessment_id is not None,
         interview_stages=program.interview_stages,
         required_documents=program.required_documents,

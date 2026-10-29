@@ -1,17 +1,22 @@
 """Recruiter-facing recruitment programs (docs/programs.md).
 
 Permissions: `program.read` to view, `program.manage` to configure/publish
-programs and move participants through eligibility, test, interview,
-training and employment; `program.finance.manage` (ORG_ADMIN by default)
-for the scholarship decision, disbursements, training-fee payments, the
-agreement and the bond. `organization_id` always comes from the caller.
+programs and move participants through affiliation verification,
+eligibility, test, interview, funding proposals, training (and milestones),
+the employment review and the offer; `program.finance.manage` (ORG_ADMIN by
+default) to approve/reject funding, fix fee obligations, record payments and
+applied funding, the agreement and the bond; `program.employment.approve`
+(ORG_ADMIN, HIRING_MANAGER) to decide employment progression.
+`organization_id` always comes from the caller.
 """
 
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import granted_permission_codes, require_permission
@@ -24,10 +29,13 @@ from app.integrations.storage import (
     get_resume_storage,
     get_resume_storage_for_provider,
 )
+from app.models.interview import ApplicationInterview
 from app.models.program import (
     DisbursementStatus,
     EligibilityStatus,
-    PaymentRecordStatus,
+    FundingRevisionStatus,
+    MilestoneStatus,
+    ProgramEnrollment,
     ProgramStatus,
     RecruitmentProgram,
     ScholarshipStatus,
@@ -37,18 +45,31 @@ from app.models.user import User
 from app.schemas.assessment import AssessmentInvitationResponse
 from app.schemas.institution import InstitutionSummary
 from app.schemas.program import (
+    AffiliationReviewRequest,
+    AffiliationSummary,
     AgreementUpdateRequest,
     BondUpdateRequest,
     DisbursementCreateRequest,
     DisbursementResponse,
     DisbursementUpdateRequest,
     EligibilityReviewRequest,
+    EmploymentReviewRequest,
     EnrollmentResponse,
     EnrollmentResultSummary,
+    FeeObligationRequest,
     FeePaymentCreateRequest,
     FeePaymentResponse,
     FeePaymentVoidRequest,
+    FundingAcceptanceRequest,
+    FundingDecisionRequest,
+    FundingProposalRequest,
+    FundingRevisionResponse,
+    FundingWithdrawRequest,
+    InterviewResponse,
     JoiningRequest,
+    MilestoneCreateRequest,
+    MilestoneResponse,
+    MilestoneUpdateRequest,
     OfferUpdateRequest,
     ProgramCreateRequest,
     ProgramReport,
@@ -56,11 +77,10 @@ from app.schemas.program import (
     ProgramStatusRequest,
     ProgramSummary,
     ProgramUpdateRequest,
-    ScholarshipDecisionRequest,
     ScholarshipEligibilityRequest,
     TrainingUpdateRequest,
 )
-from app.services import program_service, resume_service
+from app.services import program_finance, program_service, resume_service
 from app.workflows import program_workflow
 
 router = APIRouter(prefix="/programs", tags=["recruiter-programs"])
@@ -89,19 +109,74 @@ async def _program_response(db: AsyncSession, program: RecruitmentProgram) -> Pr
     )
 
 
+#: Enrollment columns only users with program.finance.manage may see.
+_FINANCE_FIELDS = frozenset(
+    {
+        "fee_amount",
+        "fee_currency",
+        "fee_due_date",
+        "company_contribution_amount",
+        "candidate_payable_amount",
+        "funding_terms_accepted_revision",
+        "funding_terms_accepted_at",
+        "agreement_terms_snapshot",
+        "bond_applies_reason",
+    }
+)
+_COMPUTED_FIELDS = frozenset(
+    {"fee_payments", "disbursements", "funding_revisions", "milestones", "interviews", "affiliation"}
+)
+
+
+def interview_response(
+    interview: ApplicationInterview, *, user: User, codes: set[str], names: dict[uuid.UUID, str]
+) -> InterviewResponse:
+    """Feedback is visible to interview managers and to the interviewer who
+    wrote it — nobody else."""
+    may_read = "interview.manage" in codes or interview.interviewer_user_id == user.id
+    response = InterviewResponse.model_validate(interview)
+    response.interviewer_name = (
+        names.get(interview.interviewer_user_id) if interview.interviewer_user_id else None
+    )
+    if not may_read:
+        response.feedback = None
+        response.feedback_restricted = interview.feedback is not None
+    return response
+
+
+async def user_names(db: AsyncSession, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+    if not ids:
+        return {}
+    rows = await db.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
+    return {uid: name for uid, name in rows.all()}
+
+
 def _enrollment_response(
-    view: program_service.EnrollmentView, *, include_finance: bool
+    view: program_service.EnrollmentView,
+    *,
+    user: User,
+    codes: set[str],
+    names: dict[uuid.UUID, str] | None = None,
 ) -> EnrollmentResponse:
+    include_finance = _FINANCE in codes
     enrollment = view.enrollment
     invitation = view.latest_invitation
     result = invitation.result if invitation is not None else None
     payments = view.fee_payments if include_finance else []
     disbursements = view.disbursements if include_finance else []
+    today = date.today()
+    open_milestones = [m for m in view.milestones if m.status == MilestoneStatus.PENDING]
+    approved = next(
+        (r for r in view.funding_revisions if r.status == FundingRevisionStatus.APPROVED), None
+    )
+    snapshot = enrollment.agreement_terms_snapshot
     return EnrollmentResponse(
         **{
             field: getattr(enrollment, field)
             for field in EnrollmentResponse.model_fields
-            if hasattr(enrollment, field) and field not in ("fee_payments", "disbursements")
+            if hasattr(enrollment, field)
+            and field not in _COMPUTED_FIELDS
+            and (include_finance or field not in _FINANCE_FIELDS)
         },
         candidate_full_name=view.candidate.full_name,
         candidate_email=view.candidate.email,
@@ -114,18 +189,53 @@ def _enrollment_response(
                 passed=result.passed,
                 grading_status=result.grading_status,
                 attempt_number=invitation.attempt_number,
+                pass_score_applied=result.pass_score_applied,
             )
             if result is not None and invitation is not None
             else None
         ),
-        fee_paid_total=sum(
-            (p.amount for p in payments if p.status == PaymentRecordStatus.RECORDED), Decimal("0")
+        affiliation=AffiliationSummary.model_validate(view.affiliation) if view.affiliation else None,
+        milestones=[
+            MilestoneResponse.model_validate(m).model_copy(
+                update={"overdue": m.status == MilestoneStatus.PENDING and m.due_on is not None and m.due_on < today}
+            )
+            for m in view.milestones
+        ],
+        milestones_overdue=sum(1 for m in open_milestones if m.due_on is not None and m.due_on < today),
+        next_milestone_due=min((m.due_on for m in open_milestones if m.due_on is not None), default=None),
+        agreement_terms_current=(
+            None
+            if snapshot is None or not view.funding_revisions
+            else approved is not None and snapshot.get("funding_revision") == approved.revision_number
         ),
+        interviews=[
+            interview_response(i, user=user, codes=codes, names=names or {}) for i in view.interviews
+        ],
+        viewer_permissions=sorted(c for c in codes if c.startswith(("program.", "interview."))),
+        finance_visible=include_finance,
+        balance_due=(
+            enrollment.candidate_payable_amount - view.fee_paid_total
+            if include_finance and enrollment.candidate_payable_amount is not None
+            else None
+        ),
+        payment_status=(
+            program_finance.payment_status(
+                enrollment.candidate_payable_amount, view.fee_paid_total, enrollment.fee_due_date, today
+            ).value
+            if include_finance
+            else None
+        ),
+        fee_paid_total=view.fee_paid_total if include_finance else Decimal("0"),
         disbursed_total=sum(
             (d.amount for d in disbursements if d.status == DisbursementStatus.PAID), Decimal("0")
         ),
         fee_payments=[FeePaymentResponse.model_validate(p) for p in payments],
         disbursements=[DisbursementResponse.model_validate(d) for d in disbursements],
+        funding_revisions=(
+            [FundingRevisionResponse.model_validate(r) for r in view.funding_revisions]
+            if include_finance or "program.manage" in codes
+            else []
+        ),
     )
 
 
@@ -135,11 +245,12 @@ async def _program(db: AsyncSession, user: User, program_id: uuid.UUID) -> Recru
 
 
 async def _enrollment_out(
-    db: AsyncSession, user: User, enrollment: object
+    db: AsyncSession, user: User, enrollment: ProgramEnrollment
 ) -> EnrollmentResponse:
-    view = await program_service.enrollment_view(db, enrollment)  # type: ignore[arg-type]
-    include_finance = _FINANCE in await granted_permission_codes(db, user)
-    return _enrollment_response(view, include_finance=include_finance)
+    view = await program_service.enrollment_view(db, enrollment)
+    codes = await granted_permission_codes(db, user)
+    names = await user_names(db, {i.interviewer_user_id for i in view.interviews if i.interviewer_user_id})
+    return _enrollment_response(view, user=user, codes=codes, names=names)
 
 
 # --- Programs ---
@@ -236,10 +347,13 @@ async def list_enrollments(
     db: AsyncSession = Depends(get_db),
 ) -> list[EnrollmentResponse]:
     program = await _program(db, current_user, program_id)
+    """List rows carry the summary fields (finance totals and payment status
+    only for finance users); payment and funding history are on the detail."""
     views = await program_service.list_enrollments(
         db, program, eligibility=eligibility, scholarship=scholarship, training=training
     )
-    return [_enrollment_response(v, include_finance=False) for v in views]
+    codes = await granted_permission_codes(db, current_user)
+    return [_enrollment_response(v, user=current_user, codes=codes) for v in views]
 
 
 @router.get("/{program_id}/enrollments/{enrollment_id}", response_model=EnrollmentResponse)
@@ -308,7 +422,26 @@ async def mark_interview_completed(
 ) -> EnrollmentResponse:
     program = await _program(db, current_user, program_id)
     enrollment = await program_service.require_enrollment(db, program, enrollment_id)
-    await program_service.mark_interview_completed(db, enrollment=enrollment, actor=current_user)
+    await program_service.mark_interview_completed(
+        db, program=program, enrollment=enrollment, actor=current_user
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post("/{program_id}/enrollments/{enrollment_id}/affiliation", response_model=EnrollmentResponse)
+async def review_affiliation(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    payload: AffiliationReviewRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_service.review_affiliation(
+        db, program=program, enrollment=enrollment, status=payload.status, method=payload.method,
+        note=payload.note, actor=current_user,
+    )
     return await _enrollment_out(db, current_user, enrollment)
 
 
@@ -332,27 +465,96 @@ async def decide_scholarship_eligibility(
 
 
 @router.post(
-    "/{program_id}/enrollments/{enrollment_id}/scholarship-decision",
+    "/{program_id}/enrollments/{enrollment_id}/funding-proposals",
     response_model=EnrollmentResponse,
+    status_code=status.HTTP_201_CREATED,
 )
-async def decide_scholarship(
+async def propose_funding(
     program_id: uuid.UUID,
     enrollment_id: uuid.UUID,
-    payload: ScholarshipDecisionRequest,
+    payload: FundingProposalRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    """Proposes funding terms; approval is a separate finance decision."""
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_service.propose_funding(
+        db, program=program, enrollment=enrollment, funding_type=payload.funding_type,
+        value=payload.value, reason=payload.reason, actor=current_user,
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post(
+    "/{program_id}/enrollments/{enrollment_id}/funding-proposals/{revision_id}/decision",
+    response_model=EnrollmentResponse,
+)
+async def decide_funding(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    revision_id: uuid.UUID,
+    payload: FundingDecisionRequest,
     current_user: User = Depends(require_permission(_FINANCE)),
     db: AsyncSession = Depends(get_db),
 ) -> EnrollmentResponse:
     program = await _program(db, current_user, program_id)
     enrollment = await program_service.require_enrollment(db, program, enrollment_id)
-    await program_service.decide_scholarship(
-        db,
-        program=program,
-        enrollment=enrollment,
-        decision=payload.decision,
-        amount=payload.approved_amount,
-        currency=payload.currency,
-        note=payload.note,
-        actor=current_user,
+    await program_service.decide_funding(
+        db, program=program, enrollment=enrollment, revision_id=revision_id,
+        decision=payload.decision, note=payload.note, actor=current_user,
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post(
+    "/{program_id}/enrollments/{enrollment_id}/funding-proposals/{revision_id}/withdraw",
+    response_model=EnrollmentResponse,
+)
+async def withdraw_funding_proposal(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    revision_id: uuid.UUID,
+    payload: FundingWithdrawRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_service.withdraw_funding_proposal(
+        db, enrollment=enrollment, revision_id=revision_id, note=payload.note, actor=current_user
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post("/{program_id}/enrollments/{enrollment_id}/funding-acceptance", response_model=EnrollmentResponse)
+async def accept_funding_terms(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    payload: FundingAcceptanceRequest,
+    current_user: User = Depends(require_permission(_FINANCE)),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_service.accept_funding_terms(
+        db, program=program, enrollment=enrollment, accepted_on=payload.accepted_on, actor=current_user
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post("/{program_id}/enrollments/{enrollment_id}/fee-obligation", response_model=EnrollmentResponse)
+async def set_fee_obligation(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    payload: FeeObligationRequest,
+    current_user: User = Depends(require_permission(_FINANCE)),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_service.set_fee_obligation(
+        db, program=program, enrollment=enrollment, due_date=payload.due_date, actor=current_user
     )
     return await _enrollment_out(db, current_user, enrollment)
 
@@ -470,7 +672,73 @@ async def update_training(
         duration_months=payload.duration_months,
         start_date=payload.start_date,
         end_date=payload.end_date,
+        completed_on=payload.completed_on,
+        note=payload.note,
         actor=current_user,
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post(
+    "/{program_id}/enrollments/{enrollment_id}/milestones",
+    response_model=EnrollmentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_milestone(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    payload: MilestoneCreateRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_service.add_milestone(
+        db, enrollment=enrollment, title=payload.title, description=payload.description,
+        due_on=payload.due_on, actor=current_user,
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post(
+    "/{program_id}/enrollments/{enrollment_id}/milestones/{milestone_id}",
+    response_model=EnrollmentResponse,
+)
+async def update_milestone(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    milestone_id: uuid.UUID,
+    payload: MilestoneUpdateRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_service.update_milestone(
+        db, enrollment=enrollment, milestone_id=milestone_id, status=payload.status,
+        completed_on=payload.completed_on, note=payload.note, actor=current_user,
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post("/{program_id}/enrollments/{enrollment_id}/employment-review", response_model=EnrollmentResponse)
+async def update_employment_review(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    payload: EmploymentReviewRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    """Starting a review needs `program.manage`; the APPROVED /
+    NOT_PROCEEDING decision also needs `program.employment.approve`."""
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    codes = await granted_permission_codes(db, current_user)
+    await program_service.update_employment_review(
+        db, program=program, enrollment=enrollment, status=payload.status,
+        role_title=payload.role_title, department_id=payload.department_id,
+        proposed_start_date=payload.proposed_start_date, note=payload.note, actor=current_user,
+        can_approve="program.employment.approve" in codes,
     )
     return await _enrollment_out(db, current_user, enrollment)
 
@@ -520,10 +788,13 @@ async def update_agreement(
     enrollment = await program_service.require_enrollment(db, program, enrollment_id)
     await program_service.update_agreement(
         db,
+        program=program,
         enrollment=enrollment,
         status=payload.status,
         reference=payload.reference,
+        version=payload.version,
         signed_on=payload.signed_on,
+        note=payload.note,
         actor=current_user,
     )
     return await _enrollment_out(db, current_user, enrollment)

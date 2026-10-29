@@ -273,24 +273,37 @@ async def test_full_selection_workflow_and_scholarship_states(
     client: AsyncClient, super_admin: User
 ) -> None:
     ctx = await bootstrap_org(client, "prog-workflow")
+    recruiter = await staff_headers(client, ctx, "RECRUITER")
     assessment = (await client.post("/api/v1/recruiter/assessments", json={
         "title": "Program test", "instructions": "Answer.", "pass_score": 50, "questions": [
             {"type": "MCQ_SINGLE", "prompt": "1 + 1?", "points": 1, "options": [
                 {"label": "2", "is_correct": True}, {"label": "3"}]}]}, headers=ctx["headers"])).json()
     program = await _published(
-        client, ctx, assessment_id=assessment["id"], scholarship_amount_min="10000",
-        scholarship_amount_max="50000", scholarship_currency="INR",
+        client, ctx, assessment_id=assessment["id"], training_fee_amount="100000",
+        training_fee_currency="INR", scholarship_amount_max="50000", scholarship_currency="INR",
+        interview_stages=["Technical"],
     )
     pid = program["id"]
+    assert program["affiliation_verification_method"] == "MANUAL"
     assert (await apply_to_program(client, pid, email="flow@example.com")).status_code == 201
     enrollment = await _enrollment(client, ctx, pid)
     eid, application_id = enrollment["id"], enrollment["application_id"]
+    # A typed institution name is never treated as verified.
+    assert enrollment["affiliation"]["status"] == "PENDING"
 
-    # Nothing moves past review until HR marks the candidate eligible.
+    # Nothing moves past review until HR verified the institution and
+    # marked the candidate eligible.
     assert (await _status(client, ctx, application_id, "UNDER_REVIEW")).status_code == 200
     blocked = await _status(client, ctx, application_id, "SCREENING")
     assert blocked.status_code == 409 and blocked.json()["error"]["code"] == "program_eligibility_required"
     assert (await _act(client, ctx, pid, eid, "eligibility", {"status": "NOT_ELIGIBLE"})).status_code == 422
+    unverified = await _act(client, ctx, pid, eid, "eligibility", {"status": "ELIGIBLE"})
+    assert unverified.status_code == 409
+    assert unverified.json()["error"]["code"] == "affiliation_verification_required"
+    verified = await _act(client, ctx, pid, eid, "affiliation",
+                          {"status": "VERIFIED", "method": "STUDENT_ID_DOCUMENT", "note": "ID card checked"})
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["affiliation"]["method"] == "STUDENT_ID_DOCUMENT"
     assert (await _act(client, ctx, pid, eid, "eligibility", {"status": "ELIGIBLE"})).status_code == 200
 
     invited = await _act(client, ctx, pid, eid, "invite-assessment")
@@ -311,69 +324,137 @@ async def test_full_selection_workflow_and_scholarship_states(
     view = (await client.post(f"/api/v1/public/assessment/{token}/start")).json()
     right = [o["id"] for o in assessment["questions"][0]["options"] if o["is_correct"]]
     await submit(client, token, [{"question_id": view["questions"][0]["id"], "selected_option_ids": right}])
+    passed = await _enrollment(client, ctx, pid)
+    assert passed["latest_result"]["passed"] is True and passed["latest_result"]["pass_score_applied"] == 50
     assert (await _status(client, ctx, application_id, "SHORTLISTED")).status_code == 200
 
-    # Scholarship eligibility only after selection; selection only after the interview.
+    # Funding eligibility only after selection; selection only after the
+    # interview outcomes are recorded.
     early = await _act(client, ctx, pid, eid, "scholarship-eligibility", {"decision": "ELIGIBLE"})
     assert early.status_code == 409
-    assert (await _status(client, ctx, application_id, "INTERVIEW")).status_code == 200
+    interviews = f"/api/v1/recruiter/applications/{application_id}/interviews"
+    scheduled = await client.post(interviews, json={
+        "stage": "Technical", "scheduled_at": "2027-01-10T10:00:00Z"}, headers=ctx["headers"])
+    assert scheduled.status_code == 201, scheduled.text
+    assert (await _enrollment(client, ctx, pid))["application_status"] == "INTERVIEW"
+    duplicate = await client.post(interviews, json={
+        "stage": "Technical", "scheduled_at": "2027-01-11T10:00:00Z"}, headers=ctx["headers"])
+    assert duplicate.status_code == 409
+    no_outcome = await _act(client, ctx, pid, eid, "interview-completed")
+    assert no_outcome.status_code == 409 and no_outcome.json()["error"]["code"] == "interview_outcomes_required"
     no_interview = await _status(client, ctx, application_id, "SELECTED")
     assert no_interview.status_code == 409 and no_interview.json()["error"]["code"] == "program_interview_required"
+    recorded = await client.post(f"{interviews}/{scheduled.json()['id']}/outcome", json={
+        "outcome": "PASS", "rating": 4, "feedback": "Strong fundamentals."}, headers=ctx["headers"])
+    assert recorded.status_code == 200 and recorded.json()["outcome"] == "PASS"
     assert (await _act(client, ctx, pid, eid, "interview-completed")).status_code == 200
     assert (await _status(client, ctx, application_id, "SELECTED")).status_code == 200
 
     eligible = (await _act(client, ctx, pid, eid, "scholarship-eligibility", {"decision": "ELIGIBLE"})).json()
-    # Eligible is not approved, and approved is not paid.
+    # Eligible is not approved, and approved is not applied.
     assert eligible["scholarship_eligibility"] == "ELIGIBLE"
     assert eligible["scholarship_status"] == "PENDING"
     assert eligible["approved_scholarship_amount"] is None
 
-    recruiter = await staff_headers(client, ctx, "RECRUITER")
-    forbidden = await _act(client, ctx, pid, eid, "scholarship-decision",
-                           {"decision": "APPROVED", "approved_amount": "20000", "currency": "INR"}, headers=recruiter)
+    # Proposal (recruiter) -> approval (finance, a different person).
+    over_range = await _act(client, ctx, pid, eid, "funding-proposals",
+                            {"funding_type": "PERCENTAGE", "value": "60"}, headers=recruiter)
+    assert over_range.status_code == 422  # 60000 is above the 50000 maximum
+    bad_pct = await _act(client, ctx, pid, eid, "funding-proposals",
+                         {"funding_type": "PERCENTAGE", "value": "101"}, headers=recruiter)
+    assert bad_pct.status_code == 422
+    proposed = await _act(client, ctx, pid, eid, "funding-proposals",
+                          {"funding_type": "PERCENTAGE", "value": "40"}, headers=recruiter)
+    assert proposed.status_code == 201, proposed.text
+    body = proposed.json()
+    assert body["scholarship_status"] == "PROPOSED"
+    assert body["approved_scholarship_amount"] is None
+    revision = body["funding_revisions"][0]
+    assert (revision["company_contribution_amount"], revision["candidate_payable_amount"]) == ("40000.00", "60000.00")
+    second = await _act(client, ctx, pid, eid, "funding-proposals",
+                        {"funding_type": "FIXED_AMOUNT", "value": "10000"}, headers=recruiter)
+    assert second.status_code == 409 and second.json()["error"]["code"] == "funding_proposal_open"
+    decide = f"funding-proposals/{revision['id']}/decision"
+    forbidden = await _act(client, ctx, pid, eid, decide, {"decision": "APPROVED"}, headers=recruiter)
     assert forbidden.status_code == 403
-    no_amount = await _act(client, ctx, pid, eid, "scholarship-decision", {"decision": "APPROVED"})
-    assert no_amount.status_code == 422
-    out_of_range = await _act(client, ctx, pid, eid, "scholarship-decision",
-                              {"decision": "APPROVED", "approved_amount": "90000", "currency": "INR"})
-    assert out_of_range.status_code == 422
-    approved = (await _act(client, ctx, pid, eid, "scholarship-decision",
-                           {"decision": "APPROVED", "approved_amount": "20000", "currency": "INR"})).json()
+    approved = (await _act(client, ctx, pid, eid, decide, {"decision": "APPROVED"})).json()
     assert approved["scholarship_status"] == "APPROVED"
-    assert approved["disbursed_total"] == "0"
+    assert approved["company_contribution_amount"] == "40000.00"
+    assert approved["candidate_payable_amount"] == "60000.00"
+    assert approved["fee_amount"] == "100000.00"
+    assert approved["payment_status"] == "UNPAID"
     assert approved["agreement_status"] == "PENDING"
     assert approved["bond_duration_months"] == 36
+    assert "Company funding approved" in approved["bond_applies_reason"]
 
-    over = await _act(client, ctx, pid, eid, "disbursements", {"amount": "25000"})
+    over = await _act(client, ctx, pid, eid, "disbursements", {"amount": "45000"})
     assert over.status_code == 422
-    paid = (await _act(client, ctx, pid, eid, "disbursements",
-                       {"amount": "10000", "status": "PAID", "paid_on": "2027-01-15", "reference": "VCH-001"})).json()
-    assert paid["disbursed_total"] == "10000.00"
+    applied = (await _act(client, ctx, pid, eid, "disbursements",
+                          {"amount": "40000", "status": "PAID", "paid_on": "2027-01-15", "reference": "VCH-001"})).json()
+    assert applied["disbursed_total"] == "40000.00"
 
-    # Training: only approved durations.
+    # Training: only approved durations; the planned end follows the duration.
     assert (await _act(client, ctx, pid, eid, "training", {"status": "ENROLLED", "duration_months": 9})).status_code == 422
     enrolled = await _act(client, ctx, pid, eid, "training", {"status": "ENROLLED", "duration_months": 12,
                                                               "start_date": "2027-02-01"})
     assert enrolled.status_code == 200, enrolled.text
+    assert enrolled.json()["training_end_date"] == "2028-02-01"
 
-    # Fee payments are append-only: a mistake is voided, never deleted.
-    payment = (await _act(client, ctx, pid, eid, "fee-payments", {
+    # Fee payments: a confirmation reference is required, the payable amount
+    # can't be exceeded, and a mistake is voided, never deleted.
+    payment_url = "fee-payments"
+    no_ref = await _act(client, ctx, pid, eid, payment_url, {
+        "amount": "5000", "currency": "INR", "paid_on": "2027-01-20", "method": "UPI"})
+    assert no_ref.status_code == 422
+    too_much = await _act(client, ctx, pid, eid, payment_url, {
+        "amount": "60000.01", "currency": "INR", "paid_on": "2027-01-20", "method": "UPI", "reference": "T-0"})
+    assert too_much.status_code == 422 and too_much.json()["error"]["code"] == "payment_exceeds_payable"
+    payment = (await _act(client, ctx, pid, eid, payment_url, {
         "amount": "5000", "currency": "INR", "paid_on": "2027-01-20", "method": "UPI", "reference": "TXN-9"})).json()
+    assert payment["payment_status"] == "PARTIALLY_PAID" and payment["balance_due"] == "55000.00"
     payment_id = payment["fee_payments"][0]["id"]
     voided = (await _act(client, ctx, pid, eid, f"fee-payments/{payment_id}/void", {"reason": "Duplicate entry"})).json()
     assert voided["fee_payments"][0]["status"] == "VOIDED"
     assert voided["fee_paid_total"] == "0"
+    assert voided["payment_status"] == "UNPAID"
 
-    # Agreement before bond; signing needs a reference; joining needs an accepted offer.
+    # Agreement before bond; sending freezes the terms; signing needs a
+    # reference and records the candidate's acceptance.
     assert (await _act(client, ctx, pid, eid, "bond", {"start_date": "2027-02-01"})).status_code == 409
-    await _act(client, ctx, pid, eid, "agreement", {"status": "SENT"})
+    assert (await _act(client, ctx, pid, eid, "agreement", {"status": "SENT"})).status_code == 422
+    sent = (await _act(client, ctx, pid, eid, "agreement", {"status": "SENT", "version": "AGR-TPL-v3"})).json()
+    assert sent["agreement_terms_snapshot"]["company_contribution"] == "40000.00"
+    assert sent["agreement_terms_current"] is True
     unsigned = await _act(client, ctx, pid, eid, "agreement", {"status": "SIGNED", "signed_on": "2027-01-25"})
     assert unsigned.status_code == 422
     signed = await _act(client, ctx, pid, eid, "agreement",
                         {"status": "SIGNED", "signed_on": "2027-01-25", "reference": "AGR-2027-001"})
     assert signed.status_code == 200
+    assert signed.json()["funding_terms_accepted_revision"] == 1
     bond = (await _act(client, ctx, pid, eid, "bond", {"start_date": "2027-02-01"})).json()
     assert bond["bond_end_date"] == "2030-02-01"
+    assert bond["agreement_effective_date"] == "2027-02-01" and bond["agreement_expiry_date"] == "2030-02-01"
+    not_yet = await _act(client, ctx, pid, eid, "agreement", {"status": "EXPIRED"})
+    assert not_yet.status_code == 409
+
+    # Employment: review only after training completion, decision by an
+    # approver, offer only after approval, joining links an employee record.
+    assert (await _act(client, ctx, pid, eid, "training", {
+        "status": "IN_PROGRESS"})).status_code == 200
+    early_review = await _act(client, ctx, pid, eid, "employment-review", {"status": "IN_REVIEW"})
+    assert early_review.status_code == 409
+    assert (await _act(client, ctx, pid, eid, "training", {"status": "COMPLETED"})).status_code == 422
+    assert (await _act(client, ctx, pid, eid, "training", {
+        "status": "COMPLETED", "completed_on": "2028-01-31"})).status_code == 200
+    assert (await _act(client, ctx, pid, eid, "employment-review", {"status": "IN_REVIEW"})).status_code == 200
+    assert (await _act(client, ctx, pid, eid, "offer", {"status": "OFFERED"})).status_code == 409
+    not_allowed = await _act(client, ctx, pid, eid, "employment-review", {
+        "status": "APPROVED", "role_title": "Engineer", "proposed_start_date": "2028-02-01"}, headers=recruiter)
+    assert not_allowed.status_code == 403
+    assert (await _act(client, ctx, pid, eid, "employment-review", {"status": "APPROVED"})).status_code == 422
+    approved_review = await _act(client, ctx, pid, eid, "employment-review", {
+        "status": "APPROVED", "role_title": "Software Engineer", "proposed_start_date": "2028-02-01"})
+    assert approved_review.status_code == 200, approved_review.text
 
     assert (await _act(client, ctx, pid, eid, "joining", {"joined_on": "2028-02-01"})).status_code == 409
     assert (await _status(client, ctx, application_id, "HIRED")).status_code == 409
@@ -382,12 +463,18 @@ async def test_full_selection_workflow_and_scholarship_states(
     joined = (await _act(client, ctx, pid, eid, "joining", {"joined_on": "2028-02-01"})).json()
     assert joined["application_status"] == "HIRED"
     assert joined["stage"] == "Joined full-time"
+    assert joined["employee_id"] is not None
+    employee = (await client.get(f"/api/v1/recruiter/employees/{joined['employee_id']}", headers=ctx["headers"])).json()
+    assert employee["designation"] == "Software Engineer" and employee["email"] == "flow@example.com"
 
     report = (await client.get(f"{PROGRAMS}/{pid}/report", headers=ctx["headers"])).json()
     assert report["applications"] == 1
     assert report["assessment_passed"] == 1
     assert report["scholarship_approved"] == 1
     assert report["joined"] == 1
+    assert report["total_company_contribution"] == "40000.00"
+    assert report["total_candidate_payable"] == "60000.00"
+    assert report["training_completed"] == 1
 
 
 async def test_finance_details_are_limited_to_finance_permission(

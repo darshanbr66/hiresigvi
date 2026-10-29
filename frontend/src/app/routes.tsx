@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { LoginPage } from "../features/auth/LoginPage";
 import { PublicHomePage } from "../features/public/PublicHomePage";
 import { SigviLayer } from "../features/sigvi/SigviLayer";
+import { AppReady, HoldBrandLoading } from "../shared/components/BrandLoading";
 import { RouteFallback } from "../shared/components/RouteFallback";
 import { ProtectedRoute } from "./ProtectedRoute";
 
@@ -54,10 +55,12 @@ const UsersPage = page(() => import("../features/recruiter/users/UsersPage"), "U
 const AdminLayout = page(() => import("./AdminLayout"), "AdminLayout");
 const RecruiterLayout = page(() => import("./RecruiterLayout"), "RecruiterLayout");
 
-/** Full-page pending state for public routes (the app shell has its own). */
+/** Full-page pending state for public routes (the app shell has its own).
+ * On a cold start the HireZ startup screen covers it until the code arrives. */
 function PublicFallback() {
   return (
     <div className="public-shell">
+      <HoldBrandLoading />
       <RouteFallback />
     </div>
   );
@@ -136,6 +139,8 @@ export function AppRoutes() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {/* lets the startup screen go once real route content has committed */}
+      <AppReady />
     </Suspense>
   );
 }

@@ -2,12 +2,44 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.png" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Recruitment Platform</title>
+    <meta
+      name="description"
+      content="HireZ — one workspace for job postings, screening, assessments, interviews and campus hiring programs."
+    />
+    <title>HireZ</title>
+    <script>
+      // Apply a saved theme choice before first paint, so the startup screen
+      // (and the first frame of the app) use it. Same key and values as
+      // features/theme/ThemeContext.tsx, which takes over once React runs.
+      try {
+        var savedTheme = localStorage.getItem("ai-recruitment-theme");
+        if (savedTheme === "light" || savedTheme === "dark") {
+          document.documentElement.setAttribute("data-theme", savedTheme);
+        }
+      } catch (e) {}
+    </script>
+    <style>
+      /* Layout only, so the startup screen never shows as unstyled text
+         before the stylesheet (styles/loading.css) arrives in development. */
+      :where(#brand-loading) {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+      }
+      :where(#brand-loading) > span {
+        visibility: hidden;
+      }
+    </style>
   </head>
   <body>
+    <!-- HireZ startup screen: shown until the first real screen is ready,
+         then faded out and removed (src/shared/lib/brandLoading.ts). -->
+    <div id="brand-loading" class="brand-loading" role="status" aria-label="Loading HireZ">
+      <span class="brand-loading-z" aria-hidden="true">Z</span>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

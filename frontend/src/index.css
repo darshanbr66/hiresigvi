@@ -62,17 +62,20 @@ h3 {
   font-family: var(--font-display);
   line-height: 1.2;
   letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 
 h1 {
   font-size: var(--text-page-title);
-  font-weight: var(--weight-strong);
-  letter-spacing: -0.025em;
+  font-weight: var(--weight-display);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
 h2 {
   font-size: var(--text-section);
-  font-weight: var(--weight-strong);
+  font-weight: var(--weight-display);
+  letter-spacing: -0.02em;
 }
 
 h3 {
@@ -298,25 +301,33 @@ a {
   cursor: not-allowed;
 }
 
+/* Primary: brand indigo with a soft, brand-tinted lift — one per view where
+   possible. Secondary (ghost): quiet, bordered, neutral. */
 .btn-primary {
   background: var(--color-primary-solid);
   color: var(--color-on-primary);
   text-decoration: none;
   display: inline-block;
   box-shadow:
-    0 1px 2px rgb(14 21 34 / 16%),
-    inset 0 1px 0 rgb(255 255 255 / 16%);
+    0 1px 2px rgb(15 17 20 / 12%),
+    inset 0 1px 0 rgb(255 255 255 / 14%);
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--color-primary-solid-hover);
   box-shadow:
-    0 6px 16px var(--color-primary-ring),
-    inset 0 1px 0 rgb(255 255 255 / 16%);
+    var(--shadow-brand),
+    inset 0 1px 0 rgb(255 255 255 / 14%);
+}
+
+.btn-primary:focus-visible,
+.btn-ghost:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 .btn-ghost {
-  background: transparent;
+  background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
   color: var(--color-text);
   text-decoration: none;
@@ -325,7 +336,7 @@ a {
 
 .btn-ghost:hover:not(:disabled) {
   background: var(--color-bg-subtle);
-  border-color: var(--color-text-muted);
+  border-color: var(--color-input-border);
 }
 
 .btn-danger {
@@ -790,6 +801,11 @@ fieldset.field legend {
   color: var(--color-accent-text);
 }
 
+.badge-interview {
+  background: var(--color-interview-bg);
+  color: var(--color-interview-text);
+}
+
 /* Skeleton loading placeholders */
 .skeleton {
   display: inline-block;
@@ -1009,7 +1025,7 @@ a,
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
 
@@ -1183,7 +1199,6 @@ a,
   position: fixed;
   inset: 0;
   background: var(--color-overlay);
-  backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1,112 +1,192 @@
 /*
- * Sign-in. Two calm halves: a brand panel that says what the product is (with
- * the same ambient network as the dashboard), and the form. The panel is
- * decorative and disappears on phones, where the form gets the whole screen.
+ * Sign-in (features/auth/LoginPage.tsx). A centered card on the neutral
+ * canvas. Behind it, a faint grid fades out radially from a soft pool of
+ * light — enough to give the page depth, never enough to compete with the
+ * form. No blur, glass or glow; tokens only, so both themes are designed.
  */
 
-.auth-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-  padding: 0;
-  background: var(--color-bg);
-}
-
-.auth-shell > .auth-card {
-  align-self: center;
-  justify-self: center;
-  width: calc(100% - 3rem);
-  max-width: 420px;
-  margin: 2rem 1.5rem;
-  padding: 2.25rem;
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-raised), var(--highlight-top);
-  animation: rise-in var(--dur-slow) var(--ease-out) both;
-}
-
-.auth-card h1 {
-  margin-bottom: 0.4rem;
-}
-
-.auth-card form {
-  margin-top: 1.5rem;
-}
-
-.auth-card .btn-primary {
-  width: 100%;
-  padding-block: 0.75rem;
-}
-
-.auth-brand {
+.signin {
   position: relative;
   isolation: isolate;
   display: flex;
-  align-items: flex-end;
-  min-height: 100vh;
-  padding: 4rem clamp(2rem, 5vw, 4.5rem);
-  overflow: hidden;
-  background:
-    radial-gradient(40rem 32rem at 30% 28%, var(--stage-glow), transparent 70%),
-    var(--stage-bg);
-  border-right: 1px solid var(--color-border);
-}
-
-.auth-brand .network-backdrop {
-  z-index: -1;
-  opacity: 0.9;
-  -webkit-mask-image: radial-gradient(ellipse at 40% 35%, #000 0%, transparent 78%);
-  mask-image: radial-gradient(ellipse at 40% 35%, #000 0%, transparent 78%);
-}
-
-.auth-brand-inner {
-  max-width: 28rem;
-}
-
-.auth-brand h2 {
-  margin: 1.25rem 0 1.5rem;
-  font-size: clamp(1.6rem, 2.6vw, 2.25rem);
-  line-height: 1.12;
-  letter-spacing: -0.03em;
-}
-
-.auth-brand ul {
-  display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  color: var(--color-text-muted);
+  min-height: 100vh;
+  min-height: 100svh;
+  background: var(--color-bg);
+  overflow: hidden;
 }
 
-.auth-brand li {
+.signin-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(30rem 22rem at 38% 30%, var(--glow-brand), transparent 70%),
+    radial-gradient(26rem 18rem at 66% 62%, var(--glow-accent), transparent 70%),
+    radial-gradient(48rem 32rem at 50% 38%, var(--canvas-light), transparent 70%),
+    linear-gradient(var(--canvas-grid) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px) 0 0 / 32px 32px;
+  opacity: 0.9;
+  -webkit-mask-image: radial-gradient(60rem 44rem at 50% 38%, #000 25%, transparent 75%);
+  mask-image: radial-gradient(60rem 44rem at 50% 38%, #000 25%, transparent 75%);
+}
+
+.signin-top {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem clamp(1rem, 4vw, 2rem);
 }
 
-.auth-brand li svg {
-  flex-shrink: 0;
-  color: var(--color-primary);
+.signin-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  margin-left: -0.65rem;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
-/* the home link sits over the panel, so give it a readable pill */
-.auth-shell .auth-home-link {
-  z-index: 2;
-  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
-  backdrop-filter: blur(8px);
+.signin-back:hover {
+  color: var(--color-text);
+  background: var(--color-bg-subtle);
+}
+
+.signin-back-icon {
+  transform: rotate(180deg);
+}
+
+.signin-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem clamp(1rem, 4vw, 2rem) 4rem;
+}
+
+.signin-card {
+  position: relative;
+  width: 100%;
+  max-width: 25rem;
+  padding: 2.25rem 2rem 2rem;
+  /* solid, not glass: the form must keep full contrast */
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    var(--shadow-raised),
+    0 30px 60px -36px var(--glow-brand),
+    var(--highlight-top);
+  animation: rise-in 600ms var(--ease-out) both;
 }
 
-@media (max-width: 900px) {
-  .auth-shell {
-    grid-template-columns: 1fr;
-  }
+/* a fine brand hairline along the top edge, fading out at both ends */
+.signin-card::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 1.5rem;
+  right: 1.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-brand) 30%, var(--color-accent) 70%, transparent);
+  opacity: 0.8;
+}
 
-  .auth-brand {
-    display: none;
-  }
+.signin-brand {
+  display: inline-flex;
+  margin-bottom: 1.75rem;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
 
-  .auth-shell > .auth-card {
-    margin-block: 5rem 2rem;
+.signin-card h1 {
+  margin: 0 0 0.4rem;
+  font-size: 1.5rem;
+}
+
+.signin-lead {
+  margin: 0 0 1.75rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+  line-height: 1.5;
+}
+
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.signin-form .field {
+  margin: 0;
+}
+
+.signin-form .field > span {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+}
+
+.signin-form input {
+  height: 2.6rem;
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.signin-form input:hover:not(:disabled):not(:focus) {
+  border-color: var(--color-text-muted);
+}
+
+.signin-form input:focus-visible {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-focus) 22%, transparent);
+}
+
+/* the browser's own validation (required / email), shown only after the
+   user has interacted with the field */
+.signin-form input:user-invalid {
+  border-color: var(--color-danger);
+}
+
+.signin-form input:user-invalid:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-danger) 20%, transparent);
+}
+
+.signin-form .alert {
+  margin: 0;
+  animation: rise-in var(--dur-base) var(--ease-out) both;
+}
+
+.signin-submit {
+  width: 100%;
+  height: 2.6rem;
+  margin-top: 0.35rem;
+  justify-content: center;
+  font-weight: var(--weight-strong);
+}
+
+.signin-note {
+  margin: 1.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .signin-card {
+    padding: 1.75rem 1.25rem 1.5rem;
+    border-radius: var(--radius-lg);
   }
 }

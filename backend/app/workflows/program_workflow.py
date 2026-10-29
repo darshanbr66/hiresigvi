@@ -13,6 +13,11 @@ application_service.change_status for every status change):
 * a selection decision needs the interview recorded as completed;
 * HIRED (joined full-time employment) needs an accepted offer.
 
+Company funding moves through proposals (`FUNDING_REVISION_TRANSITIONS`):
+the enrollment's `scholarship_status` says where the *decision* stands, and
+an approved decision only ever changes through a new, separately approved
+revision.
+
 Nothing here makes a decision on its own: every change is an explicit HR
 action, and nothing is ever inferred from passing a test, receiving a
 scholarship or completing training.
@@ -27,6 +32,8 @@ from app.models.assessment import AssessmentInvitation, AssessmentResult, Result
 from app.models.program import (
     AgreementStatus,
     EligibilityStatus,
+    EmploymentReviewStatus,
+    FundingRevisionStatus,
     OfferStatus,
     ProgramEnrollment,
     ProgramStatus,
@@ -58,21 +65,51 @@ SCHOLARSHIP_ELIGIBILITY_TRANSITIONS: dict[ScholarshipEligibility, frozenset[Scho
     ScholarshipEligibility.NOT_ELIGIBLE: frozenset({ScholarshipEligibility.ELIGIBLE}),
 }
 
+#: The funding *decision*. APPROVED is never left: changed terms are a new
+#: revision that, once approved, replaces the previous one.
 SCHOLARSHIP_STATUS_TRANSITIONS: dict[ScholarshipStatus, frozenset[ScholarshipStatus]] = {
     ScholarshipStatus.NOT_STARTED: frozenset({ScholarshipStatus.PENDING}),
-    ScholarshipStatus.PENDING: frozenset(
-        {ScholarshipStatus.APPROVED, ScholarshipStatus.DECLINED, ScholarshipStatus.NOT_STARTED}
+    ScholarshipStatus.PENDING: frozenset({ScholarshipStatus.PROPOSED, ScholarshipStatus.NOT_STARTED}),
+    ScholarshipStatus.PROPOSED: frozenset(
+        {ScholarshipStatus.APPROVED, ScholarshipStatus.DECLINED, ScholarshipStatus.PENDING}
     ),
     ScholarshipStatus.APPROVED: frozenset(),
     ScholarshipStatus.DECLINED: frozenset({ScholarshipStatus.PENDING}),
 }
 
+FUNDING_REVISION_TRANSITIONS: dict[FundingRevisionStatus, frozenset[FundingRevisionStatus]] = {
+    FundingRevisionStatus.PROPOSED: frozenset(
+        {FundingRevisionStatus.APPROVED, FundingRevisionStatus.REJECTED, FundingRevisionStatus.WITHDRAWN}
+    ),
+    FundingRevisionStatus.APPROVED: frozenset({FundingRevisionStatus.SUPERSEDED}),
+    FundingRevisionStatus.REJECTED: frozenset(),
+    FundingRevisionStatus.WITHDRAWN: frozenset(),
+    FundingRevisionStatus.SUPERSEDED: frozenset(),
+}
+
 TRAINING_TRANSITIONS: dict[TrainingStatus, frozenset[TrainingStatus]] = {
     TrainingStatus.NOT_ENROLLED: frozenset({TrainingStatus.ENROLLED}),
-    TrainingStatus.ENROLLED: frozenset({TrainingStatus.IN_PROGRESS, TrainingStatus.DISCONTINUED}),
-    TrainingStatus.IN_PROGRESS: frozenset({TrainingStatus.COMPLETED, TrainingStatus.DISCONTINUED}),
+    TrainingStatus.ENROLLED: frozenset(
+        {TrainingStatus.IN_PROGRESS, TrainingStatus.WITHDRAWN, TrainingStatus.DISCONTINUED}
+    ),
+    TrainingStatus.IN_PROGRESS: frozenset(
+        {TrainingStatus.COMPLETED, TrainingStatus.WITHDRAWN, TrainingStatus.DISCONTINUED}
+    ),
     TrainingStatus.COMPLETED: frozenset(),
+    TrainingStatus.WITHDRAWN: frozenset(),
     TrainingStatus.DISCONTINUED: frozenset(),
+}
+
+#: Training states that end it without completion.
+TRAINING_ENDED_EARLY = frozenset({TrainingStatus.WITHDRAWN, TrainingStatus.DISCONTINUED})
+
+EMPLOYMENT_REVIEW_TRANSITIONS: dict[EmploymentReviewStatus, frozenset[EmploymentReviewStatus]] = {
+    EmploymentReviewStatus.NOT_STARTED: frozenset({EmploymentReviewStatus.IN_REVIEW}),
+    EmploymentReviewStatus.IN_REVIEW: frozenset(
+        {EmploymentReviewStatus.APPROVED, EmploymentReviewStatus.NOT_PROCEEDING}
+    ),
+    EmploymentReviewStatus.APPROVED: frozenset({EmploymentReviewStatus.NOT_PROCEEDING}),
+    EmploymentReviewStatus.NOT_PROCEEDING: frozenset({EmploymentReviewStatus.IN_REVIEW}),
 }
 
 OFFER_TRANSITIONS: dict[OfferStatus, frozenset[OfferStatus]] = {
@@ -89,9 +126,13 @@ AGREEMENT_TRANSITIONS: dict[AgreementStatus, frozenset[AgreementStatus]] = {
     AgreementStatus.SENT: frozenset(
         {AgreementStatus.SIGNED, AgreementStatus.DECLINED, AgreementStatus.VOID}
     ),
-    AgreementStatus.SIGNED: frozenset({AgreementStatus.VOID}),
+    # A signed agreement is never voided: it runs out or is terminated
+    # (with a reason), and either way stays on record.
+    AgreementStatus.SIGNED: frozenset({AgreementStatus.EXPIRED, AgreementStatus.TERMINATED}),
     AgreementStatus.DECLINED: frozenset({AgreementStatus.PENDING}),
     AgreementStatus.VOID: frozenset({AgreementStatus.PENDING}),
+    AgreementStatus.EXPIRED: frozenset(),
+    AgreementStatus.TERMINATED: frozenset(),
 }
 
 #: Application statuses that mean "selected through the program's process".
@@ -195,14 +236,27 @@ def derive_stage(enrollment: ProgramEnrollment, application: Application) -> str
         return "Joined full-time"
     if enrollment.offer_status in (OfferStatus.OFFERED, OfferStatus.ACCEPTED):
         return f"Employment offer {enrollment.offer_status.value.lower()}"
+    if enrollment.employment_review_status == EmploymentReviewStatus.NOT_PROCEEDING:
+        return "Not proceeding to employment"
+    if enrollment.employment_review_status in (
+        EmploymentReviewStatus.IN_REVIEW,
+        EmploymentReviewStatus.APPROVED,
+    ):
+        return (
+            "Employment approved — offer pending"
+            if enrollment.employment_review_status == EmploymentReviewStatus.APPROVED
+            else "Employment review"
+        )
+    if enrollment.training_status == TrainingStatus.DISCONTINUED:
+        return "Training terminated"
     if enrollment.training_status != TrainingStatus.NOT_ENROLLED:
         return f"Training {enrollment.training_status.value.replace('_', ' ').lower()}"
-    if enrollment.scholarship_status in (
-        ScholarshipStatus.PENDING,
-        ScholarshipStatus.APPROVED,
-        ScholarshipStatus.DECLINED,
-    ):
-        return f"Scholarship {enrollment.scholarship_status.value.lower()}"
+    if enrollment.scholarship_status == ScholarshipStatus.PENDING:
+        return "Funding eligible — awaiting proposal"
+    if enrollment.scholarship_status == ScholarshipStatus.PROPOSED:
+        return "Funding awaiting approval"
+    if enrollment.scholarship_status in (ScholarshipStatus.APPROVED, ScholarshipStatus.DECLINED):
+        return f"Funding {enrollment.scholarship_status.value.lower()}"
     if status == ApplicationStatus.SELECTED:
         return "Selected"
     if status == ApplicationStatus.INTERVIEW:

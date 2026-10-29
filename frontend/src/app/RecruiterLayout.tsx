@@ -6,18 +6,30 @@ import { getUnreadCount } from "../features/recruiter/notifications/api";
 import { NotificationToaster } from "../features/recruiter/notifications/NotificationToaster";
 import { AppShell, type NavItem, type NavSection } from "./AppShell";
 
-const WORKSPACE_ITEMS: NavItem[] = [
-  { to: "/recruiter", label: "Overview", icon: "overview", end: true },
+/**
+ * Navigation grouped by responsibility, in the order work flows: your day
+ * (Workspace), the hiring pipeline (Recruitment), testing (Assessments),
+ * campus hiring and programs, then organization-level oversight. Same
+ * routes and role gating as before — only the grouping changed.
+ */
+const OVERVIEW_ITEM: NavItem = { to: "/recruiter", label: "Overview", icon: "overview", end: true };
+const DAY_ITEMS: NavItem[] = [
+  { to: "/recruiter/calendar", label: "Calendar", icon: "calendar" },
+  { to: "/recruiter/notes", label: "Notes", icon: "notes" },
+];
+const RECRUITMENT_ITEMS: NavItem[] = [
   { to: "/recruiter/jobs", label: "Jobs", icon: "jobs" },
-  { to: "/recruiter/candidates", label: "Candidates", icon: "candidates" },
   { to: "/recruiter/applications", label: "Applications", icon: "applications" },
+  { to: "/recruiter/candidates", label: "Candidates", icon: "candidates" },
+];
+const ASSESSMENT_ITEMS: NavItem[] = [
   { to: "/recruiter/assessments", label: "Assessments", icon: "assessments" },
   { to: "/recruiter/question-bank", label: "Question Bank", icon: "questionBank" },
+];
+const CAMPUS_ITEMS: NavItem[] = [
   { to: "/recruiter/programs", label: "Programs", icon: "program" },
   { to: "/recruiter/campus-drives", label: "Campus Drives", icon: "campus" },
   { to: "/recruiter/institutions", label: "Institutions", icon: "institution" },
-  { to: "/recruiter/notes", label: "Notes", icon: "notes" },
-  { to: "/recruiter/calendar", label: "Calendar", icon: "calendar" },
 ];
 
 /** Only ORG_ADMIN/RECRUITER/HIRING_MANAGER get `internal_ai.use` on the
@@ -72,7 +84,7 @@ const TALK_TO_ADMIN_NAV_ITEM: NavItem = {
 const UPCOMING_NAV_ITEMS = ["Sourcing"];
 
 /** The four destinations recruiters reach for most — the phone tab bar. */
-const TAB_ITEMS: NavItem[] = WORKSPACE_ITEMS.slice(0, 4);
+const TAB_ITEMS: NavItem[] = [OVERVIEW_ITEM, ...RECRUITMENT_ITEMS];
 
 export function RecruiterLayout() {
   const { user, logout, accessToken } = useAuth();
@@ -119,12 +131,16 @@ export function RecruiterLayout() {
     {
       label: "Workspace",
       items: [
-        ...(canUseAi ? [AI_NAV_ITEM] : []),
+        OVERVIEW_ITEM,
         notificationsNavItem,
+        ...(canUseAi ? [AI_NAV_ITEM] : []),
+        ...DAY_ITEMS,
         talkToAdminNavItem,
-        ...WORKSPACE_ITEMS,
       ],
     },
+    { label: "Recruitment", items: RECRUITMENT_ITEMS },
+    { label: "Assessments", items: ASSESSMENT_ITEMS },
+    { label: "Campus & programs", items: CAMPUS_ITEMS },
     {
       label: "Organization",
       items: [
@@ -139,7 +155,7 @@ export function RecruiterLayout() {
     <>
       <NotificationToaster />
       <AppShell
-        brandTitle="AI Recruitment Platform"
+        brandTitle="HireZ"
         contextLabel="Recruiter Portal"
         sections={sections}
         upcoming={UPCOMING_NAV_ITEMS}

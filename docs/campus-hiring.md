@@ -191,6 +191,13 @@ Verification status is visible on the drive's Verification panel, in the
 drive funnel and in the campus report. It does not block the application
 pipeline by itself — HR decides what to do with a rejected record.
 
+Recruitment programs reuse the same verification records (with
+`program_id`) for their applicants — EMAIL_DOMAIN or MANUAL, an HR decision
+recording the evidence checked (student ID / coordinator confirmation /
+other), and a block on marking the candidate eligible until verified; see
+`docs/programs.md` § 3a. Nobody can verify their own affiliation (drive or
+program).
+
 Not implemented, deliberately: uploading a student-ID or other proof
 document. The three methods above avoid collecting identity documents; a
 document method would need an approved retention policy first.

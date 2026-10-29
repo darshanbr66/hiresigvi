@@ -3,7 +3,7 @@
  *
  * A pannable, zoomable canvas with pure CSS connectors — no diagram library.
  * Every colour is an app theme token (styles/tokens.css): departments use the
- * `--kind-*` accents and the canvas the `--stage-*` surface, all of which have
+ * categorical `--kind-*` accents and the canvas the `--stage-*` surface, all of which have
  * their own dark-mode values, so both themes work without extra rules.
  * Depth is a calm 2.5D: layered shadows and a slight lift on hover — no 3D
  * transforms. Desktop: a horizontal tree inside the canvas, which scrolls,
@@ -12,8 +12,9 @@
  */
 
 .org-card {
-  --org-line: color-mix(in srgb, var(--color-text-muted) 34%, var(--stage-bg));
-  --org-line-strong: color-mix(in srgb, var(--color-text-muted) 55%, var(--stage-bg));
+  /* Connectors carry structure (WCAG 1.4.11): >= 3:1 against the canvas. */
+  --org-line: color-mix(in srgb, var(--color-text-muted) 75%, var(--stage-bg));
+  --org-line-strong: color-mix(in srgb, var(--color-text-muted) 92%, var(--stage-bg));
   --org-gap: 1.75rem;
   --org-dept-width: 15.5rem;
   --org-spine: 1.4rem;
@@ -96,7 +97,7 @@
 
 .org-search input::placeholder {
   color: var(--color-text-muted);
-  opacity: 0.8;
+  opacity: 1;
 }
 
 .org-search input:focus {
@@ -255,13 +256,8 @@
   max-width: 26rem;
   padding: 0.95rem 1.4rem 0.95rem 0.95rem;
   border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
-  background:
-    radial-gradient(120% 140% at 0% 0%, var(--color-primary-soft), transparent 60%),
-    var(--color-surface-raised);
-  box-shadow:
-    0 14px 34px -12px var(--stage-glow),
-    var(--shadow-raised),
-    var(--highlight-top);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-raised), var(--highlight-top);
 }
 
 .org-root-mark {
@@ -271,13 +267,12 @@
   width: 3rem;
   height: 3rem;
   border-radius: 0.85rem;
-  background: linear-gradient(140deg, var(--color-primary-solid), color-mix(in srgb, var(--color-primary-solid) 55%, var(--kind-job)));
+  background: var(--color-primary-solid);
   color: var(--color-on-primary);
   font-family: var(--font-display);
   font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  box-shadow: 0 6px 16px -6px var(--color-primary-ring), inset 0 1px 0 color-mix(in srgb, var(--color-on-primary) 25%, transparent);
 }
 
 .org-root-text {
@@ -329,14 +324,14 @@ button.org-node-dept:hover {
 }
 
 button.org-node-dept:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-focus);
   outline-offset: 3px;
 }
 
 .org-node-dept[aria-expanded="true"] {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
-    var(--color-surface-raised);
+  /* the open department: a tinted surface and a ring in its own accent */
+  background: color-mix(in srgb, var(--accent) 8%, var(--color-surface-raised));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--color-border));
   box-shadow: var(--shadow-raised);
 }
 
@@ -650,7 +645,8 @@ button.org-node-dept:focus-visible {
   height: 1.6rem;
   border-radius: 6px;
   color: var(--color-text-muted);
-  opacity: 0.45;
+  /* visible at rest (3:1+ as a control), full strength on hover/focus */
+  opacity: 0.75;
   transform: translateY(-50%);
   cursor: grab;
   user-select: none;
@@ -718,9 +714,17 @@ button.org-node-dept:focus-visible {
   color: inherit;
 }
 
+/* Non-matches step back but stay readable (dimmed text still >= 4.5:1 in
+   both themes); matches are marked by a border, not by colour alone. */
 .org-dim,
 .org-employee.org-dim .org-employee-card {
-  opacity: 0.32;
+  opacity: 0.88;
+  filter: saturate(0.35);
+}
+
+.org-match.org-node-dept,
+.org-employee.org-match .org-employee-card {
+  box-shadow: 0 0 0 1px var(--color-primary), var(--shadow-card);
 }
 
 .org-match.org-node-dept,

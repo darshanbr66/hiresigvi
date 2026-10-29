@@ -232,35 +232,3 @@ export function Icon({
     </svg>
   );
 }
-
-/**
- * The product mark, redrawn from the app icon that ships as the favicon: a
- * magnifier over a person (finding the right people) with three circuit nodes
- * (the intelligence behind it). One solid brand tile, no gradient, so it stays
- * crisp at 24px and identical in both themes — and the browser tab and the
- * page read as the same identity.
- */
-export function LogoMark({ size = 28 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 32 32"
-      aria-hidden="true"
-      focusable="false"
-      className="logo-mark"
-    >
-      <rect width="32" height="32" rx="9" fill="var(--color-primary-solid)" />
-      {/* circuit nodes */}
-      <path d="M19.6 9.6l2.6-2.2M20.4 12.6h3.1l1.4-1.4M20.2 15.8h2.7" stroke="#8fe3ff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <circle cx="23.4" cy="6.6" r="1.5" fill="none" stroke="#8fe3ff" strokeWidth="1.2" />
-      <circle cx="26.2" cy="10.3" r="1.5" fill="none" stroke="#8fe3ff" strokeWidth="1.2" />
-      <circle cx="24.6" cy="16.2" r="1.5" fill="none" stroke="#8fe3ff" strokeWidth="1.2" />
-      {/* magnifier + person */}
-      <circle cx="13.6" cy="15" r="6.6" fill="none" stroke="#fff" strokeWidth="2" />
-      <path d="M18.4 19.8l4.6 4.6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
-      <circle cx="13.6" cy="12.9" r="2.1" fill="#fff" />
-      <path d="M9.7 19c.5-2.3 2-3.4 3.9-3.4s3.4 1.1 3.9 3.4" fill="#fff" />
-    </svg>
-  );
-}

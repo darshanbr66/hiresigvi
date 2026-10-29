@@ -365,6 +365,40 @@ recorded_by.
 currency, paid_on, method, receipt reference, note, status
 (RECORDED/VOIDED), void reason/by/at, recorded_by. No card or bank data.
 
+Added by migration `5e6f70819203` (`docs/programs.md` § 3a, § 5):
+
+- **recruitment_programs**: `company_funding_type` (FIXED_AMOUNT /
+  PERCENTAGE) + `company_funding_value` (both NULL or both set; % in
+  (0, 100]), `funding_requires_independent_approval` (default true),
+  `affiliation_verification_method` (existing rows NONE).
+- **program_enrollments**: fee obligation snapshot (`fee_amount`,
+  `fee_currency`, `fee_due_date`, `company_contribution_amount`,
+  `candidate_payable_amount`; checks: contribution ≤ fee and payable = fee −
+  contribution), accepted funding revision/time, training
+  enrolled_at/completed_on/outcome note, employment review (status, role,
+  `employment_department_id` → departments, proposed start, decided by/at,
+  note), `employee_id` → employees (SET NULL), agreement version, terms
+  snapshot (JSONB), sent_at, effective/expiry dates (ordered), status note,
+  `bond_applies_reason`. New enum values: scholarship PROPOSED, training
+  WITHDRAWN, agreement EXPIRED/TERMINATED.
+- **program_funding_revisions** — append-only funding proposals/decisions:
+  revision number (unique per enrollment), kind (INITIAL/REVISION/AMENDMENT),
+  status (PROPOSED/APPROVED/REJECTED/WITHDRAWN/SUPERSEDED; at most one
+  PROPOSED per enrollment — partial unique index), fee, currency, basis and
+  value, computed contribution/payable (same checks), reason, proposer,
+  decider, decision time/note.
+- **training_milestones** — title, description, due_on, status
+  (PENDING/COMPLETED/MISSED; completed ⇔ completed_on), note, created/updated by.
+- **application_interviews** — stage, scheduled_at, duration, location,
+  interviewer, status, outcome (set ⇔ COMPLETED), rating 1–5, feedback,
+  cancellation reason, scheduled/recorded by/at; one SCHEDULED per
+  (application, stage).
+- **campus_affiliation_verifications**: `campus_drive_id` and
+  `institution_id` nullable, new `program_id`; check: exactly one of drive /
+  program, and drive rows keep an institution. New methods
+  STUDENT_ID_DOCUMENT, COORDINATOR_CONFIRMATION.
+- **assessment_results.pass_score_applied** (backfilled).
+
 ### 3.9 Notes
 
 **notes**
@@ -461,13 +495,15 @@ run `alembic upgrade head` automatically, so before deploying that revision,
 run the same check against production data and fix any duplicates by hand.
 Its downgrade guard is described in § 3.5.
 
-Recent revisions (linear chain, current head `3c4d5e6f7081`):
+Recent revisions (linear chain, current head `5e6f70819203`):
 
 | Revision | Adds |
 |---|---|
 | `1a2b3c4d5e6f` | institution registry, `campus_drives.institution_id` (backfilled from existing `college_name`, additive), affiliation verification, student roster |
 | `2b3c4d5e6f70` | question bank, assessment DRAFT/PUBLISHED, new question types, answer keys, manual grading |
 | `3c4d5e6f7081` | recruitment programs, enrollments, disbursements, fee payments, candidate education fields |
+| `4d5e6f708192` | job employment types (internship / part-time / full-time) and type details |
+| `5e6f70819203` | program funding revisions, fee obligations, training milestones, agreement terms, employment review, `application_interviews`, program affiliation verification, `pass_score_applied`, permissions `interview.read/manage`, `program.employment.approve` |
 
 All three are non-destructive on upgrade. Their downgrades drop what they
 added; `2b3c4d5e6f70`'s downgrade refuses to run while any question uses a

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import * as careersApi from "../careers/api";
@@ -18,75 +18,79 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 describe("PublicHomePage", () => {
-  it("presents the company first: SIGVITAS-branded, with Careers as a deliberate choice", async () => {
-    renderWithProviders(<PublicHomePage />);
+  it("presents HireZ with a text-only wordmark, never the old product name", () => {
+    const { container } = renderWithProviders(<PublicHomePage />);
 
-    expect((await screen.findAllByText("SIGVITAS")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/build what's next,\s*with sigvitas/i);
-    expect(screen.getByRole("heading", { name: "Who we are" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Our values" })).toBeInTheDocument();
-
-    // The public brand is SIGVITAS — never "AI Recruitment Platform" (the staff portal's name).
+    const nav = container.querySelector(".landing-nav") as HTMLElement;
+    expect(within(nav).getByRole("img", { name: "HireZ" })).toHaveTextContent("HireZ");
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Hiring, organized end to end.");
     expect(screen.queryByText(/ai recruitment platform/i)).not.toBeInTheDocument();
-
-    // Careers is reachable, and every careers link points at the real careers route.
-    const careersLinks = screen.getAllByRole("link", { name: /careers/i });
-    expect(careersLinks.length).toBeGreaterThan(0);
-    for (const link of careersLinks) {
-      expect(link).toHaveAttribute("href", "/org/sigvitas");
-    }
-    for (const link of screen.getAllByRole("link", { name: /staff sign in/i })) {
-      expect(link).toHaveAttribute("href", "/recruiter/login");
-    }
-    expect(screen.queryByText(/create your organization/i)).not.toBeInTheDocument();
   });
 
-  it("is not a job board: no openings, no 'Explore Open Roles', no hiring process", async () => {
-    const listOpenJobs = vi.spyOn(careersApi, "listOpenJobs");
-
+  it("is a short product page: capabilities, how it works, campus, and a closing call to action", () => {
     renderWithProviders(<PublicHomePage />);
-    await screen.findByRole("heading", { name: "Who we are" });
 
-    expect(screen.queryByText(/explore open roles/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/our hiring process/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/current openings/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/open roles? right now/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /openings/i })).not.toBeInTheDocument();
-    // The homepage doesn't even fetch jobs.
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual([
+      "Everything your hiring team needs, in one place",
+      "From application to offer",
+      "Built for hiring from campus",
+      "Hire with clarity.",
+    ]);
+    for (const capability of ["Recruitment management", "Candidate screening", "Assessments", "Interviews", "Campus hiring"]) {
+      expect(screen.getByRole("heading", { name: capability })).toBeInTheDocument();
+    }
+  });
+
+  it("keeps internal operating rules off the public page", () => {
+    renderWithProviders(<PublicHomePage />);
+
+    for (const internal of [
+      /approver/i,
+      /approve their own/i,
+      /audit/i,
+      /organization boundaries/i,
+      /pass mark/i,
+      /funding/i,
+      /separate approvals/i,
+      /recorded decision/i,
+    ]) {
+      expect(screen.queryByText(internal)).not.toBeInTheDocument();
+    }
+  });
+
+  it("makes no unsupported claims: no testimonials, customer logos or statistics", () => {
+    const { container } = renderWithProviders(<PublicHomePage />);
+
+    expect(screen.queryByText(/testimonial|trusted by|customers|\d+%/i)).not.toBeInTheDocument();
+    expect(container.querySelector("blockquote")).toBeNull();
+  });
+
+  it("sends every call to action to a real destination and doesn't fetch jobs", () => {
+    const listOpenJobs = vi.spyOn(careersApi, "listOpenJobs");
+    renderWithProviders(<PublicHomePage />);
+
+    const signIn = screen.getAllByRole("link", { name: /staff sign in/i });
+    expect(signIn.length).toBeGreaterThan(0);
+    for (const link of signIn) expect(link).toHaveAttribute("href", "/recruiter/login");
+    const roles = screen.getAllByRole("link", { name: /open roles/i });
+    expect(roles.length).toBeGreaterThan(0);
+    for (const link of roles) expect(link).toHaveAttribute("href", "/org/sigvitas");
     expect(listOpenJobs).not.toHaveBeenCalled();
   });
 
-  it("falls back to the static network poster where WebGL isn't available", async () => {
+  it("previews the product as one described image with real stages and no invented data", () => {
     const { container } = renderWithProviders(<PublicHomePage />);
-    await screen.findByRole("heading", { level: 1 });
 
-    // jsdom has no WebGL: the poster is the (complete) final state, no error UI.
-    expect(container.querySelector(".hero-scene")).toHaveAttribute("data-scene-status", "fallback");
-    expect(container.querySelector(".network-poster")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("explains the network with a legend whose categories can be highlighted", async () => {
-    const { container } = renderWithProviders(<PublicHomePage />);
-    const legend = await screen.findByRole("group", { name: "What the network represents" });
-    const poster = () => container.querySelector(".network-poster");
-
-    for (const label of ["Candidates", "Jobs", "Skills", "Assessments", "Organizations", "AI analysis"]) {
-      expect(legend).toHaveTextContent(label);
+    const preview = screen.getByRole("img", { name: /preview of a hirez application/i });
+    expect(container.querySelector("canvas")).toBeNull();
+    // the parts are presentation only for assistive tech
+    for (const part of preview.children) expect(part).toHaveAttribute("aria-hidden", "true");
+    for (const stage of ["Applied", "Screening", "Assessment", "Interview", "Selected", "Hired"]) {
+      expect(within(preview).getAllByText(stage).length).toBeGreaterThan(0);
     }
-    expect(poster()).not.toHaveAttribute("data-highlight");
-
-    const jobs = screen.getByRole("button", { name: "Jobs" });
-    fireEvent.mouseEnter(jobs);
-    expect(poster()).toHaveAttribute("data-highlight", "job");
-    fireEvent.mouseLeave(legend);
-    expect(poster()).not.toHaveAttribute("data-highlight");
-
-    // pressing pins the highlight (also the keyboard / touch path)
-    fireEvent.click(jobs);
-    expect(jobs).toHaveAttribute("aria-pressed", "true");
-    expect(poster()).toHaveAttribute("data-highlight", "job");
-    fireEvent.click(jobs);
-    expect(jobs).toHaveAttribute("aria-pressed", "false");
+    // no scores, counts or rates — and no personal names (placeholder lines instead)
+    expect(preview.textContent).not.toMatch(/\d/);
   });
 });

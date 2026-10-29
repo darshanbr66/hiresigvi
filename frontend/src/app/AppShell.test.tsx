@@ -30,7 +30,7 @@ function renderShell({
             path="/recruiter"
             element={
               <AppShell
-                brandTitle="AI Recruitment Platform"
+                brandTitle="HireZ"
                 contextLabel="Recruiter Portal"
                 sections={SECTIONS}
                 upcoming={["Sourcing"]}
@@ -92,6 +92,9 @@ describe("AppShell", () => {
 
     const sidebar = container.querySelector(".sidebar") as HTMLElement;
     expect(within(sidebar).getByText("Workspace")).toBeInTheDocument();
+    // Text-only wordmark: the product name, no image logo.
+    expect(within(sidebar).getByRole("img", { name: "HireZ" })).toHaveTextContent("HireZ");
+    expect(sidebar.querySelector(".logo-mark")).toBeNull();
     for (const item of ITEMS) {
       expect(within(sidebar).getByRole("link", { name: item.label })).toHaveAttribute("href", item.to);
     }

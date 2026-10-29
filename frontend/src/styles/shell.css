@@ -14,18 +14,20 @@
 
 /* --- sidebar ------------------------------------------------------------ */
 
+/* The rail is a fixed-height column that never scrolls itself: the brand
+   and the collapse control stay put, and only `.sidebar-nav` (below) scrolls
+   when the links are taller than the viewport. (Previously the whole
+   <aside> was the scroll container, so the wordmark scrolled away with the
+   links and the scrollbar ran the full height of the rail.) Both axes are
+   set explicitly — an unset overflow-x beside a scrolling overflow-y
+   computes to 'auto' (CSS2.1 §11.1.1) and turned any over-wide child into
+   a horizontal scrollbar. */
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
   height: 100%;
-  overflow-y: auto;
-  /* Explicit, not left to default: leaving overflow-x unset while
-     overflow-y is 'auto' makes the UA compute overflow-x as 'auto' too
-     (CSS2.1 §11.1.1 — a non-'visible' axis forces its 'visible' sibling to
-     become 'auto'). That silently turned any child that happened to be
-     wider than the rail (the tooltip used to be one, before it moved to a
-     portal) into a permanent horizontal scrollbar. */
-  overflow-x: hidden;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   padding: 1rem 0.75rem;
@@ -64,11 +66,14 @@
   display: none;
 }
 
+/* the rail keeps the header row's height; only the toggle fits, centred */
 .sidebar-collapsed .sidebar-brand {
   justify-content: center;
-  padding-left: 0;
-  padding-right: 0;
-  padding-bottom: 0.8rem;
+  padding-inline: 0;
+}
+
+.sidebar-collapsed .brand-lockup {
+  display: none;
 }
 
 .sidebar-collapsed .sidebar-link {
@@ -112,46 +117,28 @@
   border: 2px solid var(--color-surface);
 }
 
+/* The collapse/expand control leads the header row, before the wordmark.
+   A borderless icon button with the same --radius-md box and hover fill as
+   a `.sidebar-link`, so it reads as part of the rail in both states. Fixed
+   size (not a percentage of the animating rail) so it settles on the first
+   frame of a collapse. */
 .sidebar-collapse-toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: flex-end;
   flex-shrink: 0;
-  width: 1.9rem;
-  height: 1.9rem;
-  margin: -0.5rem 0.4rem 0.6rem auto;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
-}
-
-/* On the rail the toggle reads as one more icon row, not a floating chip: it
-   drops the pill border and circular radius for the same full-rail box,
-   `--radius-md` corners and transparent rest state as a `.sidebar-link`, so
-   its hover fill and the global 2px `:focus-visible` outline trace the same
-   rectangle as the icons below instead of ringing a detached circle. Height
-   stays 1.9rem and `border-color` (not `border-width`) is what changes, so
-   the rail's overall height is untouched. The `:hover` rule below still
-   applies — it is later in the cascade at equal specificity. */
-.sidebar-collapsed .sidebar-collapse-toggle {
-  align-self: center;
-  /* An explicit width, NOT `100%`: the rail animates its own `width` over
-     --dur-slow, and a percentage resolves against that animating box, so the
-     toggle was the one control still being re-laid-out for 380ms after the
-     class flip instead of settling immediately. A fixed box is final on the
-     first frame. It also leaves the 2px `:focus-visible` ring (drawn 2px
-     outside the box) ~10px of clearance inside the rail rather than pressing
-     it against both edges. Height is untouched, so the rail's total height
-     does not change. */
-  width: 1.9rem;
-  margin: 0 auto 0.4rem;
-  border-color: transparent;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-md);
   background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
 }
 
 .sidebar-collapse-toggle:hover {
@@ -188,12 +175,16 @@
   transform: translateX(-50%);
 }
 
+/* Header: one compact row — [toggle] [wordmark] — with the phone drawer's
+   close button pushed to the far right. Same height expanded and
+   collapsed, so the nav starts at the same place in both. */
 .sidebar-brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.25rem 0.5rem 1.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.25rem;
+  margin-bottom: 0.75rem;
 }
 
 .brand-lockup {
@@ -203,11 +194,31 @@
   min-width: 0;
 }
 
-.logo-mark {
+/* --- HireZ wordmark (shared/components/Wordmark.tsx) — text only -----------
+   "Hire" in the ink colour, the "Z" in brand indigo; heavy weight, tight
+   tracking, upright (no italic, gradient or symbol) so it stays crisp small. */
+.wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-display);
+  font-weight: 750;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  color: var(--color-text);
+  white-space: nowrap;
+  /* never squeezed or distorted by a narrow container */
   flex-shrink: 0;
-  border-radius: 9px;
-  box-shadow: 0 4px 12px var(--color-primary-ring);
+  font-feature-settings: "ss01" 1;
 }
+
+.wordmark-z {
+  color: var(--color-wordmark-z);
+  margin-left: 0.01em;
+}
+
+.wordmark-sm { font-size: 1.1875rem; } /* 19px bold: WCAG "large text" */
+.wordmark-md { font-size: 1.375rem; }
+.wordmark-lg { font-size: 1.75rem; }
 
 .brand-name {
   font-family: var(--font-display);
@@ -219,6 +230,7 @@
 
 .sidebar-close {
   display: none;
+  margin-left: auto;
   align-items: center;
   justify-content: center;
   width: 2.25rem;
@@ -240,7 +252,47 @@
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
-  flex: 1;
+  /* the one scroll area in the rail: grows into the space between the brand
+     and the footer, may shrink below its content (min-height: 0), scrolls
+     only when it has to */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+  /* room for the focus ring and the thin scrollbar */
+  margin-inline: -0.25rem;
+  padding-inline: 0.25rem;
+  padding-block: 0.5rem;
+  /* links scrolling past either end soften out instead of being sliced;
+     the padding above keeps everything at rest fully opaque */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 0.5rem, #000 calc(100% - 0.5rem), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 0.5rem, #000 calc(100% - 0.5rem), transparent);
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--color-border-strong) padding-box;
+}
+
+/* the pinned header is opaque, so links scrolling beneath it never show
+   through */
+.sidebar-brand {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  background: var(--color-surface);
+}
+
+.sidebar-footer {
+  flex-shrink: 0;
 }
 
 /* Groups are deliberately NOT positioned: the sliding indicator measures
@@ -567,6 +619,7 @@
     inset: 0 auto 0 0;
     z-index: 40;
     width: min(300px, 86vw);
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
     transform: translateX(-100%);
     transition: transform var(--dur-slow) var(--ease-out);
     box-shadow: none;
@@ -630,8 +683,7 @@
     z-index: 20;
     height: calc(var(--tabbar-height) + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
-    backdrop-filter: blur(14px);
+    background: var(--color-surface);
     border-top: 1px solid var(--color-border);
   }
 
@@ -686,4 +738,45 @@
     transform: scaleX(1);
     opacity: 1;
   }
+}
+
+/* --- HireZ shell refinements -------------------------------------------------
+   Five responsibility groups: a tighter link rhythm keeps them on one screen;
+   the active item is the soft neutral indicator plus a short accent bar, so the
+   state never relies on colour alone (weight changes too). */
+.sidebar-nav .nav-group + .nav-group {
+  margin-top: 0.85rem;
+}
+
+.sidebar-link {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.nav-indicator::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 24%;
+  bottom: 24%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-accent);
+}
+
+.sidebar-link:focus-visible,
+.tabbar-link:focus-visible,
+.topbar-icon-btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+/* the drawer has no toggle, so its wordmark lines up with the link icons */
+.sidebar-brand .brand-lockup {
+  padding-left: 0.25rem;
+}
+
+.sidebar-collapse-toggle + .brand-lockup {
+  padding-left: 0;
 }

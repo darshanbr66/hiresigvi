@@ -5,7 +5,8 @@ export type NotificationType =
   | "ASSESSMENT_SUBMITTED"
   | "ANNOUNCEMENT"
   | "DIRECT_MESSAGE"
-  | "CALENDAR_REMINDER";
+  | "CALENDAR_REMINDER"
+  | "INTERVIEW_ASSIGNED";
 
 export interface NotificationResponse {
   id: string;

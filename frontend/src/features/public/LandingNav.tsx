@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogoMark } from "../../shared/components/Icon";
+import { Wordmark } from "../../shared/components/Wordmark";
 import { ThemeToggle } from "../theme/ThemeToggle";
 
 /**
- * Floating navigation for the public home page. Transparent over the hero
- * (so the 3D stage reads edge to edge), it settles into a frosted bar once
- * the page has scrolled — a state change the user can see, not decoration.
+ * The home page's top bar: the HireZ wordmark (text only), a few section
+ * links, open roles, the theme switch and staff sign-in. It gains a solid
+ * surface and hairline once the page has scrolled.
  */
 export function LandingNav({ careersPath }: { careersPath: string }) {
   const [scrolled, setScrolled] = useState(false);
@@ -20,18 +20,18 @@ export function LandingNav({ careersPath }: { careersPath: string }) {
 
   return (
     <header className={`landing-nav${scrolled ? " is-scrolled" : ""}`}>
-      <Link to="/" className="landing-brand" aria-label="SIGVITAS home">
-        <LogoMark size={30} />
-        <span className="landing-brand-name">SIGVITAS</span>
+      <Link to="/" className="landing-brand" aria-label="HireZ home">
+        <Wordmark size="md" />
       </Link>
       <nav className="landing-nav-links" aria-label="Sections">
-        <a href="#about">About</a>
-        <a href="#values">Values</a>
-        <Link to={careersPath}>Careers</Link>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#campus">Campus</a>
+        <Link to={careersPath}>Open roles</Link>
       </nav>
       <div className="landing-nav-actions">
         <ThemeToggle />
-        <Link to="/recruiter/login" className="btn btn-ghost btn-sm">
+        <Link to="/recruiter/login" className="btn btn-primary btn-sm">
           Staff sign in
         </Link>
       </div>

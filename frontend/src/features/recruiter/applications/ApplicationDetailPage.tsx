@@ -22,6 +22,7 @@ import type {
 } from "../../../types/assessment";
 import { useAuth } from "../../auth/AuthContext";
 import { AssessmentForm, emptyAssessmentFormValue } from "../assessments/AssessmentForm";
+import { ApplicationInterviews } from "../interviews/ApplicationInterviews";
 import {
   getApplicationAssessment,
   inviteCandidate,
@@ -79,7 +80,7 @@ function resultBadge(passed: boolean | null): string {
 
 export function ApplicationDetailPage() {
   const { applicationId = "" } = useParams<{ applicationId: string }>();
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const token = accessToken as string;
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -527,6 +528,15 @@ export function ApplicationDetailPage() {
               <p className="muted">No screening run yet.</p>
             )}
           </section>
+
+          {/* Interviews (any job; docs/recruitment-workflow.md § 2a) */}
+          <ApplicationInterviews
+            applicationId={application.id}
+            applicationStatus={application.status}
+            token={accessToken as string}
+            userId={user?.id}
+            onChanged={() => void queryClient.invalidateQueries({ queryKey: ["recruiter", "applications", applicationId] })}
+          />
 
           {/* Assessment */}
           <section className="card">

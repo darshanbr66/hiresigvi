@@ -1,6 +1,6 @@
-# AI Recruitment Platform
+# HireZ
 
-A multi-tenant recruitment intelligence platform covering recruiter-side
+HireZ (this repository: `ai-recruitment-platform-v2`) is a multi-tenant recruitment intelligence platform covering recruiter-side
 hiring workflows (jobs, candidates, applications, AI screening, assessments,
 campus hiring, reporting) and a public candidate-facing career site/apply
 flow.
@@ -13,9 +13,11 @@ required) built from written questions or a reusable, versioned question
 bank, with automatic grading of objective answers and manual grading of
 descriptive/coding answers, campus drives tied to an institution registry
 with optional affiliation verification, MTech/PhD scholarship & paid
-training programs (eligibility, selection test, interview, scholarship,
-training, offer, agreement and bond tracking — amounts and terms only as HR
-enters them), application notes, live reports, and outbound
+training programs (institution verification, eligibility, selection test,
+interviews with recorded outcomes, company funding proposals with separate
+approval, fee obligations and payment records, training milestones,
+agreement and bond tracking, employment review and offer — amounts and
+terms only as HR enters them), application notes, live reports, and outbound
 template-based candidate email (Resend over HTTPS in production, SMTP for local development). Recruiter email is **manual**: a
 recruiter picks one of six professional HTML templates (application received,
 interview invitation, assessment invitation, next steps, rejection, general),
@@ -95,8 +97,9 @@ intentionally simplified for the local MVP — see each doc for specifics).
 - [`docs/assessment.md`](docs/assessment.md) — assessment domain model,
   secure invitation mechanics, grading, question bank and test builder.
 - [`docs/programs.md`](docs/programs.md) — MTech/PhD scholarship & paid
-  training programs: configuration, application, selection workflow,
-  scholarship/training/agreement records, open business decisions.
+  training programs: configuration, application, verification, selection
+  and interviews, funding/fee/payment rules, training, agreement/bond,
+  employment progression, permissions, open business decisions.
 - [`docs/ai-screening.md`](docs/ai-screening.md) — resume intelligence and
   AI screening pipeline, provider abstraction.
 - [`docs/sigvi.md`](docs/sigvi.md) — Sigvi, the public AI assistant: API,

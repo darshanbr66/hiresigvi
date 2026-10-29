@@ -42,6 +42,7 @@ from app.models.institution import (
     CampusDriveRosterEntry,
     Institution,
 )
+from app.models.interview import ApplicationInterview, InterviewOutcome, InterviewStatus
 from app.models.job import Job, JobStatus
 from app.models.job_requirement import JobRequirement, RequirementCategory
 from app.models.match_result import AI_MATCH_DISCLAIMER, MatchResult, MatchStatus
@@ -51,10 +52,12 @@ from app.models.organization import Organization
 from app.models.program import (
     ProgramEnrollment,
     ProgramFeePayment,
+    ProgramFundingRevision,
     ProgramStatus,
     RecruitmentProgram,
     RecruitmentProgramInstitution,
     ScholarshipDisbursement,
+    TrainingMilestone,
 )
 from app.models.question_bank import (
     QuestionBankAnswerKey,
@@ -148,4 +151,9 @@ __all__ = [
     "ProgramStatus",
     "ScholarshipDisbursement",
     "ProgramFeePayment",
+    "ProgramFundingRevision",
+    "TrainingMilestone",
+    "ApplicationInterview",
+    "InterviewStatus",
+    "InterviewOutcome",
 ]

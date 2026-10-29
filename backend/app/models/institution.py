@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -72,6 +72,20 @@ class AffiliationVerificationMethod(StrEnum):
     EMAIL_DOMAIN = "EMAIL_DOMAIN"
     STUDENT_LIST = "STUDENT_LIST"
     MANUAL = "MANUAL"
+    # Manual decisions that name the evidence an HR user actually checked
+    # (recruitment programs, docs/programs.md § 3a). Never automatic.
+    STUDENT_ID_DOCUMENT = "STUDENT_ID_DOCUMENT"
+    COORDINATOR_CONFIRMATION = "COORDINATOR_CONFIRMATION"
+
+
+#: Methods an HR user may record for a manual decision.
+MANUAL_VERIFICATION_METHODS = frozenset(
+    {
+        AffiliationVerificationMethod.MANUAL,
+        AffiliationVerificationMethod.STUDENT_ID_DOCUMENT,
+        AffiliationVerificationMethod.COORDINATOR_CONFIRMATION,
+    }
+)
 
 
 class AffiliationStatus(StrEnum):
@@ -81,14 +95,28 @@ class AffiliationStatus(StrEnum):
 
 
 class CampusAffiliationVerification(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
-    """Whether one campus-drive application's candidate is confirmed as a
-    member of the drive's institution. One row per application (created only
-    when the drive requires verification); `method` records *how* it was
-    decided, `reviewed_by_user_id` is NULL for an automatic (email-domain /
-    student-list) match. Every change is also recorded in the activity log.
+    """Whether one campus-drive or recruitment-program application's
+    candidate is confirmed as a member of an institution. One row per
+    application (created only when the drive/program requires verification);
+    exactly one of `campus_drive_id` / `program_id` is set. `method` records
+    *how* it was decided, `reviewed_by_user_id` is NULL for an automatic
+    (email-domain / student-list) match. `institution_id` is NULL only for a
+    program applicant who named an institution that isn't in the registry —
+    such a record can only be decided manually. Every change is also
+    recorded in the activity log.
     """
 
     __tablename__ = "campus_affiliation_verifications"
+    __table_args__ = (
+        CheckConstraint(
+            "(campus_drive_id IS NULL) <> (program_id IS NULL)",
+            name="ck_campus_affiliation_verifications_one_context",
+        ),
+        CheckConstraint(
+            "campus_drive_id IS NULL OR institution_id IS NOT NULL",
+            name="ck_campus_affiliation_verifications_drive_institution",
+        ),
+    )
 
     application_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -96,14 +124,20 @@ class CampusAffiliationVerification(UUIDPrimaryKeyMixin, TenantScopedMixin, Time
         nullable=False,
         unique=True,
     )
-    campus_drive_id: Mapped[uuid.UUID] = mapped_column(
+    campus_drive_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("campus_drives.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
-    institution_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False
+    program_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recruitment_programs.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    institution_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=True
     )
     status: Mapped[AffiliationStatus] = mapped_column(
         Enum(AffiliationStatus, name="affiliation_status", native_enum=True),

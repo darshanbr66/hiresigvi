@@ -10,11 +10,16 @@ import "./styles/polish.css";
 import "./styles/filters.css";
 import "./styles/dashboard.css";
 import "./styles/landing.css";
+import "./styles/home.css";
+import "./styles/loading.css";
+import { initBrandLoading } from "./shared/lib/brandLoading";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Root element #root not found.");
 }
+
+initBrandLoading();
 
 createRoot(rootElement).render(
   <StrictMode>

@@ -1,21 +1,26 @@
 /*
  * Design tokens — the single source of truth for colour, depth, type and motion.
  *
- * Identity ("Signal"): a talent graph — people, jobs and skills as nodes,
- * matches as edges. One brand hue (signal blue), one warm "human" accent used
- * at most once per view, and cool ink neutrals. Semantic colours (success,
- * warning, danger, info, neutral) carry meaning only — never decoration.
+ * Identity: HireZ. Neutral surfaces (off-white / zinc) and charcoal or
+ * off-white ink, with one brand colour — indigo — for primary actions,
+ * links, focus, the wordmark's Z and key icons, and one supporting accent —
+ * teal — for selected navigation and small supporting details. Recruitment
+ * stages keep their own semantic palette (--pipeline-*). Semantic colours
+ * (success, warning, danger, info, neutral) carry meaning only, and the
+ * recruitment pipeline has its own stage palette (--pipeline-*) used by
+ * every chart, bar, dot and legend that shows a stage.
  *
- * The pre-existing token names (--color-bg, --color-surface, --color-primary,
+ * The palette is an independent choice: no official parent-brand colour
+ * specification could be verified, so nothing here claims to reproduce one.
+ * Swapping the brand means changing the values below — every screen reads
+ * these names.
+ *
+ * Pre-existing token names (--color-bg, --color-surface, --color-primary,
  * --color-*-bg/-text/-border …) are kept so every existing rule inherits the
- * new palette. New tokens are additive.
- *
- * Theme wiring is unchanged: an explicit `data-theme` wins; with none stamped
- * the page follows the OS via `prefers-color-scheme`. Dark is designed, not
- * inverted: a neutral graphite surface scale (bg < surface < raised) with
- * hairline borders doing the separating work, the brand blue reserved for
- * actions and links, and status colours desaturated so they read on dark
- * without glowing.
+ * palette. Theme wiring is unchanged: an explicit `data-theme` wins; with
+ * none stamped the page follows the OS via `prefers-color-scheme`. Dark is
+ * designed, not inverted: a slate surface scale (bg < surface < raised) with
+ * hairline borders doing the separating work.
  */
 
 :root {
@@ -75,33 +80,36 @@
   --tabbar-height: 3.75rem;
 
   /* --- light palette ----------------------------------------------------- */
-  --color-bg: #f3f5f9;
-  --color-bg-subtle: #eaeef5;
+  --color-bg: #f6f7f8;
+  --color-bg-subtle: #eef0f2;
   --color-surface: #ffffff;
   --color-surface-raised: #ffffff;
-  --color-border: #e1e6ee;
-  --color-border-strong: #cdd6e3;
+  --color-border: #e3e5e8;
+  --color-border-strong: #cfd2d7;
   /* Form-control outlines: 3:1 against the surface (WCAG 1.4.11). */
-  --color-input-border: #8592a5;
+  --color-input-border: #7d838c;
   --color-input-bg: #ffffff;
-  --color-text: #0e1522;
-  --color-text-muted: #586377;
+  --color-text: #15181d;
+  --color-text-muted: #565c66;
 
-  /* Brand. `primary` is for text/links/accents; `primary-solid` is the fill
-     behind white text (buttons, active nav) — kept separate so both themes
-     clear WCAG AA for each use. */
-  --color-primary: #1f56e8;
-  --color-primary-hover: #1846c4;
-  --color-primary-solid: #1f56e8;
-  --color-primary-solid-hover: #1846c4;
+  /* Brand (indigo). `primary` is for text/links; `primary-solid` is the
+     fill behind white text (buttons, active nav) — kept separate so both
+     themes clear WCAG AA for each use. */
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-solid: #4f46e5;
+  --color-primary-solid-hover: #4338ca;
   --color-on-primary: #ffffff;
-  --color-primary-soft: rgb(31 86 232 / 8%);
-  --color-primary-ring: rgb(31 86 232 / 32%);
+  --color-primary-soft: rgb(79 70 229 / 8%);
+  --color-primary-ring: rgb(79 70 229 / 28%);
+  /* Keyboard focus outline — solid, 3:1 against every surface. */
+  --color-focus: #4f46e5;
 
-  /* The human accent: amber. A dot, a ring, a highlight — never body text. */
-  --color-accent: #f0a020;
-  --color-accent-soft: rgb(240 160 32 / 14%);
-  --color-accent-text: #8a5300;
+  /* Secondary accent (muted teal): the wordmark's Z, a highlight, a dot —
+     used sparingly, never as a second primary. */
+  --color-accent: #0d9488;
+  --color-accent-soft: rgb(13 148 136 / 10%);
+  --color-accent-text: #0f766e;
 
   --color-danger: #b91c1c;
   --color-danger-bg: #fef2f2;
@@ -112,168 +120,236 @@
   --color-success-border: #bbf7d0;
   --color-active-bg: #ecfdf5;
   --color-active-text: #047857;
-  --color-inactive-bg: #eef1f6;
-  --color-inactive-text: #4b5566;
+  --color-inactive-bg: #eef1f5;
+  --color-inactive-text: #4a5566;
   --color-warn-bg: #fffbeb;
-  --color-warn-text: #b45309;
-  --color-info-bg: #eff4ff;
-  --color-info-text: #1846c4;
-  --color-info-border: #c7d7fe;
+  --color-warn-text: #a14f06;
+  --color-info-bg: #eff3f7;
+  --color-info-text: #2b4f7a;
+  --color-info-border: #cdd8e5;
+  --color-interview-bg: #f1eefc;
+  --color-interview-text: #5636c0;
 
-  --color-overlay: rgb(9 12 19 / 48%);
-  --color-skeleton-base: #e7ecf4;
-  --color-skeleton-shine: #f6f8fc;
+  /* Recruitment pipeline stages (shared/lib/statusTone.ts::pipelineStage).
+     Graphic colours: each is >= 3:1 against the surfaces it sits on. */
+  --pipeline-applied: #7b8698;
+  --pipeline-screening: #b7791f;
+  --pipeline-assessment: #2b6cc4;
+  --pipeline-interview: #6d4fd8;
+  --pipeline-selected: #2f8f5b;
+  --pipeline-hired: #15703f;
+  --pipeline-rejected: #c13030;
+  --pipeline-hold: #a5762a;
+
+  --color-overlay: rgb(15 17 20 / 48%);
+  --color-skeleton-base: #eceef1;
+  --color-skeleton-shine: #f7f8f9;
 
   /* Depth. Hairline + soft ambient; raised for hover, popover for floating UI. */
-  --shadow-card: 0 1px 2px rgb(14 21 34 / 5%);
-  --shadow-raised: 0 6px 18px rgb(14 21 34 / 8%), 0 1px 3px rgb(14 21 34 / 6%);
-  --shadow-popover: 0 18px 44px rgb(14 21 34 / 18%), 0 2px 6px rgb(14 21 34 / 8%);
-  --highlight-top: inset 0 1px 0 rgb(255 255 255 / 70%);
+  --shadow-card: 0 1px 2px rgb(21 24 29 / 4%), 0 1px 1px rgb(21 24 29 / 2%);
+  --shadow-raised: 0 1px 2px rgb(21 24 29 / 4%), 0 10px 28px -8px rgb(21 24 29 / 12%);
+  --shadow-popover: 0 24px 56px -16px rgb(21 24 29 / 22%), 0 2px 6px rgb(21 24 29 / 6%);
+  --highlight-top: inset 0 1px 0 rgb(255 255 255 / 80%);
 
-  /* Public landing stage (behind the 3D scene) */
-  --stage-bg: #eef2fa;
-  --stage-glow: rgb(31 86 232 / 14%);
-  --stage-line: rgb(14 21 34 / 8%);
+  /* Public landing stage */
+  --stage-bg: #ffffff;
+  --stage-glow: rgb(21 24 29 / 4%);
+  --stage-line: rgb(21 24 29 / 8%);
 
-  /* Talent-graph categories (public hero: 3D scene, SVG poster, legend). The
-     single source for both renderers, so they always agree per theme. */
-  --kind-candidate: #2456e6;
-  --kind-job: #0e8fb3;
+  /* Categorical palette — distinct hues for things that are different but
+     not ranked (org-chart departments, calendar event kinds). Not for status:
+     statuses use the semantic and --pipeline-* tokens. */
+  --kind-candidate: #2b5ea7;
+  --kind-job: #2a8a80;
   --kind-skill: #64748b;
-  --kind-assessment: #0f9d76;
+  --kind-assessment: #2f8f5b;
   --kind-organization: #56657e;
-  --kind-ai: #3d6bf5;
-  --kind-match: #c97300;
+  --kind-ai: #6d4fd8;
+  --kind-match: #a5762a;
   --kind-particle: #8a97ad;
+  --weight-display: 650;
+  --canvas-grid: rgb(21 24 29 / 5%);
+  --canvas-light: rgb(255 255 255 / 85%);
+  --color-brand: #4f46e5;
+  --color-brand-soft: #eef2ff;
+  --color-brand-soft-border: #c7d2fe;
+  --color-wordmark-z: #4f46e5;
+  --glow-brand: rgb(79 70 229 / 22%);
+  --glow-accent: rgb(13 148 136 / 10%);
+  --shadow-brand: 0 1px 2px rgb(79 70 229 / 22%), 0 6px 16px -4px rgb(79 70 229 / 35%);
+
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-bg: #0f1115;
-    --color-bg-subtle: #14171c;
-    --color-surface: #171a20;
-    --color-surface-raised: #1d2129;
-    --color-border: #262b34;
-    --color-border-strong: #353b47;
-    --color-input-border: #646c7c;
-    --color-input-bg: #14171c;
-    --color-text: #e7e9ee;
-    --color-text-muted: #9ba3b1;
+    --color-bg: #111214;
+    --color-bg-subtle: #151619;
+    --color-surface: #1a1b1f;
+    --color-surface-raised: #202126;
+    --color-border: #2a2b30;
+    --color-border-strong: #37393f;
+    --color-input-border: #6c717b;
+    --color-input-bg: #151619;
+    --color-text: #ebecee;
+    --color-text-muted: #a4a8b0;
 
-    --color-primary: #8fb0f8;
-    --color-primary-hover: #b1c8ff;
-    --color-primary-solid: #3563e9;
-    --color-primary-solid-hover: #2d58d4;
+    --color-primary: #a5b4fc;
+    --color-primary-hover: #c7d2fe;
+    --color-primary-solid: #5850ec;
+    --color-primary-solid-hover: #4f46e5;
     --color-on-primary: #ffffff;
-    --color-primary-soft: rgb(143 176 248 / 10%);
-    --color-primary-ring: rgb(143 176 248 / 45%);
+    --color-primary-soft: rgb(129 140 248 / 12%);
+    --color-primary-ring: rgb(129 140 248 / 40%);
+    --color-focus: #818cf8;
 
-    --color-accent: #f2b33d;
-    --color-accent-soft: rgb(242 179 61 / 12%);
-    --color-accent-text: #f5c768;
+    --color-accent: #2dd4bf;
+    --color-accent-soft: rgb(45 212 191 / 10%);
+    --color-accent-text: #5eead4;
 
     --color-danger: #f08a8a;
     --color-danger-bg: #2a1719;
     --color-danger-text: #f29b9b;
     --color-danger-border: #4d2427;
-    --color-success-bg: #142319;
+    --color-success-bg: #13241b;
     --color-success-text: #6fd39a;
     --color-success-border: #1f4a31;
     --color-active-bg: #12261e;
     --color-active-text: #5fd0a6;
-    --color-inactive-bg: #1f232b;
-    --color-inactive-text: #a3abb8;
+    --color-inactive-bg: #232429;
+    --color-inactive-text: #aeb2b9;
     --color-warn-bg: #2a2214;
     --color-warn-text: #f0c060;
-    --color-info-bg: #152038;
-    --color-info-text: #a4bdfa;
-    --color-info-border: #2a3f73;
+    --color-info-bg: #1a2230;
+    --color-info-text: #a9bfdb;
+    --color-info-border: #2c3a4f;
+  --color-interview-bg: #211b3a;
+  --color-interview-text: #c2b3fb;
+    --color-interview-bg: #211b3a;
+    --color-interview-text: #c2b3fb;
 
-    --color-overlay: rgb(5 6 9 / 70%);
-    --color-skeleton-base: #1c2027;
-    --color-skeleton-shine: #252a33;
+    --pipeline-applied: #8d98ab;
+    --pipeline-screening: #e0a83a;
+    --pipeline-assessment: #6ea0f0;
+    --pipeline-interview: #a58df7;
+    --pipeline-selected: #55c48a;
+    --pipeline-hired: #3fb877;
+    --pipeline-rejected: #ef7d7d;
+    --pipeline-hold: #c9a24a;
 
-    --shadow-card: 0 1px 0 rgb(0 0 0 / 30%);
-    --shadow-raised: 0 6px 16px rgb(0 0 0 / 40%), 0 1px 2px rgb(0 0 0 / 35%);
-    --shadow-popover: 0 16px 40px rgb(0 0 0 / 55%), 0 0 0 1px #262b34;
-    --highlight-top: inset 0 1px 0 rgb(255 255 255 / 3%);
+    --color-overlay: rgb(6 7 8 / 70%);
+    --color-skeleton-base: #1f2024;
+    --color-skeleton-shine: #28292e;
 
-    --stage-bg: #0d0f13;
-    --stage-glow: rgb(53 99 233 / 12%);
-    --stage-line: rgb(231 233 238 / 6%);
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-raised: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px -10px rgb(0 0 0 / 65%);
+    --shadow-popover: 0 24px 56px -16px rgb(0 0 0 / 75%), 0 0 0 1px #2a2b30;
+    --highlight-top: inset 0 1px 0 rgb(255 255 255 / 4%);
 
-    --kind-candidate: #7da2ff;
-    --kind-job: #38bdf8;
+    --stage-bg: #111214;
+    --stage-glow: rgb(0 0 0 / 0%);
+    --stage-line: rgb(235 236 238 / 6%);
+    --kind-candidate: #8db4ec;
+    --kind-job: #4fb3a7;
     --kind-skill: #94a3b8;
-    --kind-assessment: #34d399;
+    --kind-assessment: #55c48a;
     --kind-organization: #8b9bb5;
-    --kind-ai: #a3bcff;
-    --kind-match: #fbbf24;
+    --kind-ai: #a58df7;
+    --kind-match: #d8ad55;
     --kind-particle: #64748b;
+    --canvas-grid: rgb(255 255 255 / 4%);
+    --canvas-light: rgb(255 255 255 / 4%);
+    --color-brand: #818cf8;
+    --color-brand-soft: #1f1e3d;
+    --color-brand-soft-border: #34336a;
+    --color-wordmark-z: #818cf8;
+    --glow-brand: rgb(99 102 241 / 22%);
+    --glow-accent: rgb(45 212 191 / 9%);
+    --shadow-brand: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px -4px rgb(88 80 236 / 45%);
+
   }
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #0f1115;
-  --color-bg-subtle: #14171c;
-  --color-surface: #171a20;
-  --color-surface-raised: #1d2129;
-  --color-border: #262b34;
-  --color-border-strong: #353b47;
-  --color-input-border: #646c7c;
-  --color-input-bg: #14171c;
-  --color-text: #e7e9ee;
-  --color-text-muted: #9ba3b1;
+  --color-bg: #111214;
+  --color-bg-subtle: #151619;
+  --color-surface: #1a1b1f;
+  --color-surface-raised: #202126;
+  --color-border: #2a2b30;
+  --color-border-strong: #37393f;
+  --color-input-border: #6c717b;
+  --color-input-bg: #151619;
+  --color-text: #ebecee;
+  --color-text-muted: #a4a8b0;
 
-  --color-primary: #8fb0f8;
-  --color-primary-hover: #b1c8ff;
-  --color-primary-solid: #3563e9;
-  --color-primary-solid-hover: #2d58d4;
+  --color-primary: #a5b4fc;
+  --color-primary-hover: #c7d2fe;
+  --color-primary-solid: #5850ec;
+  --color-primary-solid-hover: #4f46e5;
   --color-on-primary: #ffffff;
-  --color-primary-soft: rgb(143 176 248 / 10%);
-  --color-primary-ring: rgb(143 176 248 / 45%);
+  --color-primary-soft: rgb(129 140 248 / 12%);
+  --color-primary-ring: rgb(129 140 248 / 40%);
+  --color-focus: #818cf8;
 
-  --color-accent: #f2b33d;
-  --color-accent-soft: rgb(242 179 61 / 12%);
-  --color-accent-text: #f5c768;
+  --color-accent: #2dd4bf;
+  --color-accent-soft: rgb(45 212 191 / 10%);
+  --color-accent-text: #5eead4;
 
   --color-danger: #f08a8a;
   --color-danger-bg: #2a1719;
   --color-danger-text: #f29b9b;
   --color-danger-border: #4d2427;
-  --color-success-bg: #142319;
+  --color-success-bg: #13241b;
   --color-success-text: #6fd39a;
   --color-success-border: #1f4a31;
   --color-active-bg: #12261e;
   --color-active-text: #5fd0a6;
-  --color-inactive-bg: #1f232b;
-  --color-inactive-text: #a3abb8;
+  --color-inactive-bg: #232429;
+  --color-inactive-text: #aeb2b9;
   --color-warn-bg: #2a2214;
   --color-warn-text: #f0c060;
-  --color-info-bg: #152038;
-  --color-info-text: #a4bdfa;
-  --color-info-border: #2a3f73;
+  --color-info-bg: #1a2230;
+  --color-info-text: #a9bfdb;
+  --color-info-border: #2c3a4f;
 
-  --color-overlay: rgb(5 6 9 / 70%);
-  --color-skeleton-base: #1c2027;
-  --color-skeleton-shine: #252a33;
+  --pipeline-applied: #8d98ab;
+  --pipeline-screening: #e0a83a;
+  --pipeline-assessment: #6ea0f0;
+  --pipeline-interview: #a58df7;
+  --pipeline-selected: #55c48a;
+  --pipeline-hired: #3fb877;
+  --pipeline-rejected: #ef7d7d;
+  --pipeline-hold: #c9a24a;
 
-  --shadow-card: 0 1px 0 rgb(0 0 0 / 30%);
-  --shadow-raised: 0 6px 16px rgb(0 0 0 / 40%), 0 1px 2px rgb(0 0 0 / 35%);
-  --shadow-popover: 0 16px 40px rgb(0 0 0 / 55%), 0 0 0 1px #262b34;
-  --highlight-top: inset 0 1px 0 rgb(255 255 255 / 3%);
+  --color-overlay: rgb(6 7 8 / 70%);
+  --color-skeleton-base: #1f2024;
+  --color-skeleton-shine: #28292e;
 
-  --stage-bg: #0d0f13;
-  --stage-glow: rgb(53 99 233 / 12%);
-  --stage-line: rgb(231 233 238 / 6%);
-  --kind-candidate: #7da2ff;
-  --kind-job: #38bdf8;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px -10px rgb(0 0 0 / 65%);
+  --shadow-popover: 0 24px 56px -16px rgb(0 0 0 / 75%), 0 0 0 1px #2a2b30;
+  --highlight-top: inset 0 1px 0 rgb(255 255 255 / 4%);
+
+  --stage-bg: #111214;
+  --stage-glow: rgb(0 0 0 / 0%);
+  --stage-line: rgb(235 236 238 / 6%);
+  --kind-candidate: #8db4ec;
+  --kind-job: #4fb3a7;
   --kind-skill: #94a3b8;
-  --kind-assessment: #34d399;
+  --kind-assessment: #55c48a;
   --kind-organization: #8b9bb5;
-  --kind-ai: #a3bcff;
-  --kind-match: #fbbf24;
+  --kind-ai: #a58df7;
+  --kind-match: #d8ad55;
   --kind-particle: #64748b;
+  --canvas-grid: rgb(255 255 255 / 4%);
+  --canvas-light: rgb(255 255 255 / 4%);
+  --color-brand: #818cf8;
+  --color-brand-soft: #1f1e3d;
+  --color-brand-soft-border: #34336a;
+  --color-wordmark-z: #818cf8;
+  --glow-brand: rgb(99 102 241 / 22%);
+  --glow-accent: rgb(45 212 191 / 9%);
+  --shadow-brand: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px -4px rgb(88 80 236 / 45%);
+
 }
 
 /* Reduced motion: keep every state change, drop the movement. Individual

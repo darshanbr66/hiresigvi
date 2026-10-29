@@ -10,37 +10,53 @@ ever what an HR user entered.
 
 import uuid
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
 from app.models.application import Application, ApplicationStatus
 from app.models.assessment import Assessment, AssessmentInvitation, AssessmentStatus
 from app.models.candidate import Candidate, EducationLevel
-from app.models.institution import Institution
+from app.models.institution import (
+    AffiliationStatus,
+    AffiliationVerificationMethod,
+    CampusAffiliationVerification,
+    Institution,
+)
+from app.models.interview import ApplicationInterview
 from app.models.job import EmploymentType, Job, JobStatus
 from app.models.program import (
     AgreementStatus,
     DisbursementStatus,
     EligibilityStatus,
+    EmploymentReviewStatus,
+    FundingRevisionKind,
+    FundingRevisionStatus,
+    FundingType,
+    MilestoneStatus,
     OfferStatus,
     PaymentRecordStatus,
     ProgramEnrollment,
     ProgramFeePayment,
+    ProgramFundingRevision,
     ProgramStatus,
     RecruitmentProgram,
     RecruitmentProgramInstitution,
     ScholarshipDisbursement,
     ScholarshipEligibility,
     ScholarshipStatus,
+    TrainingMilestone,
     TrainingStatus,
 )
+from app.models.team_hierarchy import Department, Employee, EmploymentStatus
 from app.models.user import User
 from app.schemas.program import (
     ProgramCreateRequest,
@@ -48,12 +64,18 @@ from app.schemas.program import (
     ProgramReport,
     ProgramUpdateRequest,
 )
+from app.schemas.team_hierarchy import EmployeeCreateRequest
 from app.services import (
     activity_service,
     application_service,
+    campus_affiliation_service,
+    employee_service,
     institution_service,
+    interview_service,
+    program_finance,
     reapply_service,
 )
+from app.services.program_finance import FundingError, money
 from app.workflows import program_workflow
 from app.workflows.program_workflow import require_transition
 
@@ -101,6 +123,10 @@ _SIMPLE_FIELDS = (
     "tracks_training",
     "tracks_employment",
     "requires_agreement",
+    "company_funding_type",
+    "company_funding_value",
+    "funding_requires_independent_approval",
+    "affiliation_verification_method",
 )
 
 #: Changing any of these on a program that already has applicants requires
@@ -121,6 +147,8 @@ _DISCLOSED_FIELDS = (
     "bond_duration_months",
     "bond_terms_summary",
     "employment_pathway",
+    "company_funding_type",
+    "company_funding_value",
 )
 
 
@@ -268,9 +296,64 @@ def _apply_fields(program: RecruitmentProgram, values: dict[str, Any]) -> None:
         program.eligible_education_levels = [
             level.value for level in (values["eligible_education_levels"] or [])
         ]
-    for flag in ("tracks_fee_payments", "tracks_training", "tracks_employment", "requires_agreement"):
+    for flag in (
+        "tracks_fee_payments",
+        "tracks_training",
+        "tracks_employment",
+        "requires_agreement",
+        "funding_requires_independent_approval",
+    ):
         if flag in values and values[flag] is None:
             setattr(program, flag, True)
+    if "affiliation_verification_method" in values and values["affiliation_verification_method"] is None:
+        program.affiliation_verification_method = AffiliationVerificationMethod.MANUAL
+
+
+def funding_config_problems(program: RecruitmentProgram) -> list[str]:
+    """The program's standard funding basis must be internally consistent:
+    both type and value or neither, a valid percentage, a fixed amount no
+    larger than a configured fee and inside the configured range."""
+    problems: list[str] = []
+    if (program.company_funding_type is None) != (program.company_funding_value is None):
+        problems.append("Enter both the company funding basis and its value, or neither.")
+        return problems
+    if program.company_funding_type is None or program.company_funding_value is None:
+        return problems
+    fee = program.training_fee_amount
+    try:
+        if fee is not None:
+            split = program_finance.split_fee(
+                fee, program.company_funding_type, program.company_funding_value
+            )
+            program_finance.check_contribution_range(
+                split.company_contribution,
+                program.scholarship_amount_min,
+                program.scholarship_amount_max,
+            )
+        else:
+            program_finance.split_fee(
+                program.company_funding_value
+                if program.company_funding_type == FundingType.FIXED_AMOUNT
+                else Decimal("100"),
+                program.company_funding_type,
+                program.company_funding_value,
+            )
+    except FundingError as exc:
+        problems.append(str(exc))
+    if (
+        program.company_funding_type == FundingType.FIXED_AMOUNT
+        and program.scholarship_currency
+        and program.training_fee_currency
+        and program.scholarship_currency != program.training_fee_currency
+    ):
+        problems.append("Company funding and the training fee must be in the same currency.")
+    return problems
+
+
+def _require_valid_funding_config(program: RecruitmentProgram) -> None:
+    problems = funding_config_problems(program)
+    if problems:
+        raise UnprocessableError(" ".join(problems), code="invalid_funding_config", data={"problems": problems})
 
 
 async def create_program(
@@ -310,6 +393,7 @@ async def create_program(
     _apply_fields(program, values)
     if program.bond_duration_months is None and "bond_duration_months" not in values:
         program.bond_duration_months = 36
+    _require_valid_funding_config(program)
     db.add(program)
     await db.flush()
     if payload.eligible_institution_ids:
@@ -416,6 +500,7 @@ async def update_program(
     if values.get("employment_job_id") is not None:
         await _validated_employment_job(db, program.organization_id, values["employment_job_id"])
     _apply_fields(program, values)
+    _require_valid_funding_config(program)
     if "eligible_institution_ids" in values:
         await _set_institutions(db, program, values["eligible_institution_ids"] or [])
 
@@ -521,6 +606,17 @@ def disclosure_text(program: RecruitmentProgram) -> str:
         lines.append(f"Scholarship: {low}" + (f" to {high}" if high and high != low else "") + ".")
     if program.scholarship_disclosure:
         lines.append(f"Scholarship: {program.scholarship_disclosure.strip()}")
+    if program.company_funding_type is not None and program.company_funding_value is not None:
+        basis = (
+            f"{program.company_funding_value.normalize():f}% of the training fee"
+            if program.company_funding_type == FundingType.PERCENTAGE
+            else _money(program.company_funding_value, program.training_fee_currency)
+            or f"{program.company_funding_value:,.2f}"
+        )
+        lines.append(
+            f"Company funding (scholarship) for eligible selected candidates: {basis}, only if "
+            "approved; the candidate pays the remaining fee."
+        )
     if program.scholarship_eligibility_rules:
         lines.append(f"Scholarship eligibility: {program.scholarship_eligibility_rules.strip()}")
     if program.scholarship_disbursement_timing:
@@ -648,6 +744,17 @@ async def record_enrollment(
     )
     db.add(enrollment)
     await db.flush()
+    await campus_affiliation_service.open_program_verification(
+        db,
+        organization_id=program.organization_id,
+        program_id=program.id,
+        program_title=program.title,
+        method=program.affiliation_verification_method,
+        institution_id=declaration.institution_id,
+        institution_name=institution_name,
+        application=application,
+        candidate=candidate,
+    )
     await activity_service.record_activity(
         db,
         organization_id=program.organization_id,
@@ -675,6 +782,57 @@ class EnrollmentView:
     latest_invitation: AssessmentInvitation | None
     fee_payments: list[ProgramFeePayment]
     disbursements: list[ScholarshipDisbursement]
+    #: Sum of RECORDED (non-voided) fee payments — also filled in lists.
+    fee_paid_total: Decimal = Decimal("0")
+    affiliation: CampusAffiliationVerification | None = None
+    milestones: list[TrainingMilestone] = field(default_factory=list)
+    # Detail only.
+    funding_revisions: list[ProgramFundingRevision] = field(default_factory=list)
+    interviews: list[ApplicationInterview] = field(default_factory=list)
+
+
+async def _paid_totals(db: AsyncSession, enrollment_ids: list[uuid.UUID]) -> dict[uuid.UUID, Decimal]:
+    if not enrollment_ids:
+        return {}
+    result = await db.execute(
+        select(ProgramFeePayment.enrollment_id, func.sum(ProgramFeePayment.amount))
+        .where(
+            ProgramFeePayment.enrollment_id.in_(enrollment_ids),
+            ProgramFeePayment.status == PaymentRecordStatus.RECORDED,
+        )
+        .group_by(ProgramFeePayment.enrollment_id)
+    )
+    return {eid: Decimal(total) for eid, total in result.all()}
+
+
+async def _affiliations(
+    db: AsyncSession, application_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, CampusAffiliationVerification]:
+    if not application_ids:
+        return {}
+    result = await db.execute(
+        select(CampusAffiliationVerification).where(
+            CampusAffiliationVerification.application_id.in_(application_ids),
+            CampusAffiliationVerification.program_id.is_not(None),
+        )
+    )
+    return {record.application_id: record for record in result.scalars().all()}
+
+
+async def _milestones(
+    db: AsyncSession, enrollment_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[TrainingMilestone]]:
+    grouped: dict[uuid.UUID, list[TrainingMilestone]] = {eid: [] for eid in enrollment_ids}
+    if not enrollment_ids:
+        return grouped
+    result = await db.execute(
+        select(TrainingMilestone)
+        .where(TrainingMilestone.enrollment_id.in_(enrollment_ids))
+        .order_by(TrainingMilestone.due_on.asc().nulls_last(), TrainingMilestone.created_at)
+    )
+    for milestone in result.scalars().all():
+        grouped[milestone.enrollment_id].append(milestone)
+    return grouped
 
 
 async def _latest_invitations(
@@ -720,7 +878,12 @@ async def list_enrollments(
     if training is not None:
         query = query.where(ProgramEnrollment.training_status == training)
     rows = (await db.execute(query)).all()
-    invitations = await _latest_invitations(db, [application.id for _, application, _ in rows])
+    application_ids = [application.id for _, application, _ in rows]
+    enrollment_ids = [enrollment.id for enrollment, _, _ in rows]
+    invitations = await _latest_invitations(db, application_ids)
+    paid = await _paid_totals(db, enrollment_ids)
+    affiliations = await _affiliations(db, application_ids)
+    milestones = await _milestones(db, enrollment_ids)
     return [
         EnrollmentView(
             enrollment=enrollment,
@@ -729,6 +892,9 @@ async def list_enrollments(
             latest_invitation=invitations.get(application.id),
             fee_payments=[],
             disbursements=[],
+            fee_paid_total=paid.get(enrollment.id, Decimal("0")),
+            affiliation=affiliations.get(application.id),
+            milestones=milestones.get(enrollment.id, []),
         )
         for enrollment, application, candidate in rows
     ]
@@ -761,13 +927,28 @@ async def enrollment_view(db: AsyncSession, enrollment: ProgramEnrollment) -> En
         .where(ScholarshipDisbursement.enrollment_id == enrollment.id)
         .order_by(ScholarshipDisbursement.created_at)
     )
+    fee_payments = list(payments.scalars().all())
+    revisions = await db.execute(
+        select(ProgramFundingRevision)
+        .where(ProgramFundingRevision.enrollment_id == enrollment.id)
+        .order_by(ProgramFundingRevision.revision_number)
+    )
     return EnrollmentView(
         enrollment=enrollment,
         application=application,
         candidate=application.candidate,
         latest_invitation=invitations.get(application.id),
-        fee_payments=list(payments.scalars().all()),
+        fee_payments=fee_payments,
         disbursements=list(disbursements.scalars().all()),
+        fee_paid_total=sum(
+            (p.amount for p in fee_payments if p.status == PaymentRecordStatus.RECORDED), Decimal("0")
+        ),
+        affiliation=(await _affiliations(db, [application.id])).get(application.id),
+        milestones=(await _milestones(db, [enrollment.id]))[enrollment.id],
+        funding_revisions=list(revisions.scalars().all()),
+        interviews=await interview_service.list_for_application(
+            db, enrollment.organization_id, application.id
+        ),
     )
 
 
@@ -824,6 +1005,13 @@ async def review_eligibility(
         program_workflow.ELIGIBILITY_TRANSITIONS, enrollment.eligibility_status, status,
         what="eligibility review",
     )
+    if status == EligibilityStatus.ELIGIBLE:
+        affiliation = (await _affiliations(db, [application.id])).get(application.id)
+        if affiliation is not None and affiliation.status != AffiliationStatus.VERIFIED:
+            raise ConflictError(
+                "Verify the candidate's institution membership before marking them eligible.",
+                code="affiliation_verification_required",
+            )
     enrollment.eligibility_status = status
     enrollment.eligibility_reviewed_by_user_id = actor.id
     enrollment.eligibility_reviewed_at = _now()
@@ -875,9 +1063,41 @@ async def invite_to_assessment(
     )
 
 
-async def mark_interview_completed(
-    db: AsyncSession, *, enrollment: ProgramEnrollment, actor: User
+async def review_affiliation(
+    db: AsyncSession,
+    *,
+    program: RecruitmentProgram,
+    enrollment: ProgramEnrollment,
+    status: AffiliationStatus,
+    method: AffiliationVerificationMethod | None,
+    note: str | None,
+    actor: User,
 ) -> ProgramEnrollment:
+    application = await _application(db, enrollment)
+    record = (await _affiliations(db, [application.id])).get(application.id)
+    if record is None:
+        raise ConflictError(
+            "This program doesn't require institution verification for this application.",
+            code="affiliation_not_required",
+        )
+    if enrollment.eligibility_status == EligibilityStatus.ELIGIBLE and status != AffiliationStatus.VERIFIED:
+        raise ConflictError(
+            "The candidate was already found eligible. Mark them not eligible first if their "
+            "institution membership no longer holds.",
+            code="eligibility_locked",
+        )
+    await campus_affiliation_service.review_program_verification(
+        db, record=record, status=status, method=method, note=note, actor=actor,
+        context_label=program.title,
+    )
+    return enrollment
+
+
+async def mark_interview_completed(
+    db: AsyncSession, *, program: RecruitmentProgram, enrollment: ProgramEnrollment, actor: User
+) -> ProgramEnrollment:
+    """The selection gate: every configured interview stage has a recorded
+    outcome and nothing is still scheduled."""
     application = await _application(db, enrollment)
     if application.status != ApplicationStatus.INTERVIEW:
         raise ConflictError(
@@ -887,6 +1107,14 @@ async def mark_interview_completed(
         )
     if enrollment.interview_completed_at is not None:
         return enrollment
+    interviews = await interview_service.list_for_application(
+        db, enrollment.organization_id, application.id
+    )
+    problems = interview_service.completion_problems(interviews, list(program.interview_stages))
+    if problems:
+        raise ConflictError(
+            " ".join(problems), code="interview_outcomes_required", data={"problems": problems}
+        )
     enrollment.interview_completed_at = _now()
     enrollment.interview_completed_by_user_id = actor.id
     await db.flush()
@@ -905,22 +1133,26 @@ async def decide_scholarship_eligibility(
     note: str | None,
     actor: User,
 ) -> ProgramEnrollment:
-    """Eligibility for scholarship *consideration* — only for a candidate
-    selected through the program's process. Never an approval."""
+    """Eligibility for company-funding *consideration* — only for a
+    candidate selected through the program's process. Never an approval."""
     application = await _application(db, enrollment)
     if application.status not in program_workflow.SELECTED_STATUSES:
         raise ConflictError(
-            "Scholarship eligibility is decided only for candidates selected through the "
+            "Funding eligibility is decided only for candidates selected through the "
             "program's selection process.",
             code="selection_required",
         )
     if enrollment.scholarship_status in (ScholarshipStatus.APPROVED, ScholarshipStatus.DECLINED):
-        raise ConflictError("The scholarship has already been decided.", code="scholarship_decided")
+        raise ConflictError("The funding has already been decided.", code="scholarship_decided")
+    if enrollment.scholarship_status == ScholarshipStatus.PROPOSED:
+        raise ConflictError(
+            "A funding proposal is awaiting approval. Withdraw it first.", code="funding_proposed"
+        )
     require_transition(
         program_workflow.SCHOLARSHIP_ELIGIBILITY_TRANSITIONS,
         enrollment.scholarship_eligibility,
         decision,
-        what="scholarship eligibility",
+        what="funding eligibility",
     )
     enrollment.scholarship_eligibility = decision
     enrollment.scholarship_eligibility_decided_by_user_id = actor.id
@@ -934,64 +1166,381 @@ async def decide_scholarship_eligibility(
     await _audit(
         db, enrollment=enrollment, actor=actor, action="PROGRAM_SCHOLARSHIP_ELIGIBILITY_DECIDED",
         description=(
-            "Marked eligible for scholarship consideration (decision pending)."
+            "Marked eligible for company-funding consideration (no funding approved yet)."
             if decision == ScholarshipEligibility.ELIGIBLE
-            else "Marked not eligible for scholarship consideration."
+            else "Marked not eligible for company-funding consideration."
         ),
         reason=note,
     )
     return enrollment
 
 
-async def decide_scholarship(
+# --- Fee obligation and company funding (docs/programs.md § 5a) ---
+
+
+def _require_fee_configured(program: RecruitmentProgram) -> tuple[Decimal, str]:
+    if program.training_fee_amount is None or not program.training_fee_currency:
+        raise ConflictError(
+            "Enter the program's finalized training fee and currency first.",
+            code="training_fee_not_configured",
+        )
+    return program.training_fee_amount, program.training_fee_currency
+
+
+def _fix_obligation(program: RecruitmentProgram, enrollment: ProgramEnrollment) -> None:
+    """Snapshots the program's fee onto the participant the first time it
+    is needed. Once fixed, later program fee edits never change it."""
+    if enrollment.fee_amount is not None:
+        return
+    fee, currency = _require_fee_configured(program)
+    enrollment.fee_amount = money(fee)
+    enrollment.fee_currency = currency
+    enrollment.company_contribution_amount = None
+    enrollment.candidate_payable_amount = money(fee)
+
+
+async def set_fee_obligation(
     db: AsyncSession,
     *,
     program: RecruitmentProgram,
     enrollment: ProgramEnrollment,
-    decision: ScholarshipStatus,
-    amount: Decimal | None,
-    currency: str | None,
-    note: str | None,
+    due_date: date | None,
     actor: User,
 ) -> ProgramEnrollment:
+    """Fixes the candidate's training-fee obligation (fee snapshot) and its
+    due date. Only for a selected candidate on a program that tracks fees."""
+    if not program.tracks_fee_payments:
+        raise ConflictError("This program doesn't track training-fee payments.")
+    application = await _application(db, enrollment)
+    if application.status not in program_workflow.SELECTED_STATUSES:
+        raise ConflictError(
+            "A fee obligation is recorded only for a selected candidate.", code="selection_required"
+        )
+    newly_fixed = enrollment.fee_amount is None
+    _fix_obligation(program, enrollment)
+    enrollment.fee_due_date = due_date
+    await db.flush()
+    await _audit(
+        db, enrollment=enrollment, actor=actor, action="PROGRAM_FEE_OBLIGATION_SET",
+        description=(
+            f"Training fee of {_money(enrollment.fee_amount, enrollment.fee_currency)} "
+            + ("fixed for this participant" if newly_fixed else "obligation updated")
+            + (f", due {due_date.isoformat()}." if due_date else ".")
+        ),
+    )
+    return enrollment
+
+
+async def _next_revision_number(db: AsyncSession, enrollment_id: uuid.UUID) -> int:
+    current = await db.scalar(
+        select(func.max(ProgramFundingRevision.revision_number)).where(
+            ProgramFundingRevision.enrollment_id == enrollment_id
+        )
+    )
+    return (current or 0) + 1
+
+
+async def _lock(db: AsyncSession, enrollment: ProgramEnrollment) -> None:
+    """Serializes money decisions on one participant (row lock until the
+    transaction ends), so two concurrent approvals or payments can't both
+    pass a check that only one of them should."""
+    await db.execute(
+        select(ProgramEnrollment.id).where(ProgramEnrollment.id == enrollment.id).with_for_update()
+    )
+
+
+async def _revision(
+    db: AsyncSession, enrollment: ProgramEnrollment, revision_id: uuid.UUID
+) -> ProgramFundingRevision:
+    await _lock(db, enrollment)
+    revision = await db.scalar(
+        select(ProgramFundingRevision)
+        .where(ProgramFundingRevision.id == revision_id)
+        .execution_options(populate_existing=True)
+    )
+    if (
+        revision is None
+        or revision.enrollment_id != enrollment.id
+        or revision.organization_id != enrollment.organization_id
+    ):
+        raise NotFoundError("Funding proposal not found.")
+    return revision
+
+
+async def _approved_revision(
+    db: AsyncSession, enrollment_id: uuid.UUID
+) -> ProgramFundingRevision | None:
+    revision: ProgramFundingRevision | None = await db.scalar(
+        select(ProgramFundingRevision).where(
+            ProgramFundingRevision.enrollment_id == enrollment_id,
+            ProgramFundingRevision.status == FundingRevisionStatus.APPROVED,
+        )
+    )
+    return revision
+
+
+def _describe_basis(funding_type: FundingType, value: Decimal, currency: str) -> str:
+    if funding_type == FundingType.PERCENTAGE:
+        return f"{value.normalize():f}% of the fee"
+    return f"fixed {_money(value, currency)}"
+
+
+async def propose_funding(
+    db: AsyncSession,
+    *,
+    program: RecruitmentProgram,
+    enrollment: ProgramEnrollment,
+    funding_type: FundingType,
+    value: Decimal,
+    reason: str | None,
+    actor: User,
+) -> ProgramFundingRevision:
+    """Proposes company funding for an eligible participant. The amounts are
+    computed from the participant's fixed fee (snapshotted now if needed)
+    and stored on the proposal. Nothing is approved here.
+
+    Before the candidate accepted any terms a new proposal is a REVISION
+    (or the INITIAL one); after acceptance it is an AMENDMENT and needs a
+    reason. An already-approved decision stays in force until a new
+    revision is approved."""
     if enrollment.scholarship_eligibility != ScholarshipEligibility.ELIGIBLE:
         raise ConflictError(
-            "Mark the candidate eligible for scholarship consideration first.",
+            "Mark the candidate eligible for funding consideration first.",
             code="scholarship_eligibility_required",
         )
-    require_transition(
-        program_workflow.SCHOLARSHIP_STATUS_TRANSITIONS, enrollment.scholarship_status, decision,
-        what="scholarship decision",
+    if enrollment.scholarship_status == ScholarshipStatus.DECLINED:
+        raise ConflictError(
+            "Funding was declined. Reopen funding eligibility to propose new terms.",
+            code="scholarship_decided",
+        )
+    _fix_obligation(program, enrollment)
+    assert enrollment.fee_amount is not None and enrollment.fee_currency is not None
+    try:
+        split = program_finance.split_fee(enrollment.fee_amount, funding_type, value)
+        program_finance.check_contribution_range(
+            split.company_contribution, program.scholarship_amount_min, program.scholarship_amount_max
+        )
+    except FundingError as exc:
+        raise UnprocessableError(str(exc), code="invalid_funding") from exc
+    if program.scholarship_currency and program.scholarship_currency != enrollment.fee_currency:
+        raise UnprocessableError(
+            "Company funding and the training fee must be in the same currency.",
+            code="invalid_funding",
+        )
+
+    accepted = enrollment.funding_terms_accepted_at is not None
+    has_history = await db.scalar(
+        select(ProgramFundingRevision.id).where(ProgramFundingRevision.enrollment_id == enrollment.id).limit(1)
     )
-    if decision == ScholarshipStatus.APPROVED:
-        assert amount is not None and currency is not None
-        if program.scholarship_currency and currency != program.scholarship_currency:
-            raise UnprocessableError(
-                f"This program's scholarship is in {program.scholarship_currency}."
+    kind = (
+        FundingRevisionKind.AMENDMENT
+        if accepted
+        else (FundingRevisionKind.REVISION if has_history else FundingRevisionKind.INITIAL)
+    )
+    if kind == FundingRevisionKind.AMENDMENT and _blank(reason):
+        raise UnprocessableError(
+            "The candidate already accepted the current terms. Give the reason for this amendment.",
+            code="reason_required",
+        )
+
+    revision = ProgramFundingRevision(
+        organization_id=enrollment.organization_id,
+        enrollment_id=enrollment.id,
+        revision_number=await _next_revision_number(db, enrollment.id),
+        kind=kind,
+        status=FundingRevisionStatus.PROPOSED,
+        fee_amount=split.fee,
+        currency=enrollment.fee_currency,
+        funding_type=funding_type,
+        funding_value=money(value),
+        company_contribution_amount=split.company_contribution,
+        candidate_payable_amount=split.candidate_payable,
+        reason=reason.strip() if reason and reason.strip() else None,
+        proposed_by_user_id=actor.id,
+    )
+    db.add(revision)
+    try:
+        async with db.begin_nested():
+            await db.flush()
+    except IntegrityError as exc:
+        raise ConflictError(
+            "A funding proposal for this participant is already awaiting approval.",
+            code="funding_proposal_open",
+        ) from exc
+    if enrollment.scholarship_status == ScholarshipStatus.PENDING:
+        require_transition(
+            program_workflow.SCHOLARSHIP_STATUS_TRANSITIONS, enrollment.scholarship_status,
+            ScholarshipStatus.PROPOSED, what="funding decision",
+        )
+        enrollment.scholarship_status = ScholarshipStatus.PROPOSED
+    await db.flush()
+    await _audit(
+        db, enrollment=enrollment, actor=actor, action="PROGRAM_FUNDING_PROPOSED",
+        description=(
+            f"Funding revision {revision.revision_number} ({kind.value.lower()}) proposed: "
+            f"{_describe_basis(funding_type, revision.funding_value, revision.currency)} -> company "
+            f"{_money(split.company_contribution, revision.currency)}, candidate "
+            f"{_money(split.candidate_payable, revision.currency)} of "
+            f"{_money(split.fee, revision.currency)}. Awaiting approval."
+        ),
+        reason=revision.reason,
+    )
+    return revision
+
+
+async def decide_funding(
+    db: AsyncSession,
+    *,
+    program: RecruitmentProgram,
+    enrollment: ProgramEnrollment,
+    revision_id: uuid.UUID,
+    decision: FundingRevisionStatus,
+    note: str | None,
+    actor: User,
+) -> ProgramFundingRevision:
+    """APPROVED or REJECTED by a finance approver. With independent approval
+    configured, the approver can't be the proposer; nobody can approve
+    funding on their own application."""
+    revision = await _revision(db, enrollment, revision_id)
+    if decision not in (FundingRevisionStatus.APPROVED, FundingRevisionStatus.REJECTED):
+        raise UnprocessableError("A funding proposal is either approved or rejected.")
+    require_transition(
+        program_workflow.FUNDING_REVISION_TRANSITIONS, revision.status, decision,
+        what="funding proposal",
+    )
+    if program.funding_requires_independent_approval and revision.proposed_by_user_id == actor.id:
+        raise ForbiddenError(
+            "This program requires funding to be approved by someone other than the person "
+            "who proposed it."
+        )
+    candidate = await db.get(Candidate, enrollment.candidate_id)
+    if candidate is not None and candidate.email.strip().lower() == actor.email.strip().lower():
+        raise ForbiddenError("You can't decide funding on your own application.")
+    if decision == FundingRevisionStatus.REJECTED and _blank(note):
+        raise UnprocessableError("Give a reason for rejecting the proposal.", code="note_required")
+
+    previous = await _approved_revision(db, enrollment.id)
+    if decision == FundingRevisionStatus.APPROVED:
+        # The new terms must still cover what was already applied/disbursed
+        # (including under an approval recorded before funding revisions).
+        if await _disbursement_total(db, enrollment.id) > revision.company_contribution_amount:
+            raise ConflictError(
+                "More funding has already been applied or scheduled than this revision approves.",
+                code="disbursement_exceeds_approved",
             )
-        if program.scholarship_amount_min is not None and amount < program.scholarship_amount_min:
-            raise UnprocessableError("The amount is below the program's approved scholarship range.")
-        if program.scholarship_amount_max is not None and amount > program.scholarship_amount_max:
-            raise UnprocessableError("The amount is above the program's approved scholarship range.")
-        enrollment.approved_scholarship_amount = amount
-        enrollment.approved_scholarship_currency = currency
+        if previous is not None:
+            previous.status = FundingRevisionStatus.SUPERSEDED
+
+    revision.status = decision
+    revision.decided_by_user_id = actor.id
+    revision.decided_at = _now()
+    revision.decision_note = note.strip() if note and note.strip() else None
+
+    if decision == FundingRevisionStatus.APPROVED:
+        enrollment.scholarship_status = ScholarshipStatus.APPROVED
+        enrollment.approved_scholarship_amount = revision.company_contribution_amount
+        enrollment.approved_scholarship_currency = revision.currency
+        enrollment.company_contribution_amount = revision.company_contribution_amount
+        enrollment.candidate_payable_amount = revision.candidate_payable_amount
+        enrollment.scholarship_decided_by_user_id = actor.id
+        enrollment.scholarship_decided_at = revision.decided_at
+        enrollment.scholarship_decision_note = revision.decision_note
+        if revision.kind == FundingRevisionKind.AMENDMENT:
+            # Amended terms need the candidate's renewed acceptance.
+            enrollment.funding_terms_accepted_at = None
+            enrollment.funding_terms_accepted_revision = None
         if program.requires_agreement and enrollment.agreement_status == AgreementStatus.NOT_REQUIRED:
             enrollment.agreement_status = AgreementStatus.PENDING
         if enrollment.bond_duration_months is None:
             enrollment.bond_duration_months = program.bond_duration_months
-    enrollment.scholarship_status = decision
-    enrollment.scholarship_decided_by_user_id = actor.id
-    enrollment.scholarship_decided_at = _now()
-    enrollment.scholarship_decision_note = note.strip() if note and note.strip() else None
+        if enrollment.bond_duration_months:
+            enrollment.bond_applies_reason = (
+                f"Company funding approved (revision {revision.revision_number}: "
+                f"{_money(revision.company_contribution_amount, revision.currency)} of the "
+                f"{_money(revision.fee_amount, revision.currency)} training fee); the program's "
+                f"{enrollment.bond_duration_months}-month commitment applies under the "
+                "company's approved agreement."
+            )
+    elif enrollment.scholarship_status == ScholarshipStatus.PROPOSED:
+        # A rejected first proposal is the funding decision; a rejected
+        # revision of an approved decision leaves that decision in force.
+        enrollment.scholarship_status = ScholarshipStatus.DECLINED
+        enrollment.scholarship_decided_by_user_id = actor.id
+        enrollment.scholarship_decided_at = revision.decided_at
+        enrollment.scholarship_decision_note = revision.decision_note
     await db.flush()
     await _audit(
-        db, enrollment=enrollment, actor=actor, action="PROGRAM_SCHOLARSHIP_DECIDED",
+        db, enrollment=enrollment, actor=actor,
+        action="PROGRAM_FUNDING_APPROVED" if decision == FundingRevisionStatus.APPROVED else "PROGRAM_FUNDING_REJECTED",
         description=(
-            f"Scholarship approved: {_money(amount, currency)} (not yet disbursed)."
-            if decision == ScholarshipStatus.APPROVED
-            else "Scholarship declined."
+            f"Funding revision {revision.revision_number} approved: company "
+            f"{_money(revision.company_contribution_amount, revision.currency)}, candidate payable "
+            f"{_money(revision.candidate_payable_amount, revision.currency)} (not yet applied)."
+            if decision == FundingRevisionStatus.APPROVED
+            else f"Funding revision {revision.revision_number} rejected."
         ),
-        reason=enrollment.scholarship_decision_note,
+        reason=revision.decision_note,
+    )
+    return revision
+
+
+async def withdraw_funding_proposal(
+    db: AsyncSession,
+    *,
+    enrollment: ProgramEnrollment,
+    revision_id: uuid.UUID,
+    note: str | None,
+    actor: User,
+) -> ProgramFundingRevision:
+    revision = await _revision(db, enrollment, revision_id)
+    require_transition(
+        program_workflow.FUNDING_REVISION_TRANSITIONS, revision.status, FundingRevisionStatus.WITHDRAWN,
+        what="funding proposal",
+    )
+    revision.status = FundingRevisionStatus.WITHDRAWN
+    revision.decided_by_user_id = actor.id
+    revision.decided_at = _now()
+    revision.decision_note = note.strip() if note and note.strip() else None
+    if enrollment.scholarship_status == ScholarshipStatus.PROPOSED:
+        enrollment.scholarship_status = ScholarshipStatus.PENDING
+    await db.flush()
+    await _audit(
+        db, enrollment=enrollment, actor=actor, action="PROGRAM_FUNDING_WITHDRAWN",
+        description=f"Funding proposal (revision {revision.revision_number}) withdrawn.",
+        reason=revision.decision_note,
+    )
+    return revision
+
+
+async def accept_funding_terms(
+    db: AsyncSession,
+    *,
+    program: RecruitmentProgram,
+    enrollment: ProgramEnrollment,
+    accepted_on: date,
+    actor: User,
+) -> ProgramEnrollment:
+    """Records that the candidate accepted the approved funding terms (for a
+    program without a formal agreement; with one, signing records it)."""
+    if program.requires_agreement:
+        raise ConflictError(
+            "This program records acceptance through the signed agreement.",
+            code="agreement_required",
+        )
+    approved = await _approved_revision(db, enrollment.id)
+    if approved is None:
+        raise ConflictError("There are no approved funding terms to accept.", code="funding_not_approved")
+    if enrollment.funding_terms_accepted_revision == approved.revision_number:
+        raise ConflictError("The candidate already accepted these terms.", code="already_accepted")
+    enrollment.funding_terms_accepted_revision = approved.revision_number
+    enrollment.funding_terms_accepted_at = datetime.combine(accepted_on, time(), tzinfo=UTC)
+    await db.flush()
+    await _audit(
+        db, enrollment=enrollment, actor=actor, action="PROGRAM_FUNDING_TERMS_ACCEPTED",
+        description=(
+            f"Candidate's acceptance of funding revision {approved.revision_number} recorded "
+            f"({accepted_on.isoformat()})."
+        ),
     )
     return enrollment
 
@@ -1018,12 +1567,15 @@ async def record_disbursement(
     note: str | None,
     actor: User,
 ) -> ScholarshipDisbursement:
+    """Company funding applied to the fee / paid out, as recorded by
+    finance — never more than the approved contribution."""
     if enrollment.scholarship_status != ScholarshipStatus.APPROVED:
-        raise ConflictError("Disbursements can be recorded only for an approved scholarship.")
+        raise ConflictError("Funding can be applied only once it is approved.")
+    await _lock(db, enrollment)
     assert enrollment.approved_scholarship_amount is not None
     if await _disbursement_total(db, enrollment.id) + amount > enrollment.approved_scholarship_amount:
         raise UnprocessableError(
-            "Disbursements can't add up to more than the approved scholarship amount.",
+            "Applied funding can't add up to more than the approved company contribution.",
             code="disbursement_exceeds_approved",
         )
     disbursement = ScholarshipDisbursement(
@@ -1043,7 +1595,7 @@ async def record_disbursement(
     await _audit(
         db, enrollment=enrollment, actor=actor, action="PROGRAM_SCHOLARSHIP_DISBURSEMENT_RECORDED",
         description=(
-            f"Scholarship disbursement of {_money(amount, disbursement.currency)} recorded as "
+            f"Company funding of {_money(amount, disbursement.currency)} recorded as "
             f"{status.value.lower()}."
         ),
     )
@@ -1076,7 +1628,7 @@ async def update_disbursement(
     await _audit(
         db, enrollment=enrollment, actor=actor, action="PROGRAM_SCHOLARSHIP_DISBURSEMENT_UPDATED",
         description=(
-            f"Scholarship disbursement of {_money(disbursement.amount, disbursement.currency)} "
+            f"Company funding of {_money(disbursement.amount, disbursement.currency)} "
             f"marked {status.value.lower()}."
         ),
         reason=note,
@@ -1098,11 +1650,32 @@ async def record_fee_payment(
     actor: User,
 ) -> ProgramFeePayment:
     """Manual record of a payment the candidate made outside the platform
-    (no gateway; nothing is charged or stored beyond a receipt reference)."""
+    (no gateway; nothing is charged or stored beyond a receipt reference).
+    Needs a fixed obligation, matches its currency, and can't take the
+    total paid past the candidate's payable amount."""
     if not program.tracks_fee_payments:
         raise ConflictError("This program doesn't track training-fee payments.")
-    if program.training_fee_currency and currency != program.training_fee_currency:
-        raise UnprocessableError(f"This program's fee is in {program.training_fee_currency}.")
+    if enrollment.fee_amount is None or enrollment.candidate_payable_amount is None:
+        raise ConflictError(
+            "Record the candidate's fee obligation before recording payments.",
+            code="fee_obligation_required",
+        )
+    if currency != enrollment.fee_currency:
+        raise UnprocessableError(f"This participant's fee is in {enrollment.fee_currency}.")
+    if _blank(reference):
+        raise UnprocessableError(
+            "Enter the receipt or transaction reference that confirms this payment.",
+            code="reference_required",
+        )
+    await _lock(db, enrollment)
+    paid = (await _paid_totals(db, [enrollment.id])).get(enrollment.id, Decimal("0"))
+    if paid + amount > enrollment.candidate_payable_amount:
+        raise UnprocessableError(
+            "This payment would take the total paid past the candidate's payable amount "
+            f"({_money(enrollment.candidate_payable_amount, enrollment.fee_currency)}; "
+            f"already recorded {_money(paid, enrollment.fee_currency)}).",
+            code="payment_exceeds_payable",
+        )
     payment = ProgramFeePayment(
         organization_id=enrollment.organization_id,
         enrollment_id=enrollment.id,
@@ -1149,6 +1722,9 @@ async def void_fee_payment(
     return payment
 
 
+# --- Training ---
+
+
 async def update_training(
     db: AsyncSession,
     *,
@@ -1158,13 +1734,25 @@ async def update_training(
     duration_months: int | None,
     start_date: date | None,
     end_date: date | None,
+    completed_on: date | None,
+    note: str | None,
     actor: User,
 ) -> ProgramEnrollment:
+    """Full-time training (6 or 12 months). Enrolling fixes the fee
+    obligation when the program tracks fees; the planned end follows from
+    start + duration unless HR enters one; completion needs its date;
+    withdrawal/termination needs a reason."""
     if not program.tracks_training:
         raise ConflictError("This program doesn't track training.")
     application = await _application(db, enrollment)
     if application.status not in program_workflow.SELECTED_STATUSES:
         raise ConflictError("Only a selected candidate can be enrolled in training.", code="selection_required")
+    if enrollment.scholarship_status == ScholarshipStatus.PROPOSED:
+        raise ConflictError(
+            "Decide the pending funding proposal before changing training, so the candidate's "
+            "fee obligation is settled.",
+            code="funding_proposed",
+        )
     if status != enrollment.training_status:
         require_transition(
             program_workflow.TRAINING_TRANSITIONS, enrollment.training_status, status, what="training"
@@ -1177,18 +1765,49 @@ async def update_training(
             raise UnprocessableError(
                 "That duration isn't one of this program's training options."
             )
+        if (
+            program.tracks_fee_payments
+            and program.training_fee_amount is not None
+            and program.training_fee_currency
+        ):
+            # Fixed now when the fee is finalized; while only approved fee
+            # wording exists, enrollment proceeds and finance fixes the
+            # obligation once the amount is decided.
+            _fix_obligation(program, enrollment)
+    if status == TrainingStatus.IN_PROGRESS and (start_date or enrollment.training_start_date) is None:
+        raise UnprocessableError("Enter the date training started.")
+    if status == TrainingStatus.COMPLETED and completed_on is None:
+        raise UnprocessableError("Enter the date training was completed.")
+    if status in program_workflow.TRAINING_ENDED_EARLY and _blank(note):
+        raise UnprocessableError("Give the reason training ended early.", code="note_required")
+
     if duration is not None:
         enrollment.training_duration_months = duration
     if start_date is not None:
         enrollment.training_start_date = start_date
     if end_date is not None:
         enrollment.training_end_date = end_date
+    elif enrollment.training_start_date and enrollment.training_duration_months and (
+        start_date is not None or enrollment.training_end_date is None
+    ):
+        enrollment.training_end_date = reapply_service.add_months(
+            datetime.combine(enrollment.training_start_date, time(), tzinfo=UTC),
+            enrollment.training_duration_months,
+        ).date()
     if (
         enrollment.training_start_date
         and enrollment.training_end_date
         and enrollment.training_end_date < enrollment.training_start_date
     ):
         raise UnprocessableError("Training can't end before it starts.")
+    if completed_on is not None:
+        if enrollment.training_start_date and completed_on < enrollment.training_start_date:
+            raise UnprocessableError("Training can't be completed before it starts.")
+        enrollment.training_completed_on = completed_on
+    if status == TrainingStatus.ENROLLED and enrollment.training_enrolled_at is None:
+        enrollment.training_enrolled_at = _now()
+    if note and note.strip():
+        enrollment.training_outcome_note = note.strip()
     previous = enrollment.training_status
     enrollment.training_status = status
     await db.flush()
@@ -1199,6 +1818,151 @@ async def update_training(
             f"{status.value.replace('_', ' ').lower()}"
             + (f" ({enrollment.training_duration_months} months)." if enrollment.training_duration_months else ".")
         ),
+        reason=note.strip() if note and note.strip() else None,
+    )
+    return enrollment
+
+
+_OPEN_TRAINING = frozenset({TrainingStatus.ENROLLED, TrainingStatus.IN_PROGRESS})
+
+
+async def add_milestone(
+    db: AsyncSession,
+    *,
+    enrollment: ProgramEnrollment,
+    title: str,
+    description: str | None,
+    due_on: date | None,
+    actor: User,
+) -> TrainingMilestone:
+    if enrollment.training_status not in _OPEN_TRAINING:
+        raise ConflictError("Milestones can be added only while training is enrolled or in progress.")
+    milestone = TrainingMilestone(
+        organization_id=enrollment.organization_id,
+        enrollment_id=enrollment.id,
+        title=title.strip(),
+        description=description.strip() if description and description.strip() else None,
+        due_on=due_on,
+        created_by_user_id=actor.id,
+        updated_by_user_id=actor.id,
+    )
+    db.add(milestone)
+    await db.flush()
+    await _audit(
+        db, enrollment=enrollment, actor=actor, action="PROGRAM_TRAINING_MILESTONE_ADDED",
+        description=f'Training milestone "{milestone.title}" added'
+        + (f", due {due_on.isoformat()}." if due_on else "."),
+    )
+    return milestone
+
+
+async def update_milestone(
+    db: AsyncSession,
+    *,
+    enrollment: ProgramEnrollment,
+    milestone_id: uuid.UUID,
+    status: MilestoneStatus,
+    completed_on: date | None,
+    note: str | None,
+    actor: User,
+) -> TrainingMilestone:
+    milestone = await db.get(TrainingMilestone, milestone_id)
+    if milestone is None or milestone.enrollment_id != enrollment.id:
+        raise NotFoundError("Milestone not found.")
+    if enrollment.training_status not in _OPEN_TRAINING:
+        raise ConflictError("Training has ended; its milestones can no longer change.")
+    if status == MilestoneStatus.COMPLETED and completed_on is None:
+        raise UnprocessableError("Enter the date the milestone was completed.")
+    milestone.status = status
+    milestone.completed_on = completed_on if status == MilestoneStatus.COMPLETED else None
+    if note is not None:
+        milestone.note = note.strip() or None
+    milestone.updated_by_user_id = actor.id
+    await db.flush()
+    await _audit(
+        db, enrollment=enrollment, actor=actor, action="PROGRAM_TRAINING_MILESTONE_UPDATED",
+        description=f'Training milestone "{milestone.title}" marked {status.value.lower()}.',
+    )
+    return milestone
+
+
+# --- Employment progression ---
+
+
+async def update_employment_review(
+    db: AsyncSession,
+    *,
+    program: RecruitmentProgram,
+    enrollment: ProgramEnrollment,
+    status: EmploymentReviewStatus,
+    role_title: str | None,
+    department_id: uuid.UUID | None,
+    proposed_start_date: date | None,
+    note: str | None,
+    actor: User,
+    can_approve: bool,
+) -> ProgramEnrollment:
+    """IN_REVIEW starts the company's employment decision (after training is
+    completed, when the program tracks training). APPROVED / NOT_PROCEEDING
+    is the decision itself and needs `program.employment.approve`; approval
+    needs the intended role and proposed start date. Never automatic."""
+    if not program.tracks_employment:
+        raise ConflictError("This program doesn't track employment progression.")
+    application = await _application(db, enrollment)
+    if application.status not in program_workflow.SELECTED_STATUSES:
+        raise ConflictError("Only a selected candidate can be considered for employment.", code="selection_required")
+    require_transition(
+        program_workflow.EMPLOYMENT_REVIEW_TRANSITIONS, enrollment.employment_review_status, status,
+        what="employment review",
+    )
+    if status == EmploymentReviewStatus.IN_REVIEW and program.tracks_training and (
+        enrollment.training_status != TrainingStatus.COMPLETED
+    ):
+        raise ConflictError(
+            "Record the training as completed before starting the employment review.",
+            code="training_completion_required",
+        )
+    if status in (EmploymentReviewStatus.APPROVED, EmploymentReviewStatus.NOT_PROCEEDING):
+        if not can_approve:
+            raise ForbiddenError("You don't have permission to decide employment progression.")
+    if role_title is not None:
+        enrollment.employment_role_title = role_title.strip() or None
+    if department_id is not None:
+        department = await db.get(Department, department_id)
+        if department is None or department.organization_id != enrollment.organization_id:
+            raise NotFoundError("Department not found.")
+        enrollment.employment_department_id = department_id
+    if proposed_start_date is not None:
+        enrollment.employment_proposed_start_date = proposed_start_date
+    if status == EmploymentReviewStatus.APPROVED and (
+        not enrollment.employment_role_title or enrollment.employment_proposed_start_date is None
+    ):
+        raise UnprocessableError("Enter the intended role and proposed start date to approve employment.")
+    if status == EmploymentReviewStatus.NOT_PROCEEDING:
+        if _blank(note):
+            raise UnprocessableError("Give the reason for not proceeding.", code="note_required")
+        if enrollment.offer_status in (OfferStatus.OFFERED, OfferStatus.ACCEPTED):
+            raise ConflictError("Withdraw the employment offer first.", code="offer_outstanding")
+    if status in (EmploymentReviewStatus.APPROVED, EmploymentReviewStatus.NOT_PROCEEDING):
+        enrollment.employment_decided_by_user_id = actor.id
+        enrollment.employment_decided_at = _now()
+        enrollment.employment_decision_note = note.strip() if note and note.strip() else None
+    previous = enrollment.employment_review_status
+    enrollment.employment_review_status = status
+    await db.flush()
+    await _audit(
+        db, enrollment=enrollment, actor=actor, action="PROGRAM_EMPLOYMENT_REVIEW_UPDATED",
+        description=(
+            f"Employment review {previous.value.replace('_', ' ').lower()} -> "
+            f"{status.value.replace('_', ' ').lower()}"
+            + (
+                f" ({enrollment.employment_role_title}, from "
+                f"{enrollment.employment_proposed_start_date.isoformat()})."
+                if status == EmploymentReviewStatus.APPROVED and enrollment.employment_proposed_start_date
+                else "."
+            )
+        ),
+        reason=note.strip() if note and note.strip() else None,
     )
     return enrollment
 
@@ -1219,6 +1983,11 @@ async def update_offer(
         raise ConflictError(
             "A full-time offer can be recorded only for a selected candidate.", code="selection_required"
         )
+    if status == OfferStatus.OFFERED and enrollment.employment_review_status != EmploymentReviewStatus.APPROVED:
+        raise ConflictError(
+            "Approve the employment review (role and start date) before making an offer.",
+            code="employment_approval_required",
+        )
     require_transition(
         program_workflow.OFFER_TRANSITIONS, enrollment.offer_status, status, what="employment offer"
     )
@@ -1234,13 +2003,54 @@ async def update_offer(
     return enrollment
 
 
+async def _link_employee(
+    db: AsyncSession, *, enrollment: ProgramEnrollment, candidate: Candidate, joined_on: date, actor: User
+) -> Employee:
+    """The team-hierarchy record for a participant who joined: an existing
+    active employee with the same email is linked (never duplicated);
+    otherwise one is created from the approved role and department."""
+    existing = await db.scalar(
+        select(Employee).where(
+            Employee.organization_id == enrollment.organization_id,
+            func.lower(Employee.email) == candidate.email.strip().lower(),
+            Employee.deleted_at.is_(None),
+            Employee.employment_status == EmploymentStatus.ACTIVE,
+        )
+    )
+    if existing is not None:
+        return existing
+    try:
+        payload = EmployeeCreateRequest(
+            full_name=candidate.full_name,
+            email=candidate.email,
+            designation=enrollment.employment_role_title,
+            department_id=enrollment.employment_department_id,
+            joining_date=joined_on,
+        )
+    except ValidationError as exc:
+        raise UnprocessableError(
+            "The candidate's details can't be used for an employee record "
+            "(check their email address), so joining wasn't recorded.",
+            code="employee_record_invalid",
+        ) from exc
+    return await employee_service.create_employee(
+        db, organization_id=enrollment.organization_id, actor=actor, payload=payload
+    )
+
+
 async def record_joining(
     db: AsyncSession, *, enrollment: ProgramEnrollment, joined_on: date, actor: User
 ) -> ProgramEnrollment:
     if enrollment.offer_status != OfferStatus.ACCEPTED:
         raise ConflictError("Record an accepted offer before the joining date.", code="program_offer_required")
+    if enrollment.joined_on is not None:
+        raise ConflictError("The joining date is already recorded.", code="already_joined")
     application = await _application(db, enrollment)
     enrollment.joined_on = joined_on
+    employee = await _link_employee(
+        db, enrollment=enrollment, candidate=application.candidate, joined_on=joined_on, actor=actor
+    )
+    enrollment.employee_id = employee.id
     await db.flush()
     if application.status == ApplicationStatus.SELECTED:
         await application_service.change_status(
@@ -1248,42 +2058,131 @@ async def record_joining(
         )
     await _audit(
         db, enrollment=enrollment, actor=actor, action="PROGRAM_JOINED",
-        description=f"Joined full-time employment on {joined_on.isoformat()}.",
+        description=f"Joined full-time employment on {joined_on.isoformat()} (employee record linked).",
     )
     return enrollment
+
+
+# --- Agreement and bond ---
+
+
+async def _terms_snapshot(
+    db: AsyncSession, program: RecruitmentProgram, enrollment: ProgramEnrollment
+) -> dict[str, Any]:
+    approved = await _approved_revision(db, enrollment.id)
+    if approved is None:
+        # Funding approved before funding revisions existed (migration
+        # 5e6f70819203): only the approved amount was recorded.
+        return {
+            "funding_revision": None,
+            "currency": enrollment.approved_scholarship_currency,
+            "company_contribution": (
+                str(enrollment.approved_scholarship_amount)
+                if enrollment.approved_scholarship_amount is not None
+                else None
+            ),
+            "bond_duration_months": enrollment.bond_duration_months,
+            "program_terms_version": enrollment.terms_version_accepted,
+            "training_duration_months": enrollment.training_duration_months,
+        }
+    return {
+        "funding_revision": approved.revision_number,
+        "currency": approved.currency,
+        "training_fee": str(approved.fee_amount),
+        "funding_type": approved.funding_type.value,
+        "funding_value": str(approved.funding_value),
+        "company_contribution": str(approved.company_contribution_amount),
+        "candidate_payable": str(approved.candidate_payable_amount),
+        "bond_duration_months": enrollment.bond_duration_months,
+        "program_terms_version": enrollment.terms_version_accepted,
+        "training_duration_months": enrollment.training_duration_months,
+    }
 
 
 async def update_agreement(
     db: AsyncSession,
     *,
+    program: RecruitmentProgram,
     enrollment: ProgramEnrollment,
     status: AgreementStatus,
     reference: str | None,
+    version: str | None,
     signed_on: date | None,
+    note: str | None,
     actor: User,
 ) -> ProgramEnrollment:
-    """Tracks the company-approved agreement by reference — the platform
-    never generates or edits agreement wording."""
+    """Tracks the company-approved agreement by reference and version — the
+    platform never generates or edits agreement wording, and recording
+    SIGNED is a record of a signature that happened elsewhere, not an
+    electronic signature.
+
+    SENT freezes the terms being agreed (snapshot); SIGNED requires those
+    terms to still be the approved ones and records the candidate's
+    acceptance of them. A signed agreement ends as EXPIRED (its term has
+    run out) or TERMINATED (reason required)."""
     if status != enrollment.agreement_status:
         require_transition(
             program_workflow.AGREEMENT_TRANSITIONS, enrollment.agreement_status, status, what="agreement"
         )
     if reference is not None:
         enrollment.agreement_reference = reference.strip() or None
-    if status == AgreementStatus.SIGNED:
+    if version is not None:
+        enrollment.agreement_version = version.strip() or None
+    if status == AgreementStatus.SENT and enrollment.agreement_status != AgreementStatus.SENT:
+        if enrollment.scholarship_status != ScholarshipStatus.APPROVED:
+            raise ConflictError(
+                "The agreement applies only to a participant with approved company funding.",
+                code="funding_not_approved",
+            )
+        if not enrollment.agreement_version:
+            raise UnprocessableError("Enter the approved agreement version being sent.")
+        enrollment.agreement_terms_snapshot = await _terms_snapshot(db, program, enrollment)
+        enrollment.agreement_sent_at = _now()
+    if status == AgreementStatus.SIGNED and enrollment.agreement_status != AgreementStatus.SIGNED:
         if signed_on is None:
             raise UnprocessableError("Enter the date the agreement was signed.")
         if not enrollment.agreement_reference and not enrollment.agreement_document_storage_path:
             raise UnprocessableError(
                 "Record the approved agreement's reference or attach the signed copy first."
             )
+        approved = await _approved_revision(db, enrollment.id)
+        current = approved.revision_number if approved is not None else None
+        # An agreement sent before funding revisions existed has no snapshot;
+        # it can be signed only while no revision has been approved since.
+        sent_for = (enrollment.agreement_terms_snapshot or {}).get("funding_revision")
+        if sent_for != current:
+            raise ConflictError(
+                "The approved funding terms changed after this agreement was sent. Void it and "
+                "send the agreement for the current terms.",
+                code="agreement_terms_outdated",
+            )
         enrollment.agreement_signed_on = signed_on
+        enrollment.funding_terms_accepted_revision = current
+        enrollment.funding_terms_accepted_at = datetime.combine(signed_on, time(), tzinfo=UTC)
+    if status == AgreementStatus.EXPIRED and status != enrollment.agreement_status:
+        expiry = enrollment.agreement_expiry_date or enrollment.bond_end_date
+        if expiry is None or expiry > date.today():
+            raise ConflictError(
+                "An agreement can be marked expired only after its recorded end date.",
+                code="agreement_not_expired",
+            )
+    if status in (AgreementStatus.TERMINATED, AgreementStatus.VOID, AgreementStatus.DECLINED) and (
+        status != enrollment.agreement_status
+    ):
+        if _blank(note):
+            raise UnprocessableError("Give the reason for this agreement change.", code="note_required")
+    if note and note.strip():
+        enrollment.agreement_status_note = note.strip()
     previous = enrollment.agreement_status
     enrollment.agreement_status = status
     await db.flush()
     await _audit(
         db, enrollment=enrollment, actor=actor, action="PROGRAM_AGREEMENT_UPDATED",
-        description=f"Agreement {previous.value.replace('_', ' ').lower()} -> {status.value.replace('_', ' ').lower()}.",
+        description=(
+            f"Agreement {previous.value.replace('_', ' ').lower()} -> {status.value.replace('_', ' ').lower()}"
+            + (f" (version {enrollment.agreement_version})." if enrollment.agreement_version else ".")
+        ),
+        reason=note.strip() if note and note.strip() else None,
     )
     return enrollment
 
@@ -1297,9 +2196,10 @@ async def set_bond(
     actor: User,
 ) -> ProgramEnrollment:
     """The bond's start is not finalized as a business rule, so HR records
-    the actual start date; the end follows from the duration."""
+    the actual start date; the end (and the agreement's effective/expiry
+    dates) follow from the duration."""
     if enrollment.scholarship_status != ScholarshipStatus.APPROVED:
-        raise ConflictError("A bond applies only to an approved scholarship recipient.")
+        raise ConflictError("A bond applies only to a participant with approved company funding.")
     if enrollment.agreement_status != AgreementStatus.SIGNED:
         raise ConflictError("Record the signed agreement before the bond dates.", code="agreement_required")
     duration = duration_months or enrollment.bond_duration_months
@@ -1310,6 +2210,8 @@ async def set_bond(
     enrollment.bond_end_date = reapply_service.add_months(
         datetime.combine(start_date, time(), tzinfo=UTC), duration
     ).date()
+    enrollment.agreement_effective_date = start_date
+    enrollment.agreement_expiry_date = enrollment.bond_end_date
     await db.flush()
     await _audit(
         db, enrollment=enrollment, actor=actor, action="PROGRAM_BOND_RECORDED",
@@ -1371,7 +2273,48 @@ async def program_report(db: AsyncSession, program: RecruitmentProgram) -> Progr
     def count(predicate: Any) -> int:
         return sum(1 for view in views if predicate(view.enrollment))
 
+    today = date.today()
+    statuses = Counter(
+        program_finance.payment_status(
+            view.enrollment.candidate_payable_amount, view.fee_paid_total, view.enrollment.fee_due_date, today
+        )
+        for view in views
+    )
+    currencies = {v.enrollment.fee_currency for v in views if v.enrollment.fee_currency}
+    single_currency = next(iter(currencies)) if len(currencies) == 1 else None
+
+    def total(values: list[Decimal | None]) -> Decimal | None:
+        # Money is only summed within one currency.
+        if single_currency is None:
+            return None
+        return sum((v for v in values if v is not None), Decimal("0"))
+
     return ProgramReport(
+        funding_proposed=count(lambda e: e.scholarship_status == ScholarshipStatus.PROPOSED),
+        fee_currency=single_currency,
+        total_fees=total([v.enrollment.fee_amount for v in views]),
+        total_company_contribution=total([v.enrollment.company_contribution_amount for v in views]),
+        total_candidate_payable=total([v.enrollment.candidate_payable_amount for v in views]),
+        total_fees_paid=total([v.fee_paid_total for v in views]),
+        payments_overdue=statuses[program_finance.PaymentStatus.OVERDUE],
+        payments_completed=statuses[program_finance.PaymentStatus.PAID]
+        + statuses[program_finance.PaymentStatus.FULLY_FUNDED],
+        training_withdrawn=count(lambda e: e.training_status == TrainingStatus.WITHDRAWN),
+        training_terminated=count(lambda e: e.training_status == TrainingStatus.DISCONTINUED),
+        milestones_overdue=sum(
+            1
+            for view in views
+            for m in view.milestones
+            if m.status == MilestoneStatus.PENDING and m.due_on is not None and m.due_on < today
+        ),
+        employment_in_review=count(lambda e: e.employment_review_status == EmploymentReviewStatus.IN_REVIEW),
+        employment_approved=count(lambda e: e.employment_review_status == EmploymentReviewStatus.APPROVED),
+        employment_not_proceeding=count(
+            lambda e: e.employment_review_status == EmploymentReviewStatus.NOT_PROCEEDING
+        ),
+        affiliation_pending=sum(
+            1 for v in views if v.affiliation is not None and v.affiliation.status == AffiliationStatus.PENDING
+        ),
         applications=len(views),
         eligibility_pending=count(lambda e: e.eligibility_status == EligibilityStatus.PENDING),
         eligible=count(lambda e: e.eligibility_status == EligibilityStatus.ELIGIBLE),

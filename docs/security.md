@@ -218,9 +218,17 @@ properties, all implemented in `app/services/email_verification_service.py`:
   an unknown id (404 / refused), including when referenced from a test,
   drive or program. Permissions: `question_bank.read/manage`,
   `assessment.grade`, `campus_drive.read/manage` (institutions, affiliation),
-  `program.read/manage/finance.manage` (`docs/programs.md` § 7). Finance
-  records are omitted from responses for callers without
-  `program.finance.manage`.
+  `program.read/manage/finance.manage`, `program.employment.approve`,
+  `interview.read/manage` (`docs/programs.md` § 7). Finance records (fee,
+  contribution, payable, payments, terms snapshot) are omitted from
+  responses for callers without `program.finance.manage`. Interview
+  feedback is returned only to `interview.manage` holders and to the
+  interviewer who wrote it.
+- Separation of duties: nobody can verify their own campus affiliation
+  (reviewer email = candidate email → 403); a funding proposal can't be
+  approved by its proposer when the program requires independent approval
+  (default), and nobody can decide funding on their own application;
+  employment progression is decided only by `program.employment.approve`.
 - Campus affiliation evidence (verification records, student lists) is
   recruiter-only (`campus_drive.read` to view, `.manage` to change); no proof
   documents are collected. Signed program agreements are stored through the

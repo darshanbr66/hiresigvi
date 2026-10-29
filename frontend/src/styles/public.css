@@ -16,8 +16,7 @@
   top: 0;
   z-index: 20;
   padding: 0.7rem clamp(1rem, 4vw, 2rem);
-  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
-  backdrop-filter: saturate(1.4) blur(12px);
+  background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -45,15 +44,8 @@
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  background:
-    linear-gradient(120deg, var(--color-primary-soft), transparent 60%),
-    var(--color-surface);
+  background: var(--color-surface);
   box-shadow: var(--shadow-card), var(--highlight-top);
-}
-
-.public-hero .network-backdrop {
-  z-index: -1;
-  opacity: 0.45;
 }
 
 .public-hero h1 {
@@ -141,12 +133,6 @@
   overflow-x: clip;
 }
 
-.assess-backdrop {
-  position: fixed;
-  z-index: -1;
-  opacity: 0.35;
-}
-
 .assess-shell {
   max-width: 760px;
 }
@@ -168,8 +154,7 @@
   padding: 0.7rem 1rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--color-surface);
   box-shadow: var(--shadow-card);
 }
 
@@ -252,7 +237,8 @@
 
 .submission-success {
   border-color: var(--color-success-border);
-  background: linear-gradient(180deg, var(--color-active-bg), var(--color-surface) 65%);
+  border-top: 3px solid var(--pipeline-selected);
+  background: var(--color-surface);
   box-shadow: var(--shadow-raised);
 }
 
@@ -698,7 +684,8 @@
 
 .application-outcome-success {
   border-color: var(--color-success-border);
-  background: linear-gradient(180deg, var(--color-active-bg), var(--color-surface) 65%);
+  border-top: 3px solid var(--pipeline-selected);
+  background: var(--color-surface);
   text-align: center;
   padding: 2.5rem 2rem;
 }
@@ -774,7 +761,7 @@
 /* Recruiter: AI screen-out override (advisory decision, HR has final say). */
 .ai-override-card {
   border-color: var(--color-warn-text);
-  background: linear-gradient(180deg, var(--color-warn-bg), var(--color-surface) 70%);
+  background: var(--color-warn-bg);
 }
 
 .ai-override-card h2 {

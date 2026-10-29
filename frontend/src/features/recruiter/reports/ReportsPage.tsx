@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ApiError } from "../../../lib/apiClient";
 import { Alert } from "../../../shared/components/Alert";
 import { BarList } from "../../../shared/components/BarList";
+import { MetricCard } from "../../../shared/components/MetricCard";
+import { humanizeStatus, pipelineColor } from "../../../shared/lib/statusTone";
 import { useAuth } from "../../auth/AuthContext";
 import { getReportOverview } from "./api";
 
@@ -37,23 +39,22 @@ export function ReportsPage() {
 
       {reportQuery.isSuccess && (
         <>
-          <section className="card-grid">
-            <div className="stat-card">
-              <span className="stat-label">Total jobs</span>
-              <span className="stat-value">{reportQuery.data.total_jobs}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Open jobs</span>
-              <span className="stat-value">{reportQuery.data.open_jobs}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Candidates</span>
-              <span className="stat-value">{reportQuery.data.total_candidates}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Applications</span>
-              <span className="stat-value">{reportQuery.data.total_applications}</span>
-            </div>
+          <section className="stat-grid stat-grid-4" aria-label="Key figures">
+            <MetricCard label="Total jobs" value={reportQuery.data.total_jobs} icon="jobs" animate={false} />
+            <MetricCard
+              label="Open jobs"
+              value={reportQuery.data.open_jobs}
+              icon="jobs"
+              tone="brand"
+              animate={false}
+            />
+            <MetricCard label="Candidates" value={reportQuery.data.total_candidates} icon="candidates" animate={false} />
+            <MetricCard
+              label="Applications"
+              value={reportQuery.data.total_applications}
+              icon="applications"
+              animate={false}
+            />
           </section>
 
           <div className="detail-grid">
@@ -65,10 +66,12 @@ export function ReportsPage() {
                 <BarList
                   rows={reportQuery.data.applications_by_status.map((row) => ({
                     id: row.status,
-                    label: row.status,
+                    label: humanizeStatus(row.status),
                     count: row.count,
                   }))}
                   total={reportQuery.data.total_applications}
+                  tone={(status) => pipelineColor(status)}
+                  showShare
                 />
               )}
             </section>

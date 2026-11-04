@@ -66,6 +66,10 @@ export function ProgramsPage() {
           </p>
         </div>
         {canManage && !forbidden && (
+          <div className="btn-group">
+          <button type="button" className="btn btn-ghost" onClick={() => navigate("/recruiter/programs/settings")}>
+            Default settings
+          </button>
           <button
             type="button"
             className="btn btn-primary"
@@ -78,6 +82,7 @@ export function ProgramsPage() {
           >
             + New program
           </button>
+          </div>
         )}
       </div>
 
@@ -166,7 +171,9 @@ export function ProgramsPage() {
               />
             </label>
             <p className="field-hint">
-              The program is saved as a draft. Nothing is shown to candidates until you publish it.
+              The program is saved as a draft, starting from the organization's default program settings
+              (durations, fee, funding, internship, bond, eligibility) — change any of them before publishing.
+              Nothing is shown to candidates until you publish it.
             </p>
             {error && <Alert>{error}</Alert>}
             <div className="btn-group">

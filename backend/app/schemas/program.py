@@ -12,7 +12,8 @@ from app.models.candidate import EducationLevel
 from app.models.institution import AffiliationStatus, AffiliationVerificationMethod
 from app.models.interview import InterviewOutcome, InterviewStatus
 from app.models.program import (
-    APPROVED_TRAINING_DURATIONS,
+    MAX_DURATION_MONTHS,
+    MIN_DURATION_MONTHS,
     AgreementStatus,
     DisbursementStatus,
     EligibilityStatus,
@@ -20,6 +21,9 @@ from app.models.program import (
     FundingRevisionKind,
     FundingRevisionStatus,
     FundingType,
+    InternshipMode,
+    InternshipOutcome,
+    InternshipStatus,
     MilestoneStatus,
     OfferStatus,
     PaymentMethod,
@@ -45,6 +49,35 @@ def _currency(value: str | None) -> str | None:
     return code
 
 
+def check_durations(value: list[int] | None) -> list[int] | None:
+    """Training-duration options in months: any whole number in the
+    configured bounds — which ones a program offers is HR configuration."""
+    if value is None:
+        return None
+    if any(not MIN_DURATION_MONTHS <= v <= MAX_DURATION_MONTHS for v in value):
+        raise ValueError(
+            f"Each duration must be between {MIN_DURATION_MONTHS} and {MAX_DURATION_MONTHS} months."
+        )
+    return sorted(set(value))
+
+
+def check_study_year_rules(value: dict[str, list[int]] | None) -> dict[str, list[int]] | None:
+    """{"MTECH": [2], "PHD": []}: keys are education levels, values the
+    eligible study years for that level (empty = any year)."""
+    if value is None:
+        return None
+    cleaned: dict[str, list[int]] = {}
+    for level, years in value.items():
+        try:
+            EducationLevel(level)
+        except ValueError as exc:
+            raise ValueError(f"Unknown education level in study-year rules: {level}.") from exc
+        if any(not 1 <= y <= 10 for y in years):
+            raise ValueError("Study years must be between 1 and 10.")
+        cleaned[level] = sorted(set(years))
+    return cleaned
+
+
 def _clean_list(values: list[str] | None, *, limit: int) -> list[str] | None:
     if values is None:
         return None
@@ -68,8 +101,13 @@ class _ProgramFields(BaseModel):
     expected_completion_from: date | None = None
     expected_completion_to: date | None = None
     eligibility_notes: str | None = Field(default=None, max_length=5000)
+    study_year_rules: dict[str, list[int]] | None = None
+    minimum_cgpa: Decimal | None = Field(default=None, ge=0, le=10, max_digits=4, decimal_places=2)
+    minimum_percentage: Decimal | None = Field(
+        default=None, ge=0, le=100, max_digits=5, decimal_places=2
+    )
 
-    training_duration_options: list[int] | None = Field(default=None, max_length=2)
+    training_duration_options: list[int] | None = Field(default=None, max_length=12)
     training_fee_amount: Decimal | None = _money()
     training_fee_currency: str | None = None
     fee_payment_terms: str | None = Field(default=None, max_length=5000)
@@ -84,6 +122,7 @@ class _ProgramFields(BaseModel):
 
     employment_pathway: str | None = Field(default=None, max_length=5000)
     employment_job_id: uuid.UUID | None = None
+    bond_required: bool | None = None
     bond_duration_months: int | None = Field(default=None, ge=1, le=120)
     bond_terms_summary: str | None = Field(default=None, max_length=10000)
     bond_start_rule: str | None = Field(default=None, max_length=5000)
@@ -95,14 +134,26 @@ class _ProgramFields(BaseModel):
     required_documents: list[str] | None = Field(default=None, max_length=20)
     candidate_disclosures: str | None = Field(default=None, max_length=20000)
     terms_version: str | None = Field(default=None, max_length=50)
+    requires_interview: bool | None = None
+    capacity: int | None = Field(default=None, ge=1, le=100000)
+    max_applications: int | None = Field(default=None, ge=1, le=1000000)
 
     tracks_fee_payments: bool | None = None
     tracks_training: bool | None = None
     tracks_employment: bool | None = None
     requires_agreement: bool | None = None
+    tracks_internship: bool | None = None
+    internship_duration_months: int | None = Field(
+        default=None, ge=MIN_DURATION_MONTHS, le=MAX_DURATION_MONTHS
+    )
+    internship_stipend_amount: Decimal | None = _money()
+    internship_stipend_currency: str | None = None
+    internship_terms: str | None = Field(default=None, max_length=5000)
+    internship_required_for_employment: bool | None = None
 
     company_funding_type: FundingType | None = None
-    company_funding_value: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    #: 0 = the program's standard is no company funding.
+    company_funding_value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
     funding_requires_independent_approval: bool | None = None
     affiliation_verification_method: AffiliationVerificationMethod | None = None
 
@@ -121,7 +172,7 @@ class _ProgramFields(BaseModel):
             raise ValueError("Choose not required, institution email domain, or manual review.")
         return value
 
-    @field_validator("training_fee_currency", "scholarship_currency")
+    @field_validator("training_fee_currency", "scholarship_currency", "internship_stipend_currency")
     @classmethod
     def _check_currency(cls, value: str | None) -> str | None:
         return _currency(value)
@@ -129,11 +180,14 @@ class _ProgramFields(BaseModel):
     @field_validator("training_duration_options")
     @classmethod
     def _check_durations(cls, value: list[int] | None) -> list[int] | None:
-        if value is None:
-            return None
-        if any(v not in APPROVED_TRAINING_DURATIONS for v in value):
-            raise ValueError("Training duration must be 6 or 12 months.")
-        return sorted(set(value))
+        return check_durations(value)
+
+    @field_validator("study_year_rules")
+    @classmethod
+    def _check_study_year_rules(
+        cls, value: dict[str, list[int]] | None
+    ) -> dict[str, list[int]] | None:
+        return check_study_year_rules(value)
 
     @field_validator("eligible_study_years")
     @classmethod
@@ -179,12 +233,17 @@ class _ProgramFields(BaseModel):
             and self.application_closes_at <= self.application_opens_at
         ):
             raise ValueError("Applications must close after they open.")
+        if self.internship_stipend_amount is not None and not self.internship_stipend_currency:
+            raise ValueError("Enter the currency of the internship stipend.")
         return self
 
 
 class ProgramCreateRequest(_ProgramFields):
     title: str = Field(min_length=1, max_length=255)
     description: str = Field(min_length=1, max_length=20000)
+    #: Start from the organization's default program settings for every
+    #: value not given here (docs/programs.md § 1a).
+    apply_organization_defaults: bool = True
 
 
 class ProgramUpdateRequest(_ProgramFields):
@@ -211,6 +270,9 @@ class ProgramResponse(BaseModel):
     expected_completion_from: date | None
     expected_completion_to: date | None
     eligibility_notes: str | None
+    study_year_rules: dict[str, list[int]] = {}
+    minimum_cgpa: Decimal | None = None
+    minimum_percentage: Decimal | None = None
     training_duration_options: list[int]
     training_fee_amount: Decimal | None
     training_fee_currency: str | None
@@ -225,6 +287,7 @@ class ProgramResponse(BaseModel):
     employment_pathway: str | None
     employment_job_id: uuid.UUID | None = None
     employment_job_title: str | None = None
+    bond_required: bool = True
     bond_duration_months: int | None
     bond_terms_summary: str | None
     bond_start_rule: str | None
@@ -236,14 +299,27 @@ class ProgramResponse(BaseModel):
     required_documents: list[str]
     candidate_disclosures: str | None
     terms_version: str | None
+    requires_interview: bool = True
+    capacity: int | None = None
+    max_applications: int | None = None
     tracks_fee_payments: bool
     tracks_training: bool
     tracks_employment: bool
     requires_agreement: bool
+    tracks_internship: bool = False
+    internship_duration_months: int | None = None
+    internship_stipend_amount: Decimal | None = None
+    internship_stipend_currency: str | None = None
+    internship_terms: str | None = None
+    internship_required_for_employment: bool = False
     company_funding_type: FundingType | None = None
     company_funding_value: Decimal | None = None
     funding_requires_independent_approval: bool = True
     affiliation_verification_method: AffiliationVerificationMethod = AffiliationVerificationMethod.NONE
+    #: The latest recorded configuration version (None = never published).
+    current_version: int | None = None
+    #: Candidates currently selected (SELECTED/HIRED), against `capacity`.
+    selected_count: int = 0
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -260,6 +336,8 @@ class ProgramSummary(BaseModel):
     application_opens_at: datetime | None
     application_closes_at: datetime | None
     enrollment_count: int
+    capacity: int | None = None
+    tracks_internship: bool = False
     created_at: datetime
 
 
@@ -292,6 +370,9 @@ class PublicProgramView(BaseModel):
     expected_completion_from: date | None
     expected_completion_to: date | None
     eligibility_notes: str | None
+    study_year_rules: dict[str, list[int]] = {}
+    minimum_cgpa: Decimal | None = None
+    minimum_percentage: Decimal | None = None
     training_duration_options: list[int]
     training_fee_amount: Decimal | None
     training_fee_currency: str | None
@@ -304,8 +385,14 @@ class PublicProgramView(BaseModel):
     scholarship_disbursement_timing: str | None
     scholarship_disclosure: str | None
     employment_pathway: str | None
+    bond_required: bool = True
     bond_duration_months: int | None
     bond_terms_summary: str | None
+    tracks_internship: bool = False
+    internship_duration_months: int | None = None
+    internship_stipend_amount: Decimal | None = None
+    internship_stipend_currency: str | None = None
+    internship_terms: str | None = None
     company_funding_type: FundingType | None = None
     company_funding_value: Decimal | None = None
     has_assessment: bool
@@ -338,6 +425,12 @@ class ProgramEducationDeclaration(BaseModel):
     institution_id: uuid.UUID | None = None
     institution_name: str | None = Field(default=None, max_length=255)
     expected_completion_date: date | None = None
+    #: Declared academic standing (10-point CGPA and/or percentage), checked
+    #: against the program's minimums when it sets them.
+    cgpa: Decimal | None = Field(default=None, ge=0, le=10, max_digits=4, decimal_places=2)
+    percentage_score: Decimal | None = Field(
+        default=None, ge=0, le=100, max_digits=5, decimal_places=2
+    )
     terms_version: str = Field(min_length=1, max_length=50)
     terms_accepted: bool
 
@@ -497,6 +590,112 @@ class InterviewCloseRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=2000)
 
 
+class InternshipEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    event: str
+    from_status: str | None
+    to_status: str
+    note: str | None
+    details: dict[str, object]
+    actor_user_id: uuid.UUID | None
+    created_at: datetime
+
+
+class InternshipResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    status: InternshipStatus
+    mode: InternshipMode | None
+    role_title: str | None
+    duration_months: int
+    start_date: date | None
+    end_date: date | None
+    original_end_date: date | None
+    extension_count: int
+    #: Withheld (None) from users without program.finance.manage.
+    stipend_amount: Decimal | None
+    stipend_currency: str | None
+    supervisor_employee_id: uuid.UUID | None
+    supervisor_name: str | None = None
+    completed_on: date | None
+    ended_on: date | None
+    outcome: InternshipOutcome | None
+    evaluation_rating: int | None
+    evaluation_note: str | None
+    end_reason: str | None
+    events: list[InternshipEventResponse] = []
+    created_at: datetime
+
+
+class InternshipPlanRequest(BaseModel):
+    """Plans the internship, or edits one that hasn't started. The stipend
+    comes from the program; only finance users may set a different one."""
+
+    duration_months: int | None = Field(default=None, ge=MIN_DURATION_MONTHS, le=MAX_DURATION_MONTHS)
+    start_date: date | None = None
+    mode: InternshipMode | None = None
+    role_title: str | None = Field(default=None, max_length=255)
+    supervisor_employee_id: uuid.UUID | None = None
+    stipend_amount: Decimal | None = _money()
+    stipend_currency: str | None = None
+
+    @field_validator("stipend_currency")
+    @classmethod
+    def _check_currency(cls, value: str | None) -> str | None:
+        return _currency(value)
+
+
+class InternshipStatusRequest(BaseModel):
+    """ACTIVE (start), COMPLETED (with the evaluation), TERMINATED or
+    WITHDRAWN (with a reason)."""
+
+    status: Literal[
+        InternshipStatus.ACTIVE,
+        InternshipStatus.COMPLETED,
+        InternshipStatus.TERMINATED,
+        InternshipStatus.WITHDRAWN,
+    ]
+    on_date: date | None = None
+    outcome: InternshipOutcome | None = None
+    rating: int | None = Field(default=None, ge=1, le=5)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class InternshipExtensionRequest(BaseModel):
+    new_end_date: date
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class ProgramVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    version_number: int
+    event: str
+    changed_fields: list[str]
+    snapshot: dict[str, object]
+    created_by_user_id: uuid.UUID | None
+    created_by_name: str | None = None
+    created_at: datetime
+
+
+class FundingPreviewRequest(BaseModel):
+    """Asks the authoritative fee split (app/services/program_finance.py)."""
+
+    fee: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    funding_type: FundingType | None = None
+    value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+
+
+class FundingPreviewResponse(BaseModel):
+    fee: Decimal
+    company_contribution: Decimal
+    candidate_payable: Decimal
+
+
 class EnrollmentResultSummary(BaseModel):
     """Staff-only test outcome (never on a candidate-facing schema)."""
 
@@ -523,6 +722,9 @@ class EnrollmentResponse(BaseModel):
     institution_id: uuid.UUID | None
     institution_name: str
     expected_completion_date: date | None
+    cgpa: Decimal | None = None
+    percentage_score: Decimal | None = None
+    program_version_number: int | None = None
     terms_version_accepted: str
     terms_accepted_at: datetime
     eligibility_status: EligibilityStatus
@@ -575,6 +777,7 @@ class EnrollmentResponse(BaseModel):
     bond_start_date: date | None
     bond_end_date: date | None
     bond_applies_reason: str | None = None
+    internship: InternshipResponse | None = None
     interviews: list[InterviewResponse] = []
     #: The program/interview permission codes the *viewer* holds, so the UI
     #: offers only actions the server will accept (it still re-checks).
@@ -725,9 +928,9 @@ class TrainingUpdateRequest(BaseModel):
 
     @field_validator("duration_months")
     @classmethod
-    def _approved(cls, value: int | None) -> int | None:
-        if value is not None and value not in APPROVED_TRAINING_DURATIONS:
-            raise ValueError("Training duration must be 6 or 12 months.")
+    def _in_range(cls, value: int | None) -> int | None:
+        if value is not None:
+            check_durations([value])
         return value
 
 
@@ -796,3 +999,8 @@ class ProgramReport(BaseModel):
     employment_in_review: int = 0
     employment_approved: int = 0
     employment_not_proceeding: int = 0
+    internship_planned: int = 0
+    internship_active: int = 0
+    internship_completed: int = 0
+    internship_qualified: int = 0
+    internship_ended_early: int = 0

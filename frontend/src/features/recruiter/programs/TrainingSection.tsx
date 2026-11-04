@@ -19,8 +19,9 @@ const ACTION_LABEL: Partial<Record<TrainingStatus, string>> = {
   DISCONTINUED: "Terminate",
 };
 
-/** Full-time training (6 or 12 months) — a training-to-employment pathway,
- * not an internship — with milestones staff track to completion. */
+/** Full-time training (for one of the program's configured durations) — a
+ * training-to-employment pathway, separate from any internship — with
+ * milestones staff track to completion. */
 export function TrainingSection({ e, program, busy, can, run }: SectionProps) {
   const [form, setForm] = useState({ duration: "", start: "", end: "", completedOn: "", note: "" });
   const [milestone, setMilestone] = useState({ title: "", due: "" });

@@ -38,6 +38,15 @@ const unfinalized: PublicProgramView = {
   expected_completion_from: null,
   expected_completion_to: null,
   eligibility_notes: null,
+  study_year_rules: {},
+  minimum_cgpa: null,
+  minimum_percentage: null,
+  bond_required: true,
+  tracks_internship: false,
+  internship_duration_months: null,
+  internship_stipend_amount: null,
+  internship_stipend_currency: null,
+  internship_terms: null,
   training_duration_options: [6, 12],
   training_fee_amount: null,
   training_fee_currency: null,
@@ -112,10 +121,30 @@ describe("ProgramApplyPage", () => {
 
     fireEvent.change(screen.getByLabelText("Education level"), { target: { value: "MTECH" } });
     fireEvent.change(screen.getByLabelText(/Current year of study/), { target: { value: "1" } });
-    expect(screen.getByText("This program is open to year 2 students.")).toBeInTheDocument();
+    expect(screen.getByText("For this education level the program is open to year 2 students.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("I have read and accept these program terms."));
     expect(screen.queryByText("Read and accept the program terms.")).not.toBeInTheDocument();
+  });
+
+  it("applies per-level study years and asks for the academic standing a program requires", async () => {
+    vi.spyOn(careersApi, "getPublicProgram").mockResolvedValue({
+      ...unfinalized,
+      eligible_study_years: [],
+      study_year_rules: { MTECH: [2], PHD: [] },
+      minimum_cgpa: "7.50",
+      minimum_percentage: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Academic standing: a CGPA of at least 7.5 (out of 10)")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Education level"), { target: { value: "PHD" } });
+    fireEvent.change(screen.getByLabelText(/Current year of study/), { target: { value: "4" } });
+    expect(screen.queryByText(/open to year/)).not.toBeInTheDocument();
+    expect(screen.getByText("Enter a CGPA of at least 7.5 (out of 10).")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("CGPA (out of 10)"), { target: { value: "8.1" } });
+    expect(screen.queryByText("Enter a CGPA of at least 7.5 (out of 10).")).not.toBeInTheDocument();
   });
 
   it("shows only the closed message for an unavailable program", async () => {

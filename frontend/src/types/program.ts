@@ -50,6 +50,32 @@ export type PaymentStatus =
   | "OVERDUE";
 export type InterviewStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 export type InterviewOutcome = "PASS" | "FAIL" | "ON_HOLD";
+export type InternshipStatus = "PLANNED" | "ACTIVE" | "COMPLETED" | "TERMINATED" | "WITHDRAWN";
+export type InternshipMode = "ON_SITE" | "REMOTE" | "HYBRID";
+export type InternshipOutcome = "QUALIFIED" | "NOT_QUALIFIED";
+
+export const INTERNSHIP_STATUS_LABELS: Record<InternshipStatus, string> = {
+  PLANNED: "Planned",
+  ACTIVE: "In progress",
+  COMPLETED: "Completed",
+  TERMINATED: "Terminated",
+  WITHDRAWN: "Withdrawn",
+};
+
+export const INTERNSHIP_MODE_LABELS: Record<InternshipMode, string> = {
+  ON_SITE: "On-site",
+  REMOTE: "Remote",
+  HYBRID: "Hybrid",
+};
+
+/** Mirrors INTERNSHIP_TRANSITIONS in app/workflows/program_workflow.py. */
+export const INTERNSHIP_TRANSITIONS: Record<InternshipStatus, InternshipStatus[]> = {
+  PLANNED: ["ACTIVE", "WITHDRAWN", "TERMINATED"],
+  ACTIVE: ["COMPLETED", "WITHDRAWN", "TERMINATED"],
+  COMPLETED: [],
+  TERMINATED: [],
+  WITHDRAWN: [],
+};
 
 export const FUNDING_TYPE_LABELS: Record<FundingType, string> = {
   FIXED_AMOUNT: "Fixed amount",
@@ -91,7 +117,14 @@ export const PROGRAM_TRANSITIONS: Record<ProgramStatus, ProgramStatus[]> = {
   ARCHIVED: [],
 };
 
-export const APPROVED_TRAINING_DURATIONS = [6, 12] as const;
+/** Bounds of a configurable duration (training or internship), in months.
+ * Which durations a program offers is HR configuration. Mirrors
+ * MIN_/MAX_DURATION_MONTHS in app/models/program.py. */
+export const MIN_DURATION_MONTHS = 1;
+export const MAX_DURATION_MONTHS = 60;
+
+/** education level -> eligible study years for that level (empty = any). */
+export type StudyYearRules = Partial<Record<EducationLevel, number[]>>;
 
 export interface ProgramFields {
   eligible_education_levels?: EducationLevel[] | null;
@@ -101,6 +134,9 @@ export interface ProgramFields {
   expected_completion_from?: string | null;
   expected_completion_to?: string | null;
   eligibility_notes?: string | null;
+  study_year_rules?: StudyYearRules | null;
+  minimum_cgpa?: string | null;
+  minimum_percentage?: string | null;
   training_duration_options?: number[] | null;
   training_fee_amount?: string | null;
   training_fee_currency?: string | null;
@@ -113,6 +149,7 @@ export interface ProgramFields {
   scholarship_disbursement_timing?: string | null;
   scholarship_disclosure?: string | null;
   employment_pathway?: string | null;
+  bond_required?: boolean | null;
   bond_duration_months?: number | null;
   bond_terms_summary?: string | null;
   bond_start_rule?: string | null;
@@ -123,10 +160,19 @@ export interface ProgramFields {
   required_documents?: string[] | null;
   candidate_disclosures?: string | null;
   terms_version?: string | null;
+  requires_interview?: boolean | null;
+  capacity?: number | null;
+  max_applications?: number | null;
   tracks_fee_payments?: boolean | null;
   tracks_training?: boolean | null;
   tracks_employment?: boolean | null;
   requires_agreement?: boolean | null;
+  tracks_internship?: boolean | null;
+  internship_duration_months?: number | null;
+  internship_stipend_amount?: string | null;
+  internship_stipend_currency?: string | null;
+  internship_terms?: string | null;
+  internship_required_for_employment?: boolean | null;
   company_funding_type?: FundingType | null;
   company_funding_value?: string | null;
   funding_requires_independent_approval?: boolean | null;
@@ -136,6 +182,8 @@ export interface ProgramFields {
 export interface ProgramCreateRequest extends ProgramFields {
   title: string;
   description: string;
+  /** Start from the organization's default program settings (server default: true). */
+  apply_organization_defaults?: boolean;
 }
 
 export interface ProgramUpdateRequest extends ProgramFields {
@@ -156,6 +204,9 @@ export interface ProgramResponse {
   expected_completion_from: string | null;
   expected_completion_to: string | null;
   eligibility_notes: string | null;
+  study_year_rules: StudyYearRules;
+  minimum_cgpa: string | null;
+  minimum_percentage: string | null;
   training_duration_options: number[];
   training_fee_amount: string | null;
   training_fee_currency: string | null;
@@ -168,6 +219,7 @@ export interface ProgramResponse {
   scholarship_disbursement_timing: string | null;
   scholarship_disclosure: string | null;
   employment_pathway: string | null;
+  bond_required: boolean;
   bond_duration_months: number | null;
   bond_terms_summary: string | null;
   bond_start_rule: string | null;
@@ -179,14 +231,27 @@ export interface ProgramResponse {
   required_documents: string[];
   candidate_disclosures: string | null;
   terms_version: string | null;
+  requires_interview: boolean;
+  capacity: number | null;
+  max_applications: number | null;
   tracks_fee_payments: boolean;
   tracks_training: boolean;
   tracks_employment: boolean;
   requires_agreement: boolean;
+  tracks_internship: boolean;
+  internship_duration_months: number | null;
+  internship_stipend_amount: string | null;
+  internship_stipend_currency: string | null;
+  internship_terms: string | null;
+  internship_required_for_employment: boolean;
   company_funding_type: FundingType | null;
   company_funding_value: string | null;
   funding_requires_independent_approval: boolean;
   affiliation_verification_method: AffiliationMethod;
+  /** Latest recorded configuration version (null = never published). */
+  current_version: number | null;
+  /** Candidates currently selected (SELECTED/HIRED), against `capacity`. */
+  selected_count: number;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -202,7 +267,50 @@ export interface ProgramSummary {
   application_opens_at: string | null;
   application_closes_at: string | null;
   enrollment_count: number;
+  capacity: number | null;
+  tracks_internship: boolean;
   created_at: string;
+}
+
+export interface ProgramVersionResponse {
+  id: string;
+  version_number: number;
+  event: string;
+  changed_fields: string[];
+  snapshot: Record<string, unknown>;
+  created_by_user_id: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface FundingPreviewResponse {
+  fee: string;
+  company_contribution: string;
+  candidate_payable: string;
+}
+
+/** Organization-wide starting values for new programs (docs/programs.md § 1a). */
+export interface ProgramSettingsValues {
+  training_duration_options: number[];
+  training_fee_amount: string | null;
+  currency: string | null;
+  company_funding_type: FundingType | null;
+  company_funding_value: string | null;
+  funding_requires_independent_approval: boolean;
+  internship_duration_months: number | null;
+  bond_required: boolean;
+  bond_duration_months: number | null;
+  eligible_education_levels: EducationLevel[];
+  study_year_rules: StudyYearRules;
+}
+
+export interface ProgramSettingsResponse extends ProgramSettingsValues {
+  updated_by_user_id: string | null;
+  updated_by_name: string | null;
+  updated_at: string;
+  preview_company_contribution: string | null;
+  preview_candidate_payable: string | null;
+  can_edit: boolean;
 }
 
 export interface ProgramReport {
@@ -244,6 +352,47 @@ export interface ProgramReport {
   employment_in_review: number;
   employment_approved: number;
   employment_not_proceeding: number;
+  internship_planned: number;
+  internship_active: number;
+  internship_completed: number;
+  internship_qualified: number;
+  internship_ended_early: number;
+}
+
+export interface InternshipEventResponse {
+  id: string;
+  event: string;
+  from_status: string | null;
+  to_status: string;
+  note: string | null;
+  details: Record<string, unknown>;
+  actor_user_id: string | null;
+  created_at: string;
+}
+
+export interface InternshipResponse {
+  id: string;
+  status: InternshipStatus;
+  mode: InternshipMode | null;
+  role_title: string | null;
+  duration_months: number;
+  start_date: string | null;
+  end_date: string | null;
+  original_end_date: string | null;
+  extension_count: number;
+  /** Withheld (null) from users without program.finance.manage. */
+  stipend_amount: string | null;
+  stipend_currency: string | null;
+  supervisor_employee_id: string | null;
+  supervisor_name: string | null;
+  completed_on: string | null;
+  ended_on: string | null;
+  outcome: InternshipOutcome | null;
+  evaluation_rating: number | null;
+  evaluation_note: string | null;
+  end_reason: string | null;
+  events: InternshipEventResponse[];
+  created_at: string;
 }
 
 export interface FeePaymentResponse {
@@ -354,6 +503,9 @@ export interface EnrollmentResponse {
   institution_id: string | null;
   institution_name: string;
   expected_completion_date: string | null;
+  cgpa: string | null;
+  percentage_score: string | null;
+  program_version_number: number | null;
   terms_version_accepted: string;
   terms_accepted_at: string;
   eligibility_status: EligibilityStatus;
@@ -411,6 +563,7 @@ export interface EnrollmentResponse {
   bond_start_date: string | null;
   bond_end_date: string | null;
   bond_applies_reason: string | null;
+  internship: InternshipResponse | null;
   interviews: InterviewResponse[];
   viewer_permissions: string[];
   finance_visible: boolean;
@@ -455,6 +608,9 @@ export interface PublicProgramView {
   expected_completion_from: string | null;
   expected_completion_to: string | null;
   eligibility_notes: string | null;
+  study_year_rules: StudyYearRules;
+  minimum_cgpa: string | null;
+  minimum_percentage: string | null;
   training_duration_options: number[];
   training_fee_amount: string | null;
   training_fee_currency: string | null;
@@ -467,8 +623,14 @@ export interface PublicProgramView {
   scholarship_disbursement_timing: string | null;
   scholarship_disclosure: string | null;
   employment_pathway: string | null;
+  bond_required: boolean;
   bond_duration_months: number | null;
   bond_terms_summary: string | null;
+  tracks_internship: boolean;
+  internship_duration_months: number | null;
+  internship_stipend_amount: string | null;
+  internship_stipend_currency: string | null;
+  internship_terms: string | null;
   company_funding_type: FundingType | null;
   company_funding_value: string | null;
   has_assessment: boolean;
@@ -498,6 +660,9 @@ export interface ProgramDeclaration {
   institution_id: string;
   institution_name: string;
   expected_completion_date: string;
+  /** Declared academic standing: 10-point CGPA and/or percentage. */
+  cgpa: string;
+  percentage_score: string;
   terms_version: string;
   terms_accepted: boolean;
 }

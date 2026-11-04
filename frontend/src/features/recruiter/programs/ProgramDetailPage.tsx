@@ -13,6 +13,7 @@ import {
   EDUCATION_LEVEL_LABELS,
   PROGRAM_STATUS_LABELS,
   PROGRAM_TRANSITIONS,
+  type EducationLevel,
   type EnrollmentResponse,
   type ProgramReport,
   type ProgramStatus,
@@ -23,6 +24,7 @@ import {
   getProgram,
   getProgramReport,
   listEnrollments,
+  listProgramVersions,
   updateProgram,
 } from "./api";
 import { EnrollmentPanel } from "./EnrollmentPanel";
@@ -74,7 +76,24 @@ const REPORT_ITEMS: { key: CountKey; label: string }[] = [
   { key: "agreements_signed", label: "Agreements signed" },
 ];
 
-type ParticipantView = "all" | "verification" | "funding" | "trainees" | "milestones" | "payments" | "completed" | "employment";
+const INTERNSHIP_REPORT_ITEMS: { key: CountKey; label: string }[] = [
+  { key: "internship_planned", label: "Internships planned" },
+  { key: "internship_active", label: "Internships in progress" },
+  { key: "internship_completed", label: "Internships completed" },
+  { key: "internship_qualified", label: "Internships qualified" },
+  { key: "internship_ended_early", label: "Internships ended early" },
+];
+
+type ParticipantView =
+  | "all"
+  | "verification"
+  | "funding"
+  | "trainees"
+  | "interns"
+  | "milestones"
+  | "payments"
+  | "completed"
+  | "employment";
 
 /** Quick HR views over the loaded participants (every value is server data). */
 const PARTICIPANT_VIEWS: { value: ParticipantView; label: string; test: (e: EnrollmentResponse) => boolean }[] = [
@@ -82,6 +101,7 @@ const PARTICIPANT_VIEWS: { value: ParticipantView; label: string; test: (e: Enro
   { value: "verification", label: "Institution verification pending", test: (e) => e.affiliation?.status === "PENDING" },
   { value: "funding", label: "Funding awaiting approval", test: (e) => e.scholarship_status === "PROPOSED" },
   { value: "trainees", label: "Active trainees", test: (e) => ["ENROLLED", "IN_PROGRESS"].includes(e.training_status) },
+  { value: "interns", label: "Active interns", test: (e) => e.internship?.status === "ACTIVE" },
   { value: "milestones", label: "Overdue milestones", test: (e) => e.milestones_overdue > 0 },
   { value: "payments", label: "Overdue payments", test: (e) => e.payment_status === "OVERDUE" },
   { value: "completed", label: "Completed training", test: (e) => e.training_status === "COMPLETED" },
@@ -104,6 +124,7 @@ export function ProgramDetailPage() {
   const [confirming, setConfirming] = useState<ProgramStatus | null>(null);
   const [openEnrollment, setOpenEnrollment] = useState<string | null>(null);
   const [view, setView] = useState<ParticipantView>("all");
+  const [showVersions, setShowVersions] = useState(false);
 
   const key = ["recruiter", "programs", programId];
   const programQuery = useQuery({ queryKey: key, queryFn: () => getProgram(programId, token), enabled: accessToken !== null });
@@ -111,6 +132,11 @@ export function ProgramDetailPage() {
     queryKey: [...key, "report"],
     queryFn: () => getProgramReport(programId, token),
     enabled: accessToken !== null,
+  });
+  const versionsQuery = useQuery({
+    queryKey: [...key, "versions"],
+    queryFn: () => listProgramVersions(programId, token),
+    enabled: accessToken !== null && showVersions,
   });
   const enrollmentsQuery = useQuery({
     queryKey: [...key, "enrollments"],
@@ -123,6 +149,7 @@ export function ProgramDetailPage() {
     onSuccess: (saved) => {
       queryClient.setQueryData(key, saved);
       void queryClient.invalidateQueries({ queryKey: ["recruiter", "programs"] });
+      void queryClient.invalidateQueries({ queryKey: [...key, "versions"] });
       setEditing(null);
       showToast("Program saved.", "success");
     },
@@ -253,6 +280,14 @@ export function ProgramDetailPage() {
               {program.eligible_study_years.length ? ` · year ${program.eligible_study_years.join("/")}` : ""}
               {program.eligible_specializations.length ? ` · ${program.eligible_specializations.join(", ")}` : ""}
               {program.eligible_institutions.length ? ` · ${program.eligible_institutions.map((i) => i.name).join(", ")}` : ""}
+              {Object.entries(program.study_year_rules)
+                .filter(([, years]) => years?.length)
+                .map(([level, years]) => ` · ${EDUCATION_LEVEL_LABELS[level as EducationLevel]} year ${years!.join("/")}`)
+                .join("")}
+              {program.minimum_cgpa ? ` · CGPA ≥ ${Number(program.minimum_cgpa)}` : ""}
+              {program.minimum_percentage
+                ? ` ${program.minimum_cgpa ? "or" : "·"} ≥ ${Number(program.minimum_percentage)}%`
+                : ""}
             </span>
           </div>
           <div className="detail-row">
@@ -275,14 +310,39 @@ export function ProgramDetailPage() {
           <div className="detail-row">
             <span className="detail-row-label">Commitment</span>
             <span>
-              {program.bond_duration_months ? `${program.bond_duration_months} months` : "Not set"}
-              {program.bond_start_rule ? ` · starts: ${program.bond_start_rule}` : " · start rule not finalized"}
+              {!program.bond_required
+                ? "No bond for this program"
+                : `${program.bond_duration_months ? `${program.bond_duration_months} months` : "Not set"}${
+                    program.bond_start_rule ? ` · starts: ${program.bond_start_rule}` : " · start rule not finalized"
+                  }`}
             </span>
           </div>
           <div className="detail-row">
             <span className="detail-row-label">Selection test</span>
             <span>{program.assessment_title ?? "None"}</span>
           </div>
+          <div className="detail-row">
+            <span className="detail-row-label">Selection</span>
+            <span>
+              {program.requires_interview ? "Interview required" : "No interview required"} ·{" "}
+              {program.capacity
+                ? `${program.selected_count} of ${program.capacity} places filled`
+                : `${program.selected_count} selected (no place limit)`}
+              {program.max_applications ? ` · up to ${program.max_applications} applications` : ""}
+            </span>
+          </div>
+          {program.tracks_internship && (
+            <div className="detail-row">
+              <span className="detail-row-label">Internship</span>
+              <span>
+                {program.internship_duration_months ? `${program.internship_duration_months} months` : "Duration not set"}
+                {money(program.internship_stipend_amount, program.internship_stipend_currency)
+                  ? ` · stipend ${money(program.internship_stipend_amount, program.internship_stipend_currency)} / month`
+                  : ""}
+                {program.internship_required_for_employment ? " · required before the employment review" : ""}
+              </span>
+            </div>
+          )}
           <div className="detail-row">
             <span className="detail-row-label">Applications</span>
             <span>
@@ -294,6 +354,41 @@ export function ProgramDetailPage() {
             <span className="detail-row-label">Terms</span>
             <span>{program.terms_version ? `Version ${program.terms_version}` : "Not set"}</span>
           </div>
+          <div className="detail-row">
+            <span className="detail-row-label">Configuration</span>
+            <span>
+              {program.current_version ? `Version ${program.current_version}` : "Not published yet"}{" "}
+              {program.current_version && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowVersions((v) => !v)}>
+                  {showVersions ? "Hide history" : "Show history"}
+                </button>
+              )}
+            </span>
+          </div>
+          {showVersions && (
+            <div aria-label="Configuration history">
+              {versionsQuery.isPending && <p role="status">Loading history…</p>}
+              {versionsQuery.isError && <Alert>Could not load the configuration history.</Alert>}
+              {versionsQuery.isSuccess && (
+                <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
+                  {versionsQuery.data.map((v) => (
+                    <li key={v.id}>
+                      <strong>v{v.version_number}</strong> · {humanizeStatus(v.event)} ·{" "}
+                      {new Date(v.created_at).toLocaleString()}
+                      {v.created_by_name ? ` by ${v.created_by_name}` : ""}
+                      {v.changed_fields.length > 0 && (
+                        <span className="cell-sub">Changed: {v.changed_fields.map((f) => f.replace(/_/g, " ")).join(", ")}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="field-hint">
+                Each change to a published program is kept as a new version; every applicant's record shows the
+                version they applied under.
+              </p>
+            </div>
+          )}
         </section>
       )}
 
@@ -301,7 +396,7 @@ export function ProgramDetailPage() {
         <h2>Program report</h2>
         {reportQuery.isSuccess ? (
           <div className="funnel-grid">
-            {REPORT_ITEMS.map((item) => (
+            {[...REPORT_ITEMS, ...(program.tracks_internship ? INTERNSHIP_REPORT_ITEMS : [])].map((item) => (
               <div key={item.key} className="funnel-stat">
                 <span className="funnel-stat-value">{reportQuery.data[item.key]}</span>
                 <span className="funnel-stat-label">{item.label}</span>

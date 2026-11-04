@@ -35,7 +35,8 @@ export function splitFee(fee: string, type: FundingType, value: string): FeeSpli
   const feeCents = toCents(fee);
   if (feeCents === null) return "The training fee isn't set.";
   const valueCents = toCents(value);
-  if (valueCents === null || valueCents === 0n) return "Enter an amount or percentage greater than zero.";
+  // 0 is "zero funding" (the candidate pays the whole fee), as on the server.
+  if (valueCents === null) return "Enter a funding amount or percentage of zero or more.";
   let contribution: bigint;
   if (type === "PERCENTAGE") {
     if (valueCents > 10000n) return "A funding percentage can't be more than 100%.";

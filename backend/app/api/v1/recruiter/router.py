@@ -19,6 +19,7 @@ from app.api.v1.recruiter.jobs import router as jobs_router
 from app.api.v1.recruiter.notes import router as notes_router
 from app.api.v1.recruiter.notes import workspace_router as notes_workspace_router
 from app.api.v1.recruiter.notifications import router as notifications_router
+from app.api.v1.recruiter.program_settings import router as program_settings_router
 from app.api.v1.recruiter.programs import router as programs_router
 from app.api.v1.recruiter.question_bank import router as question_bank_router
 from app.api.v1.recruiter.reports import router as reports_router
@@ -39,6 +40,7 @@ router.include_router(campus_drives_router)
 router.include_router(institutions_router)
 router.include_router(question_bank_router)
 router.include_router(programs_router)
+router.include_router(program_settings_router)
 router.include_router(notes_router)
 router.include_router(notes_workspace_router)
 router.include_router(calendar_router)

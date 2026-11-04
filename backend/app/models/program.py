@@ -11,11 +11,13 @@ vs disbursement, training, fee payments, the employment offer, the agreement
 and the bond — lives on one `ProgramEnrollment` per application, with every
 state governed by app/workflows/program_workflow.py.
 
-Business values the company has not finalized (training fee, scholarship
-amount, disbursement timing, bond start rule, agreement wording) are all
-nullable: nothing here invents them. A program can only be published once
-HR has supplied either the value or business-approved disclosure wording
-for each (app/services/program_service.py::publication_problems).
+Business values (training durations, fee, company funding, internship
+terms, bond) are configured per program by HR. New programs start from the
+organization's editable defaults (`OrganizationProgramSettings`,
+app/models/program_settings.py) — never from constants here. A program can
+only be published once HR has supplied either the value or
+business-approved disclosure wording for each
+(app/services/program_service.py::publication_problems).
 """
 
 import uuid
@@ -48,11 +50,10 @@ from app.models.candidate import EducationLevel
 from app.models.institution import AffiliationVerificationMethod, Institution
 from app.models.job import Job
 
-#: The only training durations the business has approved (months).
-APPROVED_TRAINING_DURATIONS: frozenset[int] = frozenset({6, 12})
-#: The approved default commitment for scholarship recipients (months);
-#: HR can change it per program, it is never applied silently.
-DEFAULT_BOND_DURATION_MONTHS = 36
+#: Sanity bounds for any configured duration in months (training,
+#: internship). Which durations a program offers is HR configuration.
+MIN_DURATION_MONTHS = 1
+MAX_DURATION_MONTHS = 60
 
 
 class FundingType(StrEnum):
@@ -76,8 +77,33 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
     __tablename__ = "recruitment_programs"
     __table_args__ = (
         CheckConstraint(
-            "training_duration_options <@ ARRAY[6, 12]",
-            name="ck_recruitment_programs_training_durations_approved",
+            "cardinality(training_duration_options) = 0 OR "
+            "(1 <= ALL(training_duration_options) AND 60 >= ALL(training_duration_options))",
+            name="ck_recruitment_programs_training_durations_range",
+        ),
+        CheckConstraint(
+            "internship_duration_months IS NULL OR internship_duration_months BETWEEN 1 AND 60",
+            name="ck_recruitment_programs_internship_duration_range",
+        ),
+        CheckConstraint(
+            "internship_stipend_amount IS NULL OR "
+            "(internship_stipend_amount >= 0 AND internship_stipend_currency IS NOT NULL)",
+            name="ck_recruitment_programs_internship_stipend_valid",
+        ),
+        CheckConstraint(
+            "capacity IS NULL OR capacity > 0", name="ck_recruitment_programs_capacity_positive"
+        ),
+        CheckConstraint(
+            "max_applications IS NULL OR max_applications > 0",
+            name="ck_recruitment_programs_max_applications_positive",
+        ),
+        CheckConstraint(
+            "minimum_cgpa IS NULL OR (minimum_cgpa >= 0 AND minimum_cgpa <= 10)",
+            name="ck_recruitment_programs_minimum_cgpa_range",
+        ),
+        CheckConstraint(
+            "minimum_percentage IS NULL OR (minimum_percentage >= 0 AND minimum_percentage <= 100)",
+            name="ck_recruitment_programs_minimum_percentage_range",
         ),
         CheckConstraint(
             "training_fee_amount IS NULL OR training_fee_amount >= 0",
@@ -101,7 +127,7 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
             name="ck_recruitment_programs_funding_complete",
         ),
         CheckConstraint(
-            "company_funding_value IS NULL OR (company_funding_value > 0 AND "
+            "company_funding_value IS NULL OR (company_funding_value >= 0 AND "
             "(company_funding_type <> 'PERCENTAGE' OR company_funding_value <= 100))",
             name="ck_recruitment_programs_funding_value_valid",
         ),
@@ -135,6 +161,16 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
     expected_completion_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     expected_completion_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     eligibility_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Per-education-level study years, e.g. {"MTECH": [2]}: a level listed
+    #: here uses its own years instead of `eligible_study_years`; an empty
+    #: list means any year for that level.
+    study_year_rules: Mapped[dict[str, list[int]]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    #: Academic thresholds (CGPA on a 10-point scale / percentage). When both
+    #: are set, a candidate meeting either one qualifies.
+    minimum_cgpa: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    minimum_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
 
     # --- Training ---
     training_duration_options: Mapped[list[int]] = mapped_column(
@@ -174,9 +210,11 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
     employment_job_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True
     )
-    bond_duration_months: Mapped[int | None] = mapped_column(
-        Integer, nullable=True, default=DEFAULT_BOND_DURATION_MONTHS
+    #: Whether approved company funding carries a commitment (bond) at all.
+    bond_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
+    bond_duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bond_terms_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     bond_start_rule: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -198,6 +236,14 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
     )
     candidate_disclosures: Mapped[str | None] = mapped_column(Text, nullable=True)
     terms_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: Whether a selection decision needs the interview recorded as complete.
+    requires_interview: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    #: Most candidates who may be selected (SELECTED/HIRED); None = no limit.
+    capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Most applications accepted; None = no limit.
+    max_applications: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: How an applicant's membership of their institution is checked
     #: (docs/programs.md § 3a). NONE = not required, never "verified".
     #: Programs that existed before this column keep NONE (server default);
@@ -226,6 +272,20 @@ class RecruitmentProgram(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin,
     )
     requires_agreement: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
+    )
+    #: Internship stage (docs/programs.md § 5f). Off for programs created
+    #: before it existed.
+    tracks_internship: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    internship_duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    internship_stipend_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    internship_stipend_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    internship_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: When on, the employment review needs a completed internship whose
+    #: evaluation qualified the participant.
+    internship_required_for_employment: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
 
     created_by: Mapped[uuid.UUID] = mapped_column(
@@ -357,8 +417,15 @@ class ProgramEnrollment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, 
     __table_args__ = (
         Index("ix_program_enrollments_program_id", "program_id"),
         CheckConstraint(
-            "training_duration_months IS NULL OR training_duration_months IN (6, 12)",
-            name="ck_program_enrollments_training_duration_approved",
+            "training_duration_months IS NULL OR training_duration_months BETWEEN 1 AND 60",
+            name="ck_program_enrollments_training_duration_range",
+        ),
+        CheckConstraint(
+            "cgpa IS NULL OR (cgpa >= 0 AND cgpa <= 10)", name="ck_program_enrollments_cgpa_range"
+        ),
+        CheckConstraint(
+            "percentage_score IS NULL OR (percentage_score >= 0 AND percentage_score <= 100)",
+            name="ck_program_enrollments_percentage_range",
         ),
         CheckConstraint(
             "approved_scholarship_amount IS NULL OR approved_scholarship_amount >= 0",
@@ -423,6 +490,12 @@ class ProgramEnrollment(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, 
     )
     institution_name: Mapped[str] = mapped_column(String(255), nullable=False)
     expected_completion_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cgpa: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    percentage_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    #: The program configuration version in force when they applied
+    #: (`recruitment_program_versions`); NULL for applications made before
+    #: versions were recorded.
+    program_version_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     terms_version_accepted: Mapped[str] = mapped_column(String(50), nullable=False)
     terms_accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     disclosure_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
@@ -823,6 +896,168 @@ class ProgramFeePayment(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
     )
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     recorded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class RecruitmentProgramVersion(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
+    """An immutable snapshot of a program's configuration, written when it
+    is published and on every later change. Applicants record the version
+    they applied under, so later edits never blur what was in force for
+    them."""
+
+    __tablename__ = "recruitment_program_versions"
+    __table_args__ = (
+        Index(
+            "uq_recruitment_program_versions_program_number",
+            "program_id",
+            "version_number",
+            unique=True,
+        ),
+    )
+
+    program_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recruitment_programs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: PUBLISHED, UPDATED, or BASELINE (recorded on first need for a program
+    #: published before versions existed).
+    event: Mapped[str] = mapped_column(String(30), nullable=False)
+    changed_fields: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class InternshipStatus(StrEnum):
+    PLANNED = "PLANNED"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    #: Ended early by the company.
+    TERMINATED = "TERMINATED"
+    #: The participant left.
+    WITHDRAWN = "WITHDRAWN"
+
+
+class InternshipMode(StrEnum):
+    ON_SITE = "ON_SITE"
+    REMOTE = "REMOTE"
+    HYBRID = "HYBRID"
+
+
+class InternshipOutcome(StrEnum):
+    """The completion evaluation. QUALIFIED means *eligible for further
+    consideration* — never an employment decision."""
+
+    QUALIFIED = "QUALIFIED"
+    NOT_QUALIFIED = "NOT_QUALIFIED"
+
+
+class ProgramInternship(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+    """A participant's internship — related to, but separate from, their
+    training and their full-time employment. Its terms (duration, stipend)
+    are snapshotted from the program when it is planned, so later program
+    edits never change them; every change is an append-only
+    `ProgramInternshipEvent`."""
+
+    __tablename__ = "program_internships"
+    __table_args__ = (
+        CheckConstraint(
+            "duration_months BETWEEN 1 AND 60", name="ck_program_internships_duration_range"
+        ),
+        CheckConstraint(
+            "stipend_amount IS NULL OR (stipend_amount >= 0 AND stipend_currency IS NOT NULL)",
+            name="ck_program_internships_stipend_valid",
+        ),
+        CheckConstraint(
+            "end_date IS NULL OR start_date IS NULL OR end_date > start_date",
+            name="ck_program_internships_dates_ordered",
+        ),
+        CheckConstraint(
+            "(status = 'COMPLETED') = (outcome IS NOT NULL)",
+            name="ck_program_internships_outcome_on_completion",
+        ),
+        CheckConstraint(
+            "evaluation_rating IS NULL OR evaluation_rating BETWEEN 1 AND 5",
+            name="ck_program_internships_rating_range",
+        ),
+    )
+
+    enrollment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("program_enrollments.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    status: Mapped[InternshipStatus] = mapped_column(
+        Enum(InternshipStatus, name="program_internship_status", native_enum=True),
+        nullable=False,
+        default=InternshipStatus.PLANNED,
+        server_default=InternshipStatus.PLANNED.value,
+    )
+    mode: Mapped[InternshipMode | None] = mapped_column(
+        Enum(InternshipMode, name="program_internship_mode", native_enum=True), nullable=True
+    )
+    role_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    duration_months: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Planned end; after the start it moves only through a recorded extension.
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    original_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    extension_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    stipend_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    stipend_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    supervisor_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
+    completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ended_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    outcome: Mapped[InternshipOutcome | None] = mapped_column(
+        Enum(InternshipOutcome, name="program_internship_outcome", native_enum=True),
+        nullable=True,
+    )
+    evaluation_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    evaluation_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class ProgramInternshipEvent(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
+    """Append-only history of one internship (planned, started, updated,
+    extended, completed, ended)."""
+
+    __tablename__ = "program_internship_events"
+
+    internship_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("program_internships.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event: Mapped[str] = mapped_column(String(30), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(

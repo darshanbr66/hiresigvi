@@ -399,6 +399,36 @@ Added by migration `5e6f70819203` (`docs/programs.md` § 3a, § 5):
   STUDENT_ID_DOCUMENT, COORDINATOR_CONFIRMATION.
 - **assessment_results.pass_score_applied** (backfilled).
 
+Added by migration `6f7081920314` (`docs/programs.md` § 1a, § 2, § 5f):
+
+- **recruitment_programs**: the 6/12-month training check becomes a 1–60
+  month range; `company_funding_value` may be 0 (zero funding). New columns
+  `study_year_rules` (JSONB, level → years), `minimum_cgpa` (0–10),
+  `minimum_percentage` (0–100), `requires_interview` (default true),
+  `capacity`, `max_applications` (> 0 when set), `bond_required` (default
+  true), `tracks_internship` (default false), `internship_duration_months`
+  (1–60), `internship_stipend_amount/currency`, `internship_terms`,
+  `internship_required_for_employment`.
+- **program_enrollments**: training duration 1–60; declared `cgpa`,
+  `percentage_score`; `program_version_number` (NULL for applications made
+  before versions existed).
+- **organization_program_settings** — one row per organization (unique
+  `organization_id`, created on first read from the proposed initial
+  values): default training durations, fee and currency, funding basis and
+  value, independent-approval switch, internship duration, bond switch and
+  duration (1–120), eligible levels, study-year rules, last editor.
+- **recruitment_program_versions** — append-only configuration snapshots
+  (JSONB) per program: version number (unique per program), event
+  (BASELINE / PUBLISHED / UPDATED), changed fields, author.
+- **program_internships** — one per enrollment: status (PLANNED / ACTIVE /
+  COMPLETED / TERMINATED / WITHDRAWN), mode, role, snapshotted duration and
+  stipend, start/end/original end, extension count, supervisor (employee),
+  completion date and evaluation (outcome set ⇔ COMPLETED, rating 1–5),
+  end reason.
+- **program_internship_events** — append-only history of every internship
+  change (event, from/to status, note, details, actor).
+- Permission `program.settings.manage` (ORG_ADMIN).
+
 ### 3.9 Notes
 
 **notes**
@@ -504,6 +534,7 @@ Recent revisions (linear chain, current head `5e6f70819203`):
 | `3c4d5e6f7081` | recruitment programs, enrollments, disbursements, fee payments, candidate education fields |
 | `4d5e6f708192` | job employment types (internship / part-time / full-time) and type details |
 | `5e6f70819203` | program funding revisions, fee obligations, training milestones, agreement terms, employment review, `application_interviews`, program affiliation verification, `pass_score_applied`, permissions `interview.read/manage`, `program.employment.approve` |
+| `6f7081920314` | organization program settings, program configuration versions, per-level study years, CGPA/percentage minimums, capacity and application limit, optional interview and bond, zero funding, configurable 1–60 month durations, internships and their events, permission `program.settings.manage`. Downgrade refuses while any program/participant uses a non-6/12 duration or a 0 funding value |
 
 All three are non-destructive on upgrade. Their downgrades drop what they
 added; `2b3c4d5e6f70`'s downgrade refuses to run while any question uses a

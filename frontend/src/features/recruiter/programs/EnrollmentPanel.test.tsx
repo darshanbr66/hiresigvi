@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../../shared/components/ToastContext";
 import type { EnrollmentResponse, FundingRevisionResponse, ProgramResponse } from "../../../types/program";
+import * as teamApi from "../team/api";
 import * as api from "./api";
 import { EnrollmentPanel } from "./EnrollmentPanel";
 
@@ -50,6 +51,10 @@ const selected: EnrollmentResponse = {
   institution_id: null,
   institution_name: "COEP",
   expected_completion_date: null,
+  cgpa: null,
+  percentage_score: null,
+  program_version_number: 1,
+  internship: null,
   terms_version_accepted: "v1",
   terms_accepted_at: new Date().toISOString(),
   eligibility_status: "ELIGIBLE",
@@ -139,13 +144,13 @@ const proposed: FundingRevisionResponse = {
   created_at: new Date().toISOString(),
 };
 
-function renderPanel() {
+function renderPanel(target: ProgramResponse = program) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <MemoryRouter>
-          <EnrollmentPanel program={program} enrollmentId="enr-1" onClose={() => {}} />
+          <EnrollmentPanel program={target} enrollmentId="enr-1" onClose={() => {}} />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
@@ -280,5 +285,47 @@ describe("EnrollmentPanel", () => {
         "test-token",
       ),
     );
+  });
+
+  it("plans an internship and records completion only with an evaluation", async () => {
+    const internshipProgram = {
+      ...program,
+      tracks_fee_payments: false,
+      tracks_internship: true,
+      internship_duration_months: 6,
+      internship_stipend_currency: "INR",
+    } as ProgramResponse;
+    vi.spyOn(teamApi, "listEmployees").mockResolvedValue([]);
+    const active: EnrollmentResponse = {
+      ...selected,
+      internship: {
+        id: "int-1", status: "ACTIVE", mode: null, role_title: "Research Intern", duration_months: 6,
+        start_date: "2027-01-01", end_date: "2027-07-01", original_end_date: "2027-07-01", extension_count: 0,
+        stipend_amount: "15000.00", stipend_currency: "INR", supervisor_employee_id: null, supervisor_name: null,
+        completed_on: null, ended_on: null, outcome: null, evaluation_rating: null, evaluation_note: null,
+        end_reason: null, events: [], created_at: new Date().toISOString(),
+      },
+    };
+    // The panel refetches after an action; the second load is the server's new state.
+    vi.spyOn(api, "getEnrollment").mockResolvedValueOnce(selected).mockResolvedValue(active);
+    const action = vi.spyOn(api, "enrollmentAction").mockResolvedValue(active);
+
+    renderPanel(internshipProgram);
+
+    expect(await screen.findByText("No internship planned yet.")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("e.g. Research Intern"), { target: { value: "Research Intern" } });
+    fireEvent.click(screen.getByRole("button", { name: "Plan internship" }));
+    await waitFor(() =>
+      expect(action).toHaveBeenCalledWith(
+        "prog-1", "enr-1", "internship",
+        { duration_months: 6, start_date: null, mode: null, role_title: "Research Intern", supervisor_employee_id: null },
+        "test-token",
+      ),
+    );
+
+    // Now active: completion stays disabled until a date and an evaluation are chosen.
+    const complete = await screen.findByRole("button", { name: "Record completion" });
+    expect(complete).toBeDisabled();
+    expect(screen.getByText("INR 15,000.00")).toBeInTheDocument();
   });
 });

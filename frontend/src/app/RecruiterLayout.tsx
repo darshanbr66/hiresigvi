@@ -32,6 +32,16 @@ const CAMPUS_ITEMS: NavItem[] = [
   { to: "/recruiter/institutions", label: "Institutions", icon: "institution" },
 ];
 
+/** Default program settings: readable with `program.read` (ORG_ADMIN,
+ * RECRUITER, HIRING_MANAGER), editable with `program.settings.manage`
+ * (ORG_ADMIN) — UX gating only; the API enforces both. */
+const PROGRAM_SETTINGS_ITEM: NavItem = {
+  to: "/recruiter/programs/settings",
+  label: "Program Settings",
+  icon: "settings",
+};
+const PROGRAM_SETTINGS_ROLES = ["ORG_ADMIN", "RECRUITER", "HIRING_MANAGER"];
+
 /** Only ORG_ADMIN/RECRUITER/HIRING_MANAGER get `internal_ai.use` on the
  * backend (see the Phase A migration seeding it) — hidden for everyone else
  * so it never appears as a dead end for an INTERVIEWER. UX only: the API
@@ -92,6 +102,7 @@ export function RecruiterLayout() {
   const isOrgAdmin = user?.roles.includes("ORG_ADMIN") ?? false;
   const canSendEmail = user?.roles.some((role) => EMAIL_ROLES.includes(role)) ?? false;
   const canUseAi = user?.roles.some((role) => AI_ROLES.includes(role)) ?? false;
+  const canSeeProgramSettings = user?.roles.some((role) => PROGRAM_SETTINGS_ROLES.includes(role)) ?? false;
 
   const unreadQuery = useQuery({
     queryKey: ["notifications", "unread-count"],
@@ -140,7 +151,10 @@ export function RecruiterLayout() {
     },
     { label: "Recruitment", items: RECRUITMENT_ITEMS },
     { label: "Assessments", items: ASSESSMENT_ITEMS },
-    { label: "Campus & programs", items: CAMPUS_ITEMS },
+    {
+      label: "Campus & programs",
+      items: [CAMPUS_ITEMS[0], ...(canSeeProgramSettings ? [PROGRAM_SETTINGS_ITEM] : []), ...CAMPUS_ITEMS.slice(1)],
+    },
     {
       label: "Organization",
       items: [

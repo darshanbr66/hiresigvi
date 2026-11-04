@@ -39,6 +39,7 @@ def complete_fields(**extra: Any) -> dict:
         "scholarship_disclosure": "Scholarship amounts will be confirmed in writing to selected candidates.",
         "scholarship_eligibility_rules": "Only candidates selected through the full selection process.",
         "employment_pathway": "Full-time roles are offered subject to the company's approved process.",
+        "bond_duration_months": 36,
         "bond_terms_summary": "A three-year commitment under the company's approved agreement.",
         "candidate_disclosures": "By applying you confirm the information you provide is accurate.",
         "terms_version": "2026-10-v1",
@@ -47,9 +48,16 @@ def complete_fields(**extra: Any) -> dict:
 
 
 async def _program(client: AsyncClient, ctx: dict, **fields: Any) -> dict:
+    # These tests configure every value themselves; the organization's
+    # default settings are covered in tests/test_program_settings.py.
     response = await client.post(
         PROGRAMS,
-        json={"title": "MTech/PhD Scholarship & Paid Training", "description": "Train with us.", **fields},
+        json={
+            "title": "MTech/PhD Scholarship & Paid Training",
+            "description": "Train with us.",
+            "apply_organization_defaults": False,
+            **fields,
+        },
         headers=ctx["headers"],
     )
     assert response.status_code == 201, response.text
@@ -119,7 +127,9 @@ async def test_drafts_may_be_incomplete_but_publication_is_validated(
     draft = await _program(client, ctx)
     assert draft["status"] == "DRAFT"
     assert draft["training_fee_amount"] is None and draft["scholarship_amount_min"] is None
-    assert draft["bond_duration_months"] == 36
+    # Without the organization defaults nothing is pre-filled — not even
+    # the bond duration (it's a configured value, not a platform constant).
+    assert draft["bond_duration_months"] is None
     assert draft["publication_problems"]
 
     refused = await client.post(f"{PROGRAMS}/{draft['id']}/status", json={"status": "PUBLISHED"}, headers=ctx["headers"])
@@ -127,8 +137,9 @@ async def test_drafts_may_be_incomplete_but_publication_is_validated(
     assert refused.json()["error"]["code"] == "program_incomplete"
     assert refused.json()["error"]["data"]["problems"]
 
+    # Durations are configurable, but only within 1–60 months.
     bad_duration = await client.patch(
-        f"{PROGRAMS}/{draft['id']}", json={"training_duration_options": [9]}, headers=ctx["headers"]
+        f"{PROGRAMS}/{draft['id']}", json={"training_duration_options": [61]}, headers=ctx["headers"]
     )
     assert bad_duration.status_code == 422
 

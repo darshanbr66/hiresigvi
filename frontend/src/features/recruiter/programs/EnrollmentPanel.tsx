@@ -27,6 +27,7 @@ import {
 import { EmploymentSection } from "./EmploymentSection";
 import { FeeSection } from "./FeeSection";
 import { FundingSection } from "./FundingSection";
+import { InternshipSection } from "./InternshipSection";
 import { Block, Row, StateBadge, type SectionProps } from "./panelParts";
 import { TrainingSection } from "./TrainingSection";
 
@@ -133,8 +134,14 @@ export function EnrollmentPanel({
                 {e.study_year ? `, year ${e.study_year}` : ""} · {e.specialization} · {e.institution_name}
                 {e.expected_completion_date ? ` · completes ${e.expected_completion_date}` : ""}
               </Row>
+              {(e.cgpa || e.percentage_score) && (
+                <Row label="Academic standing (declared)">
+                  {[e.cgpa && `CGPA ${e.cgpa}`, e.percentage_score && `${e.percentage_score}%`].filter(Boolean).join(" · ")}
+                </Row>
+              )}
               <Row label="Terms accepted">
                 Version {e.terms_version_accepted} on {new Date(e.terms_accepted_at).toLocaleString()}
+                {e.program_version_number ? ` · program configuration v${e.program_version_number}` : ""}
               </Row>
             </Block>
 
@@ -277,6 +284,7 @@ export function EnrollmentPanel({
             <FundingSection {...section} />
             {program.tracks_fee_payments && <FeeSection {...section} />}
             {program.tracks_training && <TrainingSection {...section} />}
+            {program.tracks_internship && <InternshipSection {...section} token={token} />}
             {program.requires_agreement && (
               <AgreementSection {...section} onUpload={(file) => upload.mutate(file)} onDownload={() => void download()} uploading={upload.isPending} />
             )}

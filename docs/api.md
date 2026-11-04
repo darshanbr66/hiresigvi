@@ -247,7 +247,11 @@ in the linked docs):
     <action>: eligibility, affiliation, invite-assessment, interview-completed, scholarship-eligibility,
               funding-proposals[/{rev}/decision|/withdraw], funding-acceptance, fee-obligation,
               fee-payments[/{id}/void], disbursements[/{id}], training, milestones[/{id}],
-              employment-review, offer, joining, agreement[/document], bond
+              employment-review, offer, joining, agreement[/document], bond,
+              internship, internship/status, internship/extension           -- § 5f
+/api/v1/recruiter/programs/{id}/versions                      -- configuration history, § 2a
+/api/v1/recruiter/programs/funding-preview                    -- authoritative fee split, nothing saved
+GET|PUT /api/v1/recruiter/program-settings                    -- organization defaults, § 1a (PUT: program.settings.manage)
 /api/v1/recruiter/applications/{id}/interviews[/{interview_id}/outcome|/close]   -- docs/recruitment-workflow.md § 2a
 ```
 

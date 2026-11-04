@@ -38,6 +38,10 @@ const AttemptReviewPage = page(() => import("../features/recruiter/assessments/A
 const InstitutionsPage = page(() => import("../features/recruiter/institutions/InstitutionsPage"), "InstitutionsPage");
 const ProgramDetailPage = page(() => import("../features/recruiter/programs/ProgramDetailPage"), "ProgramDetailPage");
 const ProgramsPage = page(() => import("../features/recruiter/programs/ProgramsPage"), "ProgramsPage");
+const ProgramSettingsPage = page(
+  () => import("../features/recruiter/programs/ProgramSettingsPage"),
+  "ProgramSettingsPage",
+);
 const QuestionBankPage = page(() => import("../features/recruiter/questionBank/QuestionBankPage"), "QuestionBankPage");
 const CalendarPage = page(() => import("../features/recruiter/calendar/CalendarPage"), "CalendarPage");
 const TalkToAdminPage = page(() => import("../features/recruiter/adminMessages/TalkToAdminPage"), "TalkToAdminPage");
@@ -115,6 +119,7 @@ export function AppRoutes() {
           <Route path="assessments/:assessmentId" element={<AssessmentDetailPage />} />
           <Route path="question-bank" element={<QuestionBankPage />} />
           <Route path="programs" element={<ProgramsPage />} />
+          <Route path="programs/settings" element={<ProgramSettingsPage />} />
           <Route path="programs/:programId" element={<ProgramDetailPage />} />
           <Route path="institutions" element={<InstitutionsPage />} />
           <Route path="campus-drives" element={<CampusDrivesPage />} />

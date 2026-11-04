@@ -226,6 +226,10 @@ export async function applyToProgram(
   if (declaration.expected_completion_date) {
     formData.append("expected_completion_date", declaration.expected_completion_date);
   }
+  if (declaration.cgpa.trim()) formData.append("cgpa", declaration.cgpa.trim());
+  if (declaration.percentage_score.trim()) {
+    formData.append("percentage_score", declaration.percentage_score.trim());
+  }
   formData.append("terms_version", declaration.terms_version);
   formData.append("terms_accepted", declaration.terms_accepted ? "true" : "false");
   const result = await apiClient.postForm<PublicProgramApplicationResult>(

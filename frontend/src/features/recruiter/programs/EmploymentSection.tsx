@@ -33,7 +33,10 @@ export function EmploymentSection({ e, program, busy, can, run, token }: Section
     enabled: approve,
     retry: false,
   });
-  const ready = !program.tracks_training || e.training_status === "COMPLETED";
+  const internshipReady =
+    !(program.tracks_internship && program.internship_required_for_employment) ||
+    (e.internship?.status === "COMPLETED" && e.internship.outcome === "QUALIFIED");
+  const ready = (!program.tracks_training || e.training_status === "COMPLETED") && internshipReady;
   const status = e.employment_review_status;
   const department = departments.data?.find((d) => d.id === e.employment_department_id);
 
@@ -48,7 +51,13 @@ export function EmploymentSection({ e, program, busy, can, run, token }: Section
       <Row label="Joined">{e.joined_on ?? "—"}{e.employee_id ? " · employee record linked" : ""}</Row>
 
       {SELECTED.includes(e.application_status) && !ready && status === "NOT_STARTED" && (
-        <p className="field-hint">The employment review starts once training is recorded as completed.</p>
+        <p className="field-hint">
+          The employment review starts once{" "}
+          {internshipReady
+            ? "training is recorded as completed"
+            : "the internship is completed with a qualifying evaluation"}
+          .
+        </p>
       )}
       {manage && ready && SELECTED.includes(e.application_status) && ["NOT_STARTED", "NOT_PROCEEDING"].includes(status) && (
         <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start" }} disabled={busy}

@@ -618,10 +618,12 @@ Audited as part of this preparation task:
   (checked with `git log --all --diff-filter=A --name-only`) — no secret
   rotation is required before deploying.
 - No hardcoded passwords, API keys, or database credentials exist in
-  application code. The only credentials in the repository are the
-  documented local-dev-only demo accounts in `docs/TEST_CREDENTIALS.md`
-  and test fixtures — do not reuse any of those emails/passwords for a
-  real production account.
+  application code. The only credentials in the repository are test
+  fixtures. `docs/TEST_CREDENTIALS.md` lists the demo account emails but
+  no longer their passwords. Earlier commits did contain those passwords,
+  and the demo accounts were included in a local → Render data copy, so
+  rotate them on any environment where they exist (above all the platform
+  `SUPER_ADMIN`).
 - `JWT_SECRET_KEY` and `DATABASE_URL` have no default — the app refuses to
   start without them (`app/core/config.py::Settings`), which is the
   correct fail-closed behavior.

@@ -9,6 +9,7 @@ the program's education declaration and terms acceptance."""
 
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -68,6 +69,9 @@ def _public_view(program: RecruitmentProgram, organization: Organization) -> Pub
         expected_completion_from=program.expected_completion_from,
         expected_completion_to=program.expected_completion_to,
         eligibility_notes=program.eligibility_notes,
+        study_year_rules=program.study_year_rules or {},
+        minimum_cgpa=program.minimum_cgpa,
+        minimum_percentage=program.minimum_percentage,
         training_duration_options=program.training_duration_options,
         training_fee_amount=program.training_fee_amount,
         training_fee_currency=program.training_fee_currency,
@@ -80,8 +84,15 @@ def _public_view(program: RecruitmentProgram, organization: Organization) -> Pub
         scholarship_disbursement_timing=program.scholarship_disbursement_timing,
         scholarship_disclosure=program.scholarship_disclosure,
         employment_pathway=program.employment_pathway,
-        bond_duration_months=program.bond_duration_months,
-        bond_terms_summary=program.bond_terms_summary,
+        bond_required=program.bond_required,
+        # A program without a bond never shows a commitment duration.
+        bond_duration_months=program.bond_duration_months if program.bond_required else None,
+        bond_terms_summary=program.bond_terms_summary if program.bond_required else None,
+        tracks_internship=program.tracks_internship,
+        internship_duration_months=program.internship_duration_months if program.tracks_internship else None,
+        internship_stipend_amount=program.internship_stipend_amount if program.tracks_internship else None,
+        internship_stipend_currency=program.internship_stipend_currency if program.tracks_internship else None,
+        internship_terms=program.internship_terms if program.tracks_internship else None,
         company_funding_type=program.company_funding_type,
         company_funding_value=program.company_funding_value,
         has_assessment=program.assessment_id is not None,
@@ -207,6 +218,8 @@ async def program_declaration(
     institution_id: uuid.UUID | None = Form(default=None),
     institution_name: str | None = Form(default=None, max_length=255),
     expected_completion_date: date | None = Form(default=None),
+    cgpa: Decimal | None = Form(default=None),
+    percentage_score: Decimal | None = Form(default=None),
     terms_version: str = Form(..., min_length=1, max_length=50),
     terms_accepted: bool = Form(...),
 ) -> ProgramEducationDeclaration:
@@ -218,6 +231,8 @@ async def program_declaration(
             institution_id=institution_id,
             institution_name=institution_name,
             expected_completion_date=expected_completion_date,
+            cgpa=cgpa,
+            percentage_score=percentage_score,
             terms_version=terms_version,
             terms_accepted=terms_accepted,
         )

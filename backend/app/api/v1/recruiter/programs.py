@@ -5,8 +5,10 @@ programs and move participants through affiliation verification,
 eligibility, test, interview, funding proposals, training (and milestones),
 the employment review and the offer; `program.finance.manage` (ORG_ADMIN by
 default) to approve/reject funding, fix fee obligations, record payments and
-applied funding, the agreement and the bond; `program.employment.approve`
-(ORG_ADMIN, HIRING_MANAGER) to decide employment progression.
+applied funding, the agreement, the bond and a non-standard internship
+stipend; `program.employment.approve` (ORG_ADMIN, HIRING_MANAGER) to decide
+employment progression. Internships are planned and progressed with
+`program.manage`.
 `organization_id` always comes from the caller.
 """
 
@@ -21,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import granted_permission_codes, require_permission
 from app.core.config import get_settings
-from app.core.exceptions import AppError, ForbiddenError, NotFoundError
+from app.core.exceptions import AppError, ForbiddenError, NotFoundError, UnprocessableError
 from app.db.session import get_db
 from app.integrations.storage import (
     ResumeStorage,
@@ -41,6 +43,7 @@ from app.models.program import (
     ScholarshipStatus,
     TrainingStatus,
 )
+from app.models.team_hierarchy import Employee
 from app.models.user import User
 from app.schemas.assessment import AssessmentInvitationResponse
 from app.schemas.institution import InstitutionSummary
@@ -62,9 +65,16 @@ from app.schemas.program import (
     FeePaymentVoidRequest,
     FundingAcceptanceRequest,
     FundingDecisionRequest,
+    FundingPreviewRequest,
+    FundingPreviewResponse,
     FundingProposalRequest,
     FundingRevisionResponse,
     FundingWithdrawRequest,
+    InternshipEventResponse,
+    InternshipExtensionRequest,
+    InternshipPlanRequest,
+    InternshipResponse,
+    InternshipStatusRequest,
     InterviewResponse,
     JoiningRequest,
     MilestoneCreateRequest,
@@ -77,10 +87,17 @@ from app.schemas.program import (
     ProgramStatusRequest,
     ProgramSummary,
     ProgramUpdateRequest,
+    ProgramVersionResponse,
     ScholarshipEligibilityRequest,
     TrainingUpdateRequest,
 )
-from app.services import program_finance, program_service, resume_service
+from app.services import (
+    program_finance,
+    program_internship_service,
+    program_service,
+    resume_service,
+)
+from app.services.program_finance import FundingError
 from app.workflows import program_workflow
 
 router = APIRouter(prefix="/programs", tags=["recruiter-programs"])
@@ -95,7 +112,14 @@ async def _program_response(db: AsyncSession, program: RecruitmentProgram) -> Pr
             field: getattr(program, field)
             for field in ProgramResponse.model_fields
             if hasattr(program, field)
-            and field not in ("eligible_institutions", "publication_problems", "enrollment_count")
+            and field
+            not in (
+                "eligible_institutions",
+                "publication_problems",
+                "enrollment_count",
+                "current_version",
+                "selected_count",
+            )
         },
         eligible_institutions=[InstitutionSummary.model_validate(i) for i in program.eligible_institutions],
         assessment_title=program.assessment.title if program.assessment else None,
@@ -106,6 +130,8 @@ async def _program_response(db: AsyncSession, program: RecruitmentProgram) -> Pr
             else []
         ),
         enrollment_count=counts.get(program.id, 0),
+        current_version=await program_service.current_version_number(db, program.id),
+        selected_count=await program_service.selected_count(db, program.id),
     )
 
 
@@ -124,8 +150,31 @@ _FINANCE_FIELDS = frozenset(
     }
 )
 _COMPUTED_FIELDS = frozenset(
-    {"fee_payments", "disbursements", "funding_revisions", "milestones", "interviews", "affiliation"}
+    {
+        "fee_payments",
+        "disbursements",
+        "funding_revisions",
+        "milestones",
+        "interviews",
+        "affiliation",
+        "internship",
+    }
 )
+
+
+def _internship_response(
+    view: program_service.EnrollmentView, *, include_finance: bool, supervisor_name: str | None
+) -> InternshipResponse | None:
+    internship = view.internship
+    if internship is None:
+        return None
+    response = InternshipResponse.model_validate(internship)
+    response.supervisor_name = supervisor_name
+    response.events = [InternshipEventResponse.model_validate(e) for e in view.internship_events]
+    if not include_finance:
+        response.stipend_amount = None
+        response.stipend_currency = None
+    return response
 
 
 def interview_response(
@@ -157,6 +206,7 @@ def _enrollment_response(
     user: User,
     codes: set[str],
     names: dict[uuid.UUID, str] | None = None,
+    supervisor_name: str | None = None,
 ) -> EnrollmentResponse:
     include_finance = _FINANCE in codes
     enrollment = view.enrollment
@@ -181,7 +231,7 @@ def _enrollment_response(
         candidate_full_name=view.candidate.full_name,
         candidate_email=view.candidate.email,
         application_status=view.application.status,
-        stage=program_workflow.derive_stage(enrollment, view.application),
+        stage=program_workflow.derive_stage(enrollment, view.application, view.internship),
         applied_at=view.application.applied_at,
         latest_result=(
             EnrollmentResultSummary(
@@ -195,6 +245,9 @@ def _enrollment_response(
             else None
         ),
         affiliation=AffiliationSummary.model_validate(view.affiliation) if view.affiliation else None,
+        internship=_internship_response(
+            view, include_finance=include_finance, supervisor_name=supervisor_name
+        ),
         milestones=[
             MilestoneResponse.model_validate(m).model_copy(
                 update={"overdue": m.status == MilestoneStatus.PENDING and m.due_on is not None and m.due_on < today}
@@ -250,7 +303,14 @@ async def _enrollment_out(
     view = await program_service.enrollment_view(db, enrollment)
     codes = await granted_permission_codes(db, user)
     names = await user_names(db, {i.interviewer_user_id for i in view.interviews if i.interviewer_user_id})
-    return _enrollment_response(view, user=user, codes=codes, names=names)
+    supervisor_name = None
+    if view.internship is not None and view.internship.supervisor_employee_id is not None:
+        supervisor_name = await db.scalar(
+            select(Employee.full_name).where(Employee.id == view.internship.supervisor_employee_id)
+        )
+    return _enrollment_response(
+        view, user=user, codes=codes, names=names, supervisor_name=supervisor_name
+    )
 
 
 # --- Programs ---
@@ -276,6 +336,8 @@ async def list_programs(
             application_opens_at=p.application_opens_at,
             application_closes_at=p.application_closes_at,
             enrollment_count=counts.get(p.id, 0),
+            capacity=p.capacity,
+            tracks_internship=p.tracks_internship,
             created_at=p.created_at,
         )
         for p in programs
@@ -290,6 +352,49 @@ async def create_program(
 ) -> ProgramResponse:
     program = await program_service.create_program(db, actor=current_user, payload=payload)
     return await _program_response(db, program)
+
+
+@router.post("/funding-preview", response_model=FundingPreviewResponse)
+async def funding_preview(
+    payload: FundingPreviewRequest,
+    current_user: User = Depends(require_permission("program.read")),
+) -> FundingPreviewResponse:
+    """The authoritative fee split for a fee and funding basis — the same
+    calculation every stored amount uses. Nothing is saved."""
+    try:
+        split = program_finance.split_fee(payload.fee, payload.funding_type, payload.value)
+    except FundingError as exc:
+        raise UnprocessableError(str(exc), code="invalid_funding") from exc
+    return FundingPreviewResponse(
+        fee=split.fee,
+        company_contribution=split.company_contribution,
+        candidate_payable=split.candidate_payable,
+    )
+
+
+@router.get("/{program_id}/versions", response_model=list[ProgramVersionResponse])
+async def list_program_versions(
+    program_id: uuid.UUID,
+    current_user: User = Depends(require_permission("program.read")),
+    db: AsyncSession = Depends(get_db),
+) -> list[ProgramVersionResponse]:
+    program = await _program(db, current_user, program_id)
+    versions = await program_service.list_versions(db, program)
+    names = await user_names(db, {v.created_by_user_id for v in versions if v.created_by_user_id})
+    codes = await granted_permission_codes(db, current_user)
+    hidden = (
+        set()
+        if _FINANCE in codes or "program.manage" in codes
+        else {"internship_stipend_amount", "internship_stipend_currency"}
+    )
+    out = []
+    for version in versions:
+        response = ProgramVersionResponse.model_validate(version)
+        response.created_by_name = names.get(version.created_by_user_id) if version.created_by_user_id else None
+        if hidden:
+            response.snapshot = {k: v for k, v in response.snapshot.items() if k not in hidden}
+        out.append(response)
+    return out
 
 
 @router.get("/{program_id}", response_model=ProgramResponse)
@@ -674,6 +779,78 @@ async def update_training(
         end_date=payload.end_date,
         completed_on=payload.completed_on,
         note=payload.note,
+        actor=current_user,
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post("/{program_id}/enrollments/{enrollment_id}/internship", response_model=EnrollmentResponse)
+async def plan_internship(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    payload: InternshipPlanRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    codes = await granted_permission_codes(db, current_user)
+    await program_internship_service.plan_internship(
+        db,
+        program=program,
+        enrollment=enrollment,
+        duration_months=payload.duration_months,
+        start_date=payload.start_date,
+        mode=payload.mode,
+        role_title=payload.role_title,
+        supervisor_employee_id=payload.supervisor_employee_id,
+        stipend_amount=payload.stipend_amount,
+        stipend_currency=payload.stipend_currency,
+        can_set_stipend=_FINANCE in codes,
+        actor=current_user,
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post(
+    "/{program_id}/enrollments/{enrollment_id}/internship/status", response_model=EnrollmentResponse
+)
+async def change_internship_status(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    payload: InternshipStatusRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_internship_service.change_status(
+        db,
+        enrollment=enrollment,
+        status=payload.status,
+        on_date=payload.on_date,
+        outcome=payload.outcome,
+        rating=payload.rating,
+        note=payload.note,
+        actor=current_user,
+    )
+    return await _enrollment_out(db, current_user, enrollment)
+
+
+@router.post(
+    "/{program_id}/enrollments/{enrollment_id}/internship/extension", response_model=EnrollmentResponse
+)
+async def extend_internship(
+    program_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    payload: InternshipExtensionRequest,
+    current_user: User = Depends(require_permission("program.manage")),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentResponse:
+    program = await _program(db, current_user, program_id)
+    enrollment = await program_service.require_enrollment(db, program, enrollment_id)
+    await program_internship_service.extend(
+        db, enrollment=enrollment, new_end_date=payload.new_end_date, reason=payload.reason,
         actor=current_user,
     )
     return await _enrollment_out(db, current_user, enrollment)

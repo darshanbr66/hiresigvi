@@ -7,6 +7,12 @@ production environment.
 
 Verified working (`POST /api/v1/recruiter/auth/login` → `200`) on 2026-09-16.
 
+**Passwords are not stored in this repository.** Get them from the team's
+password manager (or set your own locally with the seeding CLI). These demo
+accounts were included in a local → Render data copy, so treat them as live
+credentials: never commit a password here, and rotate them on any
+environment where they exist.
+
 ## Platform super admin
 
 Used for `/api/v1/admin/*` (organization bootstrap/management). Not tied to
@@ -15,7 +21,7 @@ any tenant — `organization_id` is `NULL`.
 | Field | Value |
 |---|---|
 | Email | `super.admin@platform.dev` |
-| Password | `SuperAdmin@2026Dev` |
+| Password | `<stored outside the repo — see note above>` |
 | Role | `SUPER_ADMIN` |
 | Organization | — (platform-level) |
 | Purpose | Bootstrap/manage organizations via the admin API |
@@ -25,7 +31,7 @@ any tenant — `organization_id` is `NULL`.
 | Field | Value |
 |---|---|
 | Email | `admin@acme-corp.dev` |
-| Password | `OrgAdmin@2026Dev` |
+| Password | `<stored outside the repo — see note above>` |
 | Role | `ORG_ADMIN` |
 | Organization | Acme Corp (`acme-corp`) |
 | Purpose | Full recruiter-portal access + user management (`user.create`/`user.read`/`user.update`, plus `user.manage_admins` for Org Admin accounts) for the tenant |
@@ -35,7 +41,7 @@ any tenant — `organization_id` is `NULL`.
 | Field | Value |
 |---|---|
 | Email | `recruiter@acme-corp.dev` |
-| Password | `Recruiter@2026Dev` |
+| Password | `<stored outside the repo — see note above>` |
 | Role | `RECRUITER` |
 | Organization | Acme Corp (`acme-corp`) |
 | Purpose | Standard recruiter-portal (HR) testing: jobs, candidates, applications, and Team/department management. It has no Org Admin powers: it can't create, promote, demote or deactivate an Org Admin, delete activities, or change org settings. Use it to verify role boundaries against `admin@acme-corp.dev`. |
@@ -49,7 +55,7 @@ used to demo the platform as more than a toy/empty instance.
 | Field | Value |
 |---|---|
 | Email | `admin@sigvitas.com` |
-| Password | `SigvitasAdmin@2026` |
+| Password | `<stored outside the repo — see note above>` |
 | Role | `ORG_ADMIN` |
 | Organization | Sigvitas Pvt. Ltd. (`sigvitas`) |
 | Purpose | Full recruiter-portal access for the Sigvitas demo tenant |
@@ -59,7 +65,7 @@ used to demo the platform as more than a toy/empty instance.
 | Field | Value |
 |---|---|
 | Email | `recruiter@sigvitas.com` |
-| Password | `SigvitasRecruit@2026` |
+| Password | `<stored outside the repo — see note above>` |
 | Role | `RECRUITER` |
 | Organization | Sigvitas Pvt. Ltd. (`sigvitas`) |
 | Purpose | Standard recruiter-portal testing under the Sigvitas tenant |

@@ -49,7 +49,7 @@ def test_rounding_is_half_up_and_parts_always_add_up() -> None:
     ("fee", "funding_type", "value"),
     [
         ("1000", FundingType.PERCENTAGE, "100.01"),
-        ("1000", FundingType.PERCENTAGE, "0"),
+        ("1000", FundingType.PERCENTAGE, "-1"),
         ("1000", FundingType.FIXED_AMOUNT, "1000.01"),
         ("1000", FundingType.FIXED_AMOUNT, "-5"),
         ("-1", None, None),
@@ -116,7 +116,7 @@ async def _propose(client: AsyncClient, ctx: dict, pid: str, eid: str, headers: 
 async def test_funding_configuration_is_validated(client: AsyncClient, super_admin: User) -> None:
     ctx = await bootstrap_org(client, "fund-config")
     headers = ctx["headers"]
-    base = {"title": "P", "description": "D"}
+    base = {"title": "P", "description": "D", "apply_organization_defaults": False}
     too_much = await client.post(PROGRAMS, json={**base, "company_funding_type": "PERCENTAGE",
                                                  "company_funding_value": "120"}, headers=headers)
     assert too_much.status_code == 422
@@ -132,7 +132,7 @@ async def test_funding_configuration_is_validated(client: AsyncClient, super_adm
     ok = await client.post(PROGRAMS, json={**base, "company_funding_type": "PERCENTAGE",
                                            "company_funding_value": "40"}, headers=headers)
     assert ok.status_code == 201
-    # No funding value is ever defaulted by the platform.
+    # Without the organization defaults nothing is filled in.
     plain = (await client.post(PROGRAMS, json=base, headers=headers)).json()
     assert plain["company_funding_type"] is None and plain["company_funding_value"] is None
     assert plain["funding_requires_independent_approval"] is True

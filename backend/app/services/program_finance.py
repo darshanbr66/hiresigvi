@@ -5,9 +5,9 @@ computed in one place, the same way:
 
 * money is `Decimal`, quantized to 2 places with ROUND_HALF_UP (the
   `Numeric(12, 2)` columns hold exactly that);
-* a PERCENTAGE funding basis is a percentage of the fee (0 < p <= 100);
-  a FIXED_AMOUNT basis is an amount in the fee's currency (> 0, never more
-  than the fee);
+* a PERCENTAGE funding basis is a percentage of the fee (0 <= p <= 100);
+  a FIXED_AMOUNT basis is an amount in the fee's currency (>= 0, never more
+  than the fee). 0 is "zero funding": the candidate pays the whole fee;
 * the candidate payable amount is always fee - company contribution, so the
   two parts add up to the fee exactly, whatever the rounding.
 
@@ -60,15 +60,16 @@ def split_fee(fee: Decimal, funding_type: FundingType | None, value: Decimal | N
     """How `fee` divides between the company and the candidate. With no
     funding (`funding_type` None) the candidate pays the whole fee.
 
-    Example (illustrative only, not policy): fee 100000.00 at PERCENTAGE 40
-    -> company 40000.00, candidate 60000.00."""
+    Examples (illustrative only, not policy): fee 50000.00 at PERCENTAGE 50
+    -> company 25000.00, candidate 25000.00; at PERCENTAGE 100 -> candidate
+    0.00; at FIXED_AMOUNT 20000 -> candidate 30000.00."""
     fee = money(fee)
     if fee < 0:
         raise FundingError("The training fee can't be negative.")
     if funding_type is None:
         return FundingSplit(fee=fee, company_contribution=Decimal("0.00"), candidate_payable=fee)
-    if value is None or value <= 0:
-        raise FundingError("Enter a funding amount or percentage greater than zero.")
+    if value is None or value < 0:
+        raise FundingError("Enter a funding amount or percentage of zero or more.")
     if funding_type == FundingType.PERCENTAGE:
         if value > HUNDRED:
             raise FundingError("A funding percentage can't be more than 100%.")

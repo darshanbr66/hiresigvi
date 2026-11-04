@@ -16,8 +16,10 @@ with optional affiliation verification, MTech/PhD scholarship & paid
 training programs (institution verification, eligibility, selection test,
 interviews with recorded outcomes, company funding proposals with separate
 approval, fee obligations and payment records, training milestones,
-agreement and bond tracking, employment review and offer — amounts and
-terms only as HR enters them), application notes, live reports, and outbound
+agreement and bond tracking, internships, employment review and offer —
+organization-wide default settings that Admin/HR edit, per-program
+configuration with an immutable version history, amounts and terms only as
+HR enters them), application notes, live reports, and outbound
 template-based candidate email (Resend over HTTPS in production, SMTP for local development). Recruiter email is **manual**: a
 recruiter picks one of six professional HTML templates (application received,
 interview invitation, assessment invitation, next steps, rejection, general),

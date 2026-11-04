@@ -22,12 +22,13 @@ describe("splitFee", () => {
   it("handles a fixed amount and full funding", () => {
     expect(splitFee("75000.50", "FIXED_AMOUNT", "25000")).toMatchObject({ candidatePayable: "50000.50" });
     expect(splitFee("1000", "PERCENTAGE", "100")).toMatchObject({ candidatePayable: "0.00" });
+    // Zero funding is a valid standard: the candidate pays everything.
+    expect(splitFee("1000", "PERCENTAGE", "0")).toMatchObject({ companyContribution: "0.00", candidatePayable: "1000.00" });
   });
 
   it("refuses invalid values", () => {
     expect(typeof splitFee("1000", "PERCENTAGE", "100.01")).toBe("string");
     expect(typeof splitFee("1000", "FIXED_AMOUNT", "1000.01")).toBe("string");
-    expect(typeof splitFee("1000", "PERCENTAGE", "0")).toBe("string");
     expect(typeof splitFee("", "PERCENTAGE", "10")).toBe("string");
     expect(typeof splitFee("1000", "PERCENTAGE", "-5")).toBe("string");
     expect(toCents("1.234")).toBeNull();

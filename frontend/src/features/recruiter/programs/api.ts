@@ -2,12 +2,17 @@ import { apiClient } from "../../../lib/apiClient";
 import type { AssessmentInvitationResponse } from "../../../types/assessment";
 import type {
   EnrollmentResponse,
+  FundingPreviewResponse,
+  FundingType,
   ProgramCreateRequest,
   ProgramReport,
   ProgramResponse,
+  ProgramSettingsResponse,
+  ProgramSettingsValues,
   ProgramStatus,
   ProgramSummary,
   ProgramUpdateRequest,
+  ProgramVersionResponse,
 } from "../../../types/program";
 
 const BASE = "/api/v1/recruiter/programs";
@@ -91,4 +96,27 @@ export function downloadAgreementDocument(programId: string, enrollmentId: strin
     `${BASE}/${programId}/enrollments/${enrollmentId}/agreement/document`,
     accessToken,
   );
+}
+
+export function listProgramVersions(programId: string, accessToken: string) {
+  return apiClient.get<ProgramVersionResponse[]>(`${BASE}/${programId}/versions`, accessToken);
+}
+
+/** The authoritative fee split (the same calculation every stored amount
+ * uses); nothing is saved. */
+export function previewFunding(
+  payload: { fee: string; funding_type: FundingType | null; value: string | null },
+  accessToken: string,
+) {
+  return apiClient.post<FundingPreviewResponse>(`${BASE}/funding-preview`, payload, accessToken);
+}
+
+const SETTINGS = "/api/v1/recruiter/program-settings";
+
+export function getProgramSettings(accessToken: string) {
+  return apiClient.get<ProgramSettingsResponse>(SETTINGS, accessToken);
+}
+
+export function updateProgramSettings(payload: ProgramSettingsValues, accessToken: string) {
+  return apiClient.put<ProgramSettingsResponse>(SETTINGS, payload, accessToken);
 }

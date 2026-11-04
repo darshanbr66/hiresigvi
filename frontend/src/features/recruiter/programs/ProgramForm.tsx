@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
-  APPROVED_TRAINING_DURATIONS,
   EDUCATION_LEVEL_LABELS,
   FUNDING_TYPE_LABELS,
   PROGRAM_AFFILIATION_METHODS,
@@ -12,6 +11,14 @@ import {
   type ProgramUpdateRequest,
 } from "../../../types/program";
 import { splitFee } from "./finance";
+import { StudyYearRulesInput } from "./policyInputs";
+import {
+  durationProblem,
+  parseNumberList,
+  rulesToText,
+  textToRules,
+  type StudyYearRuleText,
+} from "./policyRules";
 import { listAssessments } from "../assessments/api";
 import { listInstitutions } from "../institutions/api";
 
@@ -28,7 +35,10 @@ export interface ProgramFormValue {
   expectedCompletionFrom: string;
   expectedCompletionTo: string;
   eligibilityNotes: string;
-  trainingDurations: number[];
+  studyYearRules: StudyYearRuleText;
+  minimumCgpa: string;
+  minimumPercentage: string;
+  trainingDurations: string;
   trainingFeeAmount: string;
   trainingFeeCurrency: string;
   feePaymentTerms: string;
@@ -40,6 +50,7 @@ export interface ProgramFormValue {
   scholarshipTiming: string;
   scholarshipDisclosure: string;
   employmentPathway: string;
+  bondRequired: boolean;
   bondDurationMonths: string;
   bondTermsSummary: string;
   bondStartRule: string;
@@ -50,10 +61,19 @@ export interface ProgramFormValue {
   requiredDocuments: string;
   candidateDisclosures: string;
   termsVersion: string;
+  requiresInterview: boolean;
+  capacity: string;
+  maxApplications: string;
   tracksFeePayments: boolean;
   tracksTraining: boolean;
   tracksEmployment: boolean;
   requiresAgreement: boolean;
+  tracksInternship: boolean;
+  internshipDurationMonths: string;
+  internshipStipendAmount: string;
+  internshipStipendCurrency: string;
+  internshipTerms: string;
+  internshipRequiredForEmployment: boolean;
   fundingType: FundingType | "";
   fundingValue: string;
   independentApproval: boolean;
@@ -78,7 +98,10 @@ export function programToFormValue(program: ProgramResponse): ProgramFormValue {
     expectedCompletionFrom: program.expected_completion_from ?? "",
     expectedCompletionTo: program.expected_completion_to ?? "",
     eligibilityNotes: program.eligibility_notes ?? "",
-    trainingDurations: program.training_duration_options,
+    studyYearRules: rulesToText(program.study_year_rules ?? {}),
+    minimumCgpa: program.minimum_cgpa ?? "",
+    minimumPercentage: program.minimum_percentage ?? "",
+    trainingDurations: program.training_duration_options.join(", "),
     trainingFeeAmount: program.training_fee_amount ?? "",
     trainingFeeCurrency: program.training_fee_currency ?? "",
     feePaymentTerms: program.fee_payment_terms ?? "",
@@ -90,6 +113,7 @@ export function programToFormValue(program: ProgramResponse): ProgramFormValue {
     scholarshipTiming: program.scholarship_disbursement_timing ?? "",
     scholarshipDisclosure: program.scholarship_disclosure ?? "",
     employmentPathway: program.employment_pathway ?? "",
+    bondRequired: program.bond_required,
     bondDurationMonths: program.bond_duration_months ? String(program.bond_duration_months) : "",
     bondTermsSummary: program.bond_terms_summary ?? "",
     bondStartRule: program.bond_start_rule ?? "",
@@ -100,10 +124,19 @@ export function programToFormValue(program: ProgramResponse): ProgramFormValue {
     requiredDocuments: program.required_documents.join("\n"),
     candidateDisclosures: program.candidate_disclosures ?? "",
     termsVersion: program.terms_version ?? "",
+    requiresInterview: program.requires_interview,
+    capacity: program.capacity ? String(program.capacity) : "",
+    maxApplications: program.max_applications ? String(program.max_applications) : "",
     tracksFeePayments: program.tracks_fee_payments,
     tracksTraining: program.tracks_training,
     tracksEmployment: program.tracks_employment,
     requiresAgreement: program.requires_agreement,
+    tracksInternship: program.tracks_internship,
+    internshipDurationMonths: program.internship_duration_months ? String(program.internship_duration_months) : "",
+    internshipStipendAmount: program.internship_stipend_amount ?? "",
+    internshipStipendCurrency: program.internship_stipend_currency ?? "",
+    internshipTerms: program.internship_terms ?? "",
+    internshipRequiredForEmployment: program.internship_required_for_employment,
     fundingType: program.company_funding_type ?? "",
     fundingValue: program.company_funding_value ?? "",
     independentApproval: program.funding_requires_independent_approval,
@@ -113,23 +146,23 @@ export function programToFormValue(program: ProgramResponse): ProgramFormValue {
 
 const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 const orNull = (text: string) => text.trim() || null;
+const intOrNull = (text: string) => (text.trim() ? Number(text) : null);
 
 export function toProgramPayload(value: ProgramFormValue): ProgramUpdateRequest {
   return {
     title: value.title.trim(),
     description: value.description.trim(),
     eligible_education_levels: value.eligibleEducationLevels,
-    eligible_study_years: value.eligibleStudyYears
-      .split(/[\s,]+/)
-      .filter(Boolean)
-      .map(Number)
-      .filter((n) => Number.isInteger(n)),
+    eligible_study_years: parseNumberList(value.eligibleStudyYears),
     eligible_specializations: lines(value.eligibleSpecializations),
     eligible_institution_ids: value.eligibleInstitutionIds,
     expected_completion_from: orNull(value.expectedCompletionFrom),
     expected_completion_to: orNull(value.expectedCompletionTo),
     eligibility_notes: orNull(value.eligibilityNotes),
-    training_duration_options: value.trainingDurations,
+    study_year_rules: textToRules(value.studyYearRules, value.eligibleEducationLevels),
+    minimum_cgpa: orNull(value.minimumCgpa),
+    minimum_percentage: orNull(value.minimumPercentage),
+    training_duration_options: parseNumberList(value.trainingDurations),
     training_fee_amount: orNull(value.trainingFeeAmount),
     training_fee_currency: orNull(value.trainingFeeCurrency),
     fee_payment_terms: orNull(value.feePaymentTerms),
@@ -141,7 +174,8 @@ export function toProgramPayload(value: ProgramFormValue): ProgramUpdateRequest 
     scholarship_disbursement_timing: orNull(value.scholarshipTiming),
     scholarship_disclosure: orNull(value.scholarshipDisclosure),
     employment_pathway: orNull(value.employmentPathway),
-    bond_duration_months: value.bondDurationMonths ? Number(value.bondDurationMonths) : null,
+    bond_required: value.bondRequired,
+    bond_duration_months: value.bondRequired ? intOrNull(value.bondDurationMonths) : null,
     bond_terms_summary: orNull(value.bondTermsSummary),
     bond_start_rule: orNull(value.bondStartRule),
     application_opens_at: value.opensAt ? new Date(value.opensAt).toISOString() : null,
@@ -151,10 +185,21 @@ export function toProgramPayload(value: ProgramFormValue): ProgramUpdateRequest 
     required_documents: lines(value.requiredDocuments),
     candidate_disclosures: orNull(value.candidateDisclosures),
     terms_version: orNull(value.termsVersion),
+    requires_interview: value.requiresInterview,
+    capacity: intOrNull(value.capacity),
+    max_applications: intOrNull(value.maxApplications),
     tracks_fee_payments: value.tracksFeePayments,
     tracks_training: value.tracksTraining,
     tracks_employment: value.tracksEmployment,
     requires_agreement: value.requiresAgreement,
+    tracks_internship: value.tracksInternship,
+    internship_duration_months: intOrNull(value.internshipDurationMonths),
+    internship_stipend_amount: orNull(value.internshipStipendAmount),
+    internship_stipend_currency: value.internshipStipendAmount.trim()
+      ? orNull(value.internshipStipendCurrency)
+      : null,
+    internship_terms: orNull(value.internshipTerms),
+    internship_required_for_employment: value.tracksInternship && value.internshipRequiredForEmployment,
     company_funding_type: value.fundingType || null,
     company_funding_value: value.fundingType ? orNull(value.fundingValue) : null,
     funding_requires_independent_approval: value.independentApproval,
@@ -237,16 +282,19 @@ export function ProgramForm({
     });
   }
 
-  function toggleDuration(months: number) {
-    patch({
-      trainingDurations: value.trainingDurations.includes(months)
-        ? value.trainingDurations.filter((m) => m !== months)
-        : [...value.trainingDurations, months].sort((a, b) => a - b),
-    });
-  }
+  const durationError = durationProblem(parseNumberList(value.trainingDurations));
 
   const flag = (
-    key: "tracksFeePayments" | "tracksTraining" | "tracksEmployment" | "requiresAgreement" | "independentApproval",
+    key:
+      | "tracksFeePayments"
+      | "tracksTraining"
+      | "tracksEmployment"
+      | "requiresAgreement"
+      | "independentApproval"
+      | "requiresInterview"
+      | "bondRequired"
+      | "tracksInternship"
+      | "internshipRequiredForEmployment",
     label: string,
   ) => (
     <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -290,9 +338,20 @@ export function ProgramForm({
           </div>
         </fieldset>
         <div className="field-row">
-          {text("eligibleStudyYears", "Eligible year(s) of study", { placeholder: "e.g. 2", hint: "Comma-separated, e.g. 2 for second-year M.Tech." })}
+          {text("eligibleStudyYears", "Eligible year(s) of study (all levels)", { placeholder: "e.g. 2", hint: "Comma-separated. Applies to any level without its own rule below." })}
           {text("expectedCompletionFrom", "Expected completion from", { type: "date" })}
           {text("expectedCompletionTo", "Expected completion to", { type: "date" })}
+        </div>
+        <StudyYearRulesInput
+          levels={value.eligibleEducationLevels}
+          value={value.studyYearRules}
+          onChange={(studyYearRules) => patch({ studyYearRules })}
+          disabled={disabled}
+          fallbackHint="A level left empty uses the years above (or any year if none are set)."
+        />
+        <div className="field-row">
+          {text("minimumCgpa", "Minimum CGPA (out of 10)", { type: "number" })}
+          {text("minimumPercentage", "Minimum percentage", { type: "number", hint: "With both set, meeting either qualifies." })}
         </div>
         {text("eligibleSpecializations", "Eligible specializations / disciplines", { rows: 3, placeholder: "One per line, e.g. Robotics", hint: "Empty = any specialization." })}
         <label className="field">
@@ -336,23 +395,11 @@ export function ProgramForm({
       </Section>
 
       <Section title="Training and fee" hint="The training is paid by the candidate. Enter the fee only once it is finalized; until then publish only business-approved wording.">
-        <fieldset className="field">
-          <legend>Training duration</legend>
-          <div className="btn-group">
-            {APPROVED_TRAINING_DURATIONS.map((months) => (
-              <label key={months} style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                <input
-                  type="checkbox"
-                  checked={value.trainingDurations.includes(months)}
-                  onChange={() => toggleDuration(months)}
-                  disabled={disabled}
-                  style={{ width: "auto" }}
-                />
-                {months} months
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        {text("trainingDurations", "Training duration options (months)", {
+          placeholder: "e.g. 6, 12",
+          hint: "Comma-separated. Each participant is enrolled for one of these durations.",
+        })}
+        {durationError && <p className="field-error" role="alert">{durationError}</p>}
         <div className="field-row">
           {text("trainingFeeAmount", "Training fee (finalized amount)", { type: "number" })}
           {text("trainingFeeCurrency", "Currency", { placeholder: "INR" })}
@@ -404,11 +451,18 @@ export function ProgramForm({
 
       <Section title="Employment and commitment" hint="Scholarship recipients agree to a commitment under the company's approved agreement. The platform tracks the agreement; it never writes the terms.">
         {text("employmentPathway", "Full-time employment pathway", { rows: 2 })}
-        <div className="field-row">
-          {text("bondDurationMonths", "Commitment (bond) duration in months", { type: "number", hint: "36 months by default; change only per approved terms." })}
-        </div>
-        {text("bondTermsSummary", "Approved summary of the commitment terms", { rows: 2 })}
-        {text("bondStartRule", "When the commitment starts (once finalized)", { rows: 2 })}
+        {flag("bondRequired", "Funded participants agree to a commitment (bond)")}
+        {value.bondRequired ? (
+          <>
+            <div className="field-row">
+              {text("bondDurationMonths", "Commitment (bond) duration in months", { type: "number", hint: "Starts from the organization default; change only per approved terms." })}
+            </div>
+            {text("bondTermsSummary", "Approved summary of the commitment terms", { rows: 2 })}
+            {text("bondStartRule", "When the commitment starts (once finalized)", { rows: 2 })}
+          </>
+        ) : (
+          <p className="field-hint">No bond: funding approvals never create a commitment for this program.</p>
+        )}
       </Section>
 
       <Section title="Selection">
@@ -427,7 +481,13 @@ export function ProgramForm({
           </select>
           <span className="field-hint">With a test, a candidate must pass it before being shortlisted or interviewed.</span>
         </label>
-        {text("interviewStages", "Interview stages", { rows: 2, placeholder: "One per line, e.g. Technical interview" })}
+        {flag("requiresInterview", "A completed interview is required before selection")}
+        {value.requiresInterview &&
+          text("interviewStages", "Interview stages", { rows: 2, placeholder: "One per line, e.g. Technical interview" })}
+        <div className="field-row">
+          {text("capacity", "Places (selection capacity)", { type: "number", hint: "Empty = no limit on selections." })}
+          {text("maxApplications", "Maximum applications", { type: "number", hint: "Empty = no limit; applications close once reached." })}
+        </div>
         {text("requiredDocuments", "Required documents", { rows: 2, placeholder: "One per line" })}
         <div className="field-row">
           {text("opensAt", "Applications open", { type: "datetime-local" })}
@@ -445,7 +505,26 @@ export function ProgramForm({
         {flag("tracksTraining", "Training enrollment and progress")}
         {flag("tracksEmployment", "Full-time employment offer and joining")}
         {flag("requiresAgreement", "Agreement / bond for scholarship recipients")}
+        {flag("tracksInternship", "Internship (planned, tracked and evaluated per participant)")}
       </Section>
+
+      {value.tracksInternship && (
+        <Section
+          title="Internship"
+          hint="An internship is recorded separately from training and employment. Its duration and stipend are copied onto each participant's internship when it is planned, so later edits here don't change existing internships."
+        >
+          <div className="field-row">
+            {text("internshipDurationMonths", "Duration in months", { type: "number" })}
+            {text("internshipStipendAmount", "Monthly stipend (finalized)", { type: "number" })}
+            {text("internshipStipendCurrency", "Currency", { placeholder: "INR" })}
+          </div>
+          {text("internshipTerms", "Internship terms shown to candidates", { rows: 2 })}
+          {flag(
+            "internshipRequiredForEmployment",
+            "A completed internship with a qualifying evaluation is required before the employment review",
+          )}
+        </Section>
+      )}
     </div>
   );
 }

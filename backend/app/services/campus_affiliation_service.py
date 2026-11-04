@@ -34,12 +34,12 @@ from app.models.application import Application
 from app.models.campus_drive import CampusDrive
 from app.models.candidate import Candidate
 from app.models.institution import (
+    MANUAL_VERIFICATION_METHODS,
     AffiliationStatus,
     AffiliationVerificationMethod,
     CampusAffiliationVerification,
     CampusDriveRosterEntry,
     Institution,
-    MANUAL_VERIFICATION_METHODS,
 )
 from app.models.user import User
 from app.services import activity_service, email_verification_service

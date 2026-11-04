@@ -7,21 +7,28 @@ funding proposals with separate approval, the candidate's fee obligation and
 payable amount, manual fee-payment and funding-applied records, full-time
 training with milestones, agreement/bond tracking with frozen terms, the
 employment review → offer → joining progression (linked to the employee
-record), and a per-program report. Code: `app/models/program.py`,
-`app/models/interview.py`, `app/services/program_service.py`,
+record), internships with evaluation, organization-wide default program
+settings, per-program policy (per-level study years, CGPA/percentage
+minimums, capacity, application limit, optional interview and bond, zero
+funding, configurable durations) with an immutable configuration history,
+and a per-program report. Code: `app/models/program.py`,
+`app/models/program_settings.py`, `app/models/interview.py`,
+`app/services/program_service.py`, `app/services/program_settings_service.py`,
+`app/services/program_internship_service.py`,
 `app/services/program_finance.py`, `app/services/interview_service.py`,
 `app/services/public_program_service.py`, `app/workflows/program_workflow.py`,
-`app/api/v1/recruiter/programs.py`, `app/api/v1/recruiter/interviews.py`,
-`app/api/v1/public/programs.py`; frontend `features/recruiter/programs/` and
-`features/careers/ProgramApplyPage.tsx`. Migrations `3c4d5e6f7081`,
-`5e6f70819203`.
+`app/api/v1/recruiter/programs.py`, `app/api/v1/recruiter/program_settings.py`,
+`app/api/v1/recruiter/interviews.py`, `app/api/v1/public/programs.py`;
+frontend `features/recruiter/programs/` (including `ProgramSettingsPage.tsx`
+and `InternshipSection.tsx`) and `features/careers/ProgramApplyPage.tsx`.
+Migrations `3c4d5e6f7081`, `5e6f70819203`, `6f7081920314`.
 
 The intended sequence is: campus identification and verification →
 application → assessment → result → interview invitation for qualifying
 candidates → interviews → final selection → funding eligibility and
 approval → training fee and funding arrangement → agreement and bond →
-full-time training → training completion → employment review → offer →
-joining. **Every step is an explicit, audited HR action; nothing advances on
+full-time training → training completion → (optional) internship and its
+evaluation → employment review → offer → joining. **Every step is an explicit, audited HR action; nothing advances on
 its own.**
 
 **Not implemented (by design):** a payment gateway, any automatic money
@@ -33,21 +40,28 @@ finance user enters after the fact (§ 5b).
 
 Encoded, because the business approved them:
 
-- Target population: second-year MTech and PhD students (configured per
-  program through eligible education levels and study years).
+- Target population: second-year MTech and PhD students — a *default*
+  (§ 1a), configured per program through eligible education levels and
+  study years, including a rule per level (e.g. M.Tech year 2, PhD any
+  year).
 - Training is **paid by the candidate**, **full-time**, and leads towards
   full-time employment — it is not an internship (the carrier job has no
   employment type, see `docs/programs.md` § 2).
-- Training duration options are only **6 and/or 12 months** (DB check
-  constraint + schema validation).
+- Training duration options are **configurable per program**, any whole
+  number of months from 1 to 60 (DB check + schema validation); 6 and 12
+  are the default offering (§ 1a).
 - Funding **eligibility ≠ proposal ≠ approval ≠ funding applied** — separate
   fields/records (§ 5a). Passing the test or the interview, or being
   selected, never approves funding.
 - Company funding may be a **fixed amount** or a **percentage of the
-  training fee**; the candidate pays the rest.
+  training fee**; the candidate pays the rest. A program's standard may be
+  **0** (zero funding: the candidate pays the whole fee); an individual
+  funding proposal must contribute more than 0.
 - A bond (commitment) applies **only** to participants with approved
-  company funding; the program default is **36 months** and HR may change it
-  per program. It is never set on an unfunded participant.
+  company funding, and only when the program has `bond_required` on (the
+  default). Its duration starts from the organization default (36 months
+  initially) and HR may change it per program. It is never set on an
+  unfunded participant.
 - Nothing guarantees employment: passing the test, receiving funding or
   completing training never moves an application on by itself.
 
@@ -64,7 +78,39 @@ platform has **no default** for any of them:
 | Whether one person may propose *and* approve | `funding_requires_independent_approval` | defaults to **on** (two people) |
 | When the bond starts | `bond_start_rule` (program) / `bond_start_date` (person) | HR records the actual start date per person |
 | Agreement wording and legal terms | stored as an approved document/reference, never generated | HR/legal approval required |
-| Eligible specializations / institutions / study years / completion window | `eligible_*`, `expected_completion_*` | an empty criterion accepts anything |
+| Eligible specializations / institutions / study years / completion window | `eligible_*`, `expected_completion_*`, `study_year_rules` | an empty criterion accepts anything |
+| Academic minimums | `minimum_cgpa` (10-point), `minimum_percentage` | none; with both set, meeting either qualifies |
+| Places / application limit | `capacity`, `max_applications` | unlimited |
+| Internship duration, stipend and terms | `internship_*` | only when `tracks_internship` is on |
+
+The organization defaults in § 1a only *pre-fill* new programs; they are
+not policy the platform enforces, and they never change a program that
+already exists.
+
+## 1a. Organization default program settings
+
+`organization_program_settings` (one row per organization) holds the
+starting values every **new** program copies into its draft: training
+duration options, fee and currency, standard funding basis and value,
+whether funding needs an independent approver, internship duration, whether
+a bond applies and its duration, eligible education levels and per-level
+study-year rules. `GET /api/v1/recruiter/program-settings` (`program.read`)
+returns them with the server-computed fee split; `PUT`
+(`program.settings.manage`, ORG_ADMIN by default) replaces them and writes a
+`PROGRAM_SETTINGS_UPDATED` activity entry listing every change. The portal
+page is **Program Settings** (`/recruiter/programs/settings`); non-editors
+see it read-only.
+
+The row is created on first read from `INITIAL_PROGRAM_DEFAULTS`
+(`app/services/program_settings_service.py`) — the team's **proposed**
+starting points, not confirmed policy: 6 or 12 months, INR 50,000 fee,
+50% company funding (company INR 25,000 / candidate INR 25,000), 6-month
+internship, 36-month bond for funded participants, M.Tech year 2 and PhD.
+
+`POST /api/v1/recruiter/programs` applies the defaults unless the request
+sends `apply_organization_defaults: false`; any value given explicitly wins.
+Changing a default afterwards never changes an existing program, a
+candidate's accepted terms, a funding decision or a payment record.
 
 ## 2. Program configuration and publication
 
@@ -76,14 +122,22 @@ the institution registry, `docs/campus-hiring.md` § 1a), the applicant
 institution-verification method (§ 3a), application open/close times, the
 selection assessment (`assessment_id`, any published assessment from the
 shared assessment domain), interview stages, required documents, candidate
-disclosures with a `terms_version` label, and four switches for the
-optional stages: `tracks_training`, `tracks_fee_payments`,
-`tracks_employment`, `requires_agreement`.
+disclosures with a `terms_version` label, per-level `study_year_rules`,
+`minimum_cgpa` / `minimum_percentage`, `capacity` (places — checked when a
+candidate is selected, under a row lock) and `max_applications` (checked
+when an application is recorded, under a row lock), `requires_interview`
+(default on; off = selection doesn't need a completed interview),
+`bond_required` (default on), the internship terms (§ 5f), and the switches
+for the optional stages: `tracks_training`, `tracks_fee_payments`,
+`tracks_employment`, `requires_agreement`, `tracks_internship`, and
+`internship_required_for_employment`.
 
 The funding configuration is validated on every save
 (`program_service.funding_config_problems`): type and value together or
-neither, a percentage in (0, 100], a fixed amount no larger than a
+neither, a percentage in [0, 100], a fixed amount from 0 up to a
 configured fee, and the resulting contribution inside the configured range.
+`POST /api/v1/recruiter/programs/funding-preview` returns the authoritative
+split for any fee and basis without saving anything.
 
 Each program owns a **carrier `Job`** (created with it, kept in DRAFT so it
 never appears in the careers-site job list). Program applications are
@@ -101,13 +155,29 @@ CLOSED --reopen--> PUBLISHED        CLOSED --archive--> ARCHIVED
 
 A **draft may be incomplete.** Publishing (`program_service.publication_problems`)
 requires: title and description; at least one education level; a training
-duration; the finalized fee **or** approved fee wording; the finalized
+duration (when training is tracked); the finalized fee **or** approved fee wording; the finalized
 funding amount/range **or** approved funding wording; funding eligibility
 and approval rules; the employment pathway; bond duration and an approved
-summary of its terms; candidate disclosures and a terms version; a
+summary of its terms (unless the bond is off); an internship duration when
+internships are tracked; internship-before-employment only together with
+both stages tracked; candidate disclosures and a terms version; a
 published (not deleted) selection assessment if one is attached; and a
 close time after the open time. Changing any disclosed value (fee, funding
-basis, bond…) after someone applied needs a new terms version.
+basis, durations, bond, internship terms…) after someone applied needs a
+new terms version.
+
+### 2a. Configuration versions
+
+Every published (or previously published) program keeps an append-only
+history in `recruitment_program_versions`: publishing records a PUBLISHED
+version when the configuration differs from the latest one, and every
+later edit records an UPDATED version with the list of changed fields and
+a full JSON snapshot. A program published before versions existed gets its
+pre-change configuration recorded first as a BASELINE version. Each
+application stores the `program_version_number` it was made under.
+`GET /api/v1/recruiter/programs/{id}/versions` lists them (the internship
+stipend is hidden from users without `program.manage` or finance); the
+program page shows the history. Drafts are not versioned.
 
 ## 3. Candidate application
 
@@ -124,8 +194,11 @@ Applying *is* the careers-site self-service flow
 (`docs/recruitment-workflow.md` § 6) on the program's job. On top of it the
 candidate declares their current education (level, study year,
 specialization, institution — picked from the registry list when the
-program restricts institutions — and expected completion date) and accepts
-the terms. `ProgramEnrollment` is created in the same transaction as the
+program restricts institutions — expected completion date, and CGPA and/or
+percentage when the program sets a minimum) and accepts the terms. A
+level's own study-year rule takes precedence over the program-wide years.
+A program at its application limit refuses new applications
+(`program_application_limit`). `ProgramEnrollment` is created in the same transaction as the
 application and stores the declaration, the accepted terms version and
 `disclosure_snapshot` — the exact text the candidate agreed to.
 
@@ -165,7 +238,7 @@ change of a program application:
 |---|---|
 | SCREENING, ASSESSMENT_INVITED, SHORTLISTED, INTERVIEW, SELECTED, HIRED | eligibility review = ELIGIBLE (which itself needs a verified institution, § 3a) |
 | SHORTLISTED, INTERVIEW (program has a test) | latest attempt's result is FINAL and passed |
-| SELECTED | the interview process recorded as complete (§ 4a) |
+| SELECTED | the interview process recorded as complete (§ 4a) — only when `requires_interview`; and a free place when `capacity` is set (`program_capacity_reached`) |
 | HIRED (joined) | offer ACCEPTED |
 | REJECTED | always allowed |
 
@@ -265,7 +338,7 @@ up exactly. Example only (not policy): fee ₹100,000 at 40% → company
 `training_status`: NOT_ENROLLED → ENROLLED → IN_PROGRESS → COMPLETED, with
 WITHDRAWN (candidate left) and DISCONTINUED (terminated by the company) from
 ENROLLED/IN_PROGRESS (reason required). Enrolling needs one of the
-program's durations (6/12), records `training_enrolled_at` and — once the
+program's configured durations, records `training_enrolled_at` and — once the
 program's fee is finalized — fixes the fee obligation (while only approved
 fee wording exists, enrollment still proceeds and finance fixes the
 obligation later); the planned end defaults to start + duration; IN_PROGRESS needs
@@ -311,7 +384,9 @@ penalties, repayment obligations or enforceability terms.
 NOT_PROCEEDING (reason required), NOT_PROCEEDING → IN_REVIEW to reconsider.
 
 - IN_REVIEW (`program.manage`) needs a selected candidate and — when the
-  program tracks training — COMPLETED training.
+  program tracks training — COMPLETED training, and — when the program sets
+  `internship_required_for_employment` — a COMPLETED internship evaluated
+  QUALIFIED (`internship_completion_required`).
 - APPROVED / NOT_PROCEEDING need `program.employment.approve`; approval needs
   the intended role and proposed start date (department optional, from the
   team hierarchy).
@@ -320,6 +395,34 @@ NOT_PROCEEDING (reason required), NOT_PROCEEDING → IN_REVIEW to reconsider.
   HIRED, and **links** the participant to the team-hierarchy `Employee` with
   the same email (or creates one with the approved role/department) — never
   a duplicate and never before joining.
+
+### 5f. Internships
+
+When a program has `tracks_internship` on, a **selected** participant can be
+given an internship (`program_internships`, one per participant) — its own
+record, never merged with training or employment.
+
+- **Plan** (`POST …/enrollments/{id}/internship`, `program.manage`):
+  duration (defaults to the program's), optional planned start, mode
+  (ON_SITE / REMOTE / HYBRID), role and supervisor (an employee from the
+  team hierarchy, same organization). The program's stipend is
+  **snapshotted** onto the internship; only `program.finance.manage` may
+  record a different one, and the stipend is withheld from other users.
+  A planned internship can be edited until it starts; later program edits
+  never change it.
+- **Status** (`…/internship/status`): `INTERNSHIP_TRANSITIONS` — PLANNED →
+  ACTIVE (needs a start date; end = start + duration) / WITHDRAWN /
+  TERMINATED; ACTIVE → COMPLETED (needs the completion date and the
+  evaluation QUALIFIED / NOT_QUALIFIED, optional 1–5 rating and note) /
+  WITHDRAWN / TERMINATED (reason required). COMPLETED, WITHDRAWN and
+  TERMINATED are final.
+- **Extension** (`…/internship/extension`): only while ACTIVE, with a
+  reason and a later end date, never beyond 60 months in total; the
+  original end date and the extension count are kept.
+- Every change appends a `program_internship_events` row and a
+  `PROGRAM_INTERNSHIP_*` activity entry.
+- The evaluation **is not an employment decision**: at most it gates the
+  start of the employment review (§ 5e) on programs that require it.
 
 ## 6. Notifications
 
@@ -337,7 +440,8 @@ comments or amounts beyond what HR writes.
 |---|---|---|
 | `program.read` | ORG_ADMIN, RECRUITER, HIRING_MANAGER | view programs, participants, report |
 | `program.manage` | ORG_ADMIN, RECRUITER | configure/publish; affiliation verification, eligibility, test invite, interview process complete, funding *eligibility* and *proposals*, training and milestones, starting the employment review, offer, joining |
-| `program.finance.manage` | ORG_ADMIN | funding *approval/rejection*, fee obligation, payments, funding applied, terms acceptance, agreement, agreement document, bond |
+| `program.finance.manage` | ORG_ADMIN | funding *approval/rejection*, fee obligation, payments, funding applied, terms acceptance, agreement, agreement document, bond, a non-standard internship stipend (and seeing stipends) |
+| `program.settings.manage` | ORG_ADMIN | edit the organization's default program settings (§ 1a) |
 | `program.employment.approve` | ORG_ADMIN, HIRING_MANAGER | approve / decline employment progression |
 | `interview.read` | ORG_ADMIN, RECRUITER, HIRING_MANAGER, INTERVIEWER | list interviews; an interviewer records outcomes and sees feedback only for interviews assigned to them |
 | `interview.manage` | ORG_ADMIN, RECRUITER, HIRING_MANAGER | schedule/cancel interviews, record any outcome, read all feedback |
@@ -363,7 +467,8 @@ outcomes, test invited/passed/failed/awaiting grading, interview,
 selected/not selected, funding eligible/awaiting approval/approved/declined,
 fees settled, payments overdue, training enrolled/in progress/completed/
 withdrawn/terminated, milestones overdue, employment review/approved/not
-proceeding, offers made/accepted, joined, agreements signed — and, when all
+proceeding, internships planned/in progress/completed/qualified/ended early,
+offers made/accepted, joined, agreements signed — and, when all
 fixed fees share one currency, money totals (fees, company contribution,
 candidate payable, paid).
 
@@ -383,5 +488,8 @@ candidate payable, paid).
 - Whether student ID documents should be collected in-platform for
   affiliation verification (currently HR records what they checked).
 - Whether specific specializations or institutions are restricted.
+- Confirmation of the proposed defaults in § 1a (INR 50,000 fee, 50%
+  funding, 6-month internship, 36-month bond, 6/12-month training), and
+  whether internships carry a stipend and are required before employment.
 - Whether training-fee payments will ever be collected online (a gateway
   would be a new, separately approved integration).

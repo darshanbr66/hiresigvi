@@ -53,12 +53,16 @@ from app.models.program import (
     ProgramEnrollment,
     ProgramFeePayment,
     ProgramFundingRevision,
+    ProgramInternship,
+    ProgramInternshipEvent,
     ProgramStatus,
     RecruitmentProgram,
     RecruitmentProgramInstitution,
+    RecruitmentProgramVersion,
     ScholarshipDisbursement,
     TrainingMilestone,
 )
+from app.models.program_settings import OrganizationProgramSettings
 from app.models.question_bank import (
     QuestionBankAnswerKey,
     QuestionBankItem,
@@ -152,6 +156,10 @@ __all__ = [
     "ScholarshipDisbursement",
     "ProgramFeePayment",
     "ProgramFundingRevision",
+    "ProgramInternship",
+    "ProgramInternshipEvent",
+    "RecruitmentProgramVersion",
+    "OrganizationProgramSettings",
     "TrainingMilestone",
     "ApplicationInterview",
     "InterviewStatus",

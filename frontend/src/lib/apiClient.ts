@@ -189,6 +189,8 @@ export const apiClient = {
     request<T>(path, "POST", { body, accessToken }),
   patch: <T>(path: string, body?: unknown, accessToken?: string) =>
     request<T>(path, "PATCH", { body, accessToken }),
+  put: <T>(path: string, body?: unknown, accessToken?: string) =>
+    request<T>(path, "PUT", { body, accessToken }),
   /** `body` is optional: bulk deletes send the ids/confirmation as JSON. */
   delete: <T = void>(path: string, accessToken?: string, body?: unknown) =>
     request<T>(path, "DELETE", { accessToken, body }),

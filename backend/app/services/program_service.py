@@ -41,15 +41,20 @@ from app.models.program import (
     FundingRevisionKind,
     FundingRevisionStatus,
     FundingType,
+    InternshipOutcome,
+    InternshipStatus,
     MilestoneStatus,
     OfferStatus,
     PaymentRecordStatus,
     ProgramEnrollment,
     ProgramFeePayment,
     ProgramFundingRevision,
+    ProgramInternship,
+    ProgramInternshipEvent,
     ProgramStatus,
     RecruitmentProgram,
     RecruitmentProgramInstitution,
+    RecruitmentProgramVersion,
     ScholarshipDisbursement,
     ScholarshipEligibility,
     ScholarshipStatus,
@@ -73,6 +78,7 @@ from app.services import (
     institution_service,
     interview_service,
     program_finance,
+    program_settings_service,
     reapply_service,
 )
 from app.services.program_finance import FundingError, money
@@ -97,6 +103,9 @@ _SIMPLE_FIELDS = (
     "expected_completion_from",
     "expected_completion_to",
     "eligibility_notes",
+    "study_year_rules",
+    "minimum_cgpa",
+    "minimum_percentage",
     "training_duration_options",
     "training_fee_amount",
     "training_fee_currency",
@@ -110,6 +119,7 @@ _SIMPLE_FIELDS = (
     "scholarship_disclosure",
     "employment_pathway",
     "employment_job_id",
+    "bond_required",
     "bond_duration_months",
     "bond_terms_summary",
     "bond_start_rule",
@@ -119,10 +129,19 @@ _SIMPLE_FIELDS = (
     "required_documents",
     "candidate_disclosures",
     "terms_version",
+    "requires_interview",
+    "capacity",
+    "max_applications",
     "tracks_fee_payments",
     "tracks_training",
     "tracks_employment",
     "requires_agreement",
+    "tracks_internship",
+    "internship_duration_months",
+    "internship_stipend_amount",
+    "internship_stipend_currency",
+    "internship_terms",
+    "internship_required_for_employment",
     "company_funding_type",
     "company_funding_value",
     "funding_requires_independent_approval",
@@ -134,6 +153,7 @@ _SIMPLE_FIELDS = (
 #: exact wording they saw.
 _DISCLOSED_FIELDS = (
     "candidate_disclosures",
+    "training_duration_options",
     "training_fee_amount",
     "training_fee_currency",
     "fee_payment_terms",
@@ -144,12 +164,34 @@ _DISCLOSED_FIELDS = (
     "scholarship_eligibility_rules",
     "scholarship_disbursement_timing",
     "scholarship_disclosure",
+    "bond_required",
     "bond_duration_months",
     "bond_terms_summary",
     "employment_pathway",
     "company_funding_type",
     "company_funding_value",
+    "tracks_internship",
+    "internship_duration_months",
+    "internship_stipend_amount",
+    "internship_stipend_currency",
+    "internship_terms",
 )
+
+#: The configuration recorded in each `RecruitmentProgramVersion`.
+_VERSIONED_FIELDS = (*_SIMPLE_FIELDS, "eligible_education_levels", "assessment_id")
+
+#: Switches that fall back to their default when explicitly cleared.
+_FLAG_DEFAULTS = {
+    "tracks_fee_payments": True,
+    "tracks_training": True,
+    "tracks_employment": True,
+    "requires_agreement": True,
+    "funding_requires_independent_approval": True,
+    "requires_interview": True,
+    "bond_required": True,
+    "tracks_internship": False,
+    "internship_required_for_employment": False,
+}
 
 
 def _now() -> datetime:
@@ -289,22 +331,20 @@ def _apply_fields(program: RecruitmentProgram, values: dict[str, Any]) -> None:
         if field in values and values[field] is not None:
             setattr(program, field, values[field])
         elif field in values and field not in ("title", "description"):
-            # An explicit null clears an optional value (lists to empty).
+            # An explicit null clears an optional value (lists/maps to empty).
             current = getattr(program, field)
-            setattr(program, field, [] if isinstance(current, list) else None)
+            setattr(
+                program,
+                field,
+                [] if isinstance(current, list) else {} if isinstance(current, dict) else None,
+            )
     if "eligible_education_levels" in values:
         program.eligible_education_levels = [
             level.value for level in (values["eligible_education_levels"] or [])
         ]
-    for flag in (
-        "tracks_fee_payments",
-        "tracks_training",
-        "tracks_employment",
-        "requires_agreement",
-        "funding_requires_independent_approval",
-    ):
+    for flag, default in _FLAG_DEFAULTS.items():
         if flag in values and values[flag] is None:
-            setattr(program, flag, True)
+            setattr(program, flag, default)
     if "affiliation_verification_method" in values and values["affiliation_verification_method"] is None:
         program.affiliation_verification_method = AffiliationVerificationMethod.MANUAL
 
@@ -356,6 +396,31 @@ def _require_valid_funding_config(program: RecruitmentProgram) -> None:
         raise UnprocessableError(" ".join(problems), code="invalid_funding_config", data={"problems": problems})
 
 
+def _defaults_for_new_program(settings: Any) -> dict[str, Any]:
+    """The organization's default settings as program field values. Only a
+    starting point: HR edits any of them on the draft."""
+    values: dict[str, Any] = {
+        "training_duration_options": list(settings.training_duration_options),
+        "funding_requires_independent_approval": settings.funding_requires_independent_approval,
+        "bond_required": settings.bond_required,
+        "eligible_education_levels": [EducationLevel(v) for v in settings.eligible_education_levels],
+        "study_year_rules": dict(settings.study_year_rules),
+    }
+    if settings.training_fee_amount is not None and settings.currency:
+        values["training_fee_amount"] = settings.training_fee_amount
+        values["training_fee_currency"] = settings.currency
+    if settings.company_funding_type is not None:
+        values["company_funding_type"] = settings.company_funding_type
+        values["company_funding_value"] = settings.company_funding_value
+        if settings.currency:
+            values["scholarship_currency"] = settings.currency
+    if settings.bond_required and settings.bond_duration_months:
+        values["bond_duration_months"] = settings.bond_duration_months
+    if settings.internship_duration_months:
+        values["internship_duration_months"] = settings.internship_duration_months
+    return values
+
+
 async def create_program(
     db: AsyncSession, *, actor: User, payload: ProgramCreateRequest
 ) -> RecruitmentProgram:
@@ -389,10 +454,11 @@ async def create_program(
         description=payload.description,
         assessment_id=payload.assessment_id,
     )
-    values = payload.model_dump(exclude_unset=True)
+    values = payload.model_dump(exclude_unset=True, exclude={"apply_organization_defaults"})
+    if payload.apply_organization_defaults:
+        defaults = await program_settings_service.get_settings(db, actor.organization_id)
+        values = {**_defaults_for_new_program(defaults), **values}
     _apply_fields(program, values)
-    if program.bond_duration_months is None and "bond_duration_months" not in values:
-        program.bond_duration_months = 36
     _require_valid_funding_config(program)
     db.add(program)
     await db.flush()
@@ -421,8 +487,8 @@ def publication_problems(program: RecruitmentProgram) -> list[str]:
         problems.append("Add a title and description.")
     if not program.eligible_education_levels:
         problems.append("Choose at least one eligible education level.")
-    if not program.training_duration_options:
-        problems.append("Choose the training duration (6 or 12 months).")
+    if not program.training_duration_options and program.tracks_training:
+        problems.append("Choose at least one training duration.")
     has_fee = program.training_fee_amount is not None and program.training_fee_currency
     if not has_fee and _blank(program.fee_disclosure):
         problems.append(
@@ -438,8 +504,20 @@ def publication_problems(program: RecruitmentProgram) -> list[str]:
         problems.append("Describe the scholarship eligibility and approval rules.")
     if _blank(program.employment_pathway):
         problems.append("Describe the full-time employment pathway.")
-    if not program.bond_duration_months or _blank(program.bond_terms_summary):
-        problems.append("Enter the commitment (bond) duration and the approved summary of its terms.")
+    if program.bond_required and (not program.bond_duration_months or _blank(program.bond_terms_summary)):
+        problems.append(
+            "Enter the commitment (bond) duration and the approved summary of its terms, or turn "
+            "the bond off."
+        )
+    if program.tracks_internship and not program.internship_duration_months:
+        problems.append("Enter the internship duration.")
+    if program.internship_required_for_employment and not (
+        program.tracks_internship and program.tracks_employment
+    ):
+        problems.append(
+            "Requiring a completed internship for employment needs both the internship and "
+            "employment stages tracked."
+        )
     if _blank(program.candidate_disclosures) or _blank(program.terms_version):
         problems.append("Add the approved candidate terms/disclosures and their version label.")
     if program.assessment is not None and (
@@ -486,6 +564,7 @@ async def update_program(
 
     before = {field: getattr(program, field) for field in _DISCLOSED_FIELDS}
     previous_terms = program.terms_version
+    before_config = config_snapshot(program)
 
     if "assessment_id" in values:
         if values["assessment_id"] is not None:
@@ -527,6 +606,17 @@ async def update_program(
         job.description = reloaded.description
     await db.flush()
 
+    if reloaded.status != ProgramStatus.DRAFT:
+        # A program candidates can see (or saw): every change is a new,
+        # immutable configuration version.
+        after_config = config_snapshot(reloaded)
+        changed = sorted(f for f in after_config if after_config[f] != before_config.get(f))
+        if changed:
+            await _record_version(
+                db, reloaded, event="UPDATED", changed_fields=changed, actor=actor,
+                baseline=before_config,
+            )
+
     await activity_service.record_activity(
         db,
         organization_id=program.organization_id,
@@ -556,6 +646,11 @@ async def change_status(
     previous = program.status
     program.status = status
     await db.flush()
+    if status == ProgramStatus.PUBLISHED:
+        latest = await _latest_version(db, program.id)
+        snapshot = config_snapshot(program)
+        if latest is None or latest.snapshot != snapshot:
+            await _record_version(db, program, event="PUBLISHED", changed_fields=[], actor=actor)
     await activity_service.record_activity(
         db,
         organization_id=program.organization_id,
@@ -569,6 +664,134 @@ async def change_status(
         ),
     )
     return await require_program(db, program.organization_id, program.id)
+
+
+# --- Configuration versions ---
+
+
+def _json_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return f"{value:f}"
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if hasattr(value, "value"):
+        return value.value
+    if isinstance(value, list):
+        return [_json_value(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _json_value(v) for k, v in value.items()}
+    return value
+
+
+def config_snapshot(program: RecruitmentProgram) -> dict[str, Any]:
+    """The program's configuration as plain JSON (what a version stores)."""
+    snapshot = {field: _json_value(getattr(program, field)) for field in _VERSIONED_FIELDS}
+    # Loaded by every program query here (`_PROGRAM_LOADS`).
+    snapshot["eligible_institution_ids"] = sorted(str(i.id) for i in program.eligible_institutions)
+    return snapshot
+
+
+async def _latest_version(
+    db: AsyncSession, program_id: uuid.UUID
+) -> RecruitmentProgramVersion | None:
+    version: RecruitmentProgramVersion | None = await db.scalar(
+        select(RecruitmentProgramVersion)
+        .where(RecruitmentProgramVersion.program_id == program_id)
+        .order_by(RecruitmentProgramVersion.version_number.desc())
+        .limit(1)
+    )
+    return version
+
+
+async def _record_version(
+    db: AsyncSession,
+    program: RecruitmentProgram,
+    *,
+    event: str,
+    changed_fields: list[str],
+    actor: User | None,
+    baseline: dict[str, Any] | None = None,
+) -> RecruitmentProgramVersion:
+    """Appends a version. Taken under a lock on the program row so two
+    concurrent edits can't claim the same number. A program published before
+    versions existed first gets its pre-change configuration as a BASELINE
+    version, so the history starts from what applicants actually saw."""
+    await db.execute(
+        select(RecruitmentProgram.id).where(RecruitmentProgram.id == program.id).with_for_update()
+    )
+    latest = await _latest_version(db, program.id)
+    number = latest.version_number if latest is not None else 0
+    if latest is None and baseline is not None:
+        number += 1
+        db.add(
+            RecruitmentProgramVersion(
+                organization_id=program.organization_id,
+                program_id=program.id,
+                version_number=number,
+                event="BASELINE",
+                changed_fields=[],
+                snapshot=baseline,
+                created_by_user_id=None,
+            )
+        )
+    version = RecruitmentProgramVersion(
+        organization_id=program.organization_id,
+        program_id=program.id,
+        version_number=number + 1,
+        event=event,
+        changed_fields=changed_fields,
+        snapshot=config_snapshot(program),
+        created_by_user_id=actor.id if actor else None,
+    )
+    db.add(version)
+    await db.flush()
+    return version
+
+
+async def ensure_current_version(db: AsyncSession, program: RecruitmentProgram) -> int:
+    """The version applicants apply under — recorded on first need for a
+    program published before versions existed."""
+    latest = await _latest_version(db, program.id)
+    if latest is not None:
+        return latest.version_number
+    return (
+        await _record_version(db, program, event="BASELINE", changed_fields=[], actor=None)
+    ).version_number
+
+
+async def list_versions(
+    db: AsyncSession, program: RecruitmentProgram
+) -> list[RecruitmentProgramVersion]:
+    result = await db.execute(
+        select(RecruitmentProgramVersion)
+        .where(
+            RecruitmentProgramVersion.program_id == program.id,
+            RecruitmentProgramVersion.organization_id == program.organization_id,
+        )
+        .order_by(RecruitmentProgramVersion.version_number.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def current_version_number(db: AsyncSession, program_id: uuid.UUID) -> int | None:
+    latest = await _latest_version(db, program_id)
+    return latest.version_number if latest is not None else None
+
+
+async def selected_count(db: AsyncSession, program_id: uuid.UUID) -> int:
+    """Candidates currently selected through the program (against capacity)."""
+    count = await db.scalar(
+        select(func.count(ProgramEnrollment.id))
+        .join(Application, Application.id == ProgramEnrollment.application_id)
+        .where(
+            ProgramEnrollment.program_id == program_id,
+            Application.deleted_at.is_(None),
+            Application.status.in_(program_workflow.SELECTED_STATUSES),
+        )
+    )
+    return int(count or 0)
 
 
 # --- Candidate-facing ---
@@ -621,13 +844,22 @@ def disclosure_text(program: RecruitmentProgram) -> str:
         lines.append(f"Scholarship eligibility: {program.scholarship_eligibility_rules.strip()}")
     if program.scholarship_disbursement_timing:
         lines.append(f"Scholarship disbursement: {program.scholarship_disbursement_timing.strip()}")
-    if program.bond_duration_months:
+    if program.bond_required and program.bond_duration_months:
         lines.append(
             f"Scholarship recipients agree to a {program.bond_duration_months}-month commitment "
             "under the company's approved agreement."
         )
-    if program.bond_terms_summary:
+    if program.bond_required and program.bond_terms_summary:
         lines.append(f"Commitment terms: {program.bond_terms_summary.strip()}")
+    if program.tracks_internship and program.internship_duration_months:
+        stipend = _money(program.internship_stipend_amount, program.internship_stipend_currency)
+        lines.append(
+            f"Internship: {program.internship_duration_months} months"
+            + (f", stipend {stipend} per month" if stipend else "")
+            + "."
+        )
+    if program.tracks_internship and program.internship_terms:
+        lines.append(f"Internship terms: {program.internship_terms.strip()}")
     if program.employment_pathway:
         lines.append(f"Employment pathway: {program.employment_pathway.strip()}")
     lines.append(
@@ -649,16 +881,37 @@ def eligibility_problems(
     if levels and declaration.education_level.value not in levels:
         accepted = ", ".join(_EDUCATION_LABELS[EducationLevel(v)] for v in levels)
         problems.append(f"This program is open to: {accepted}.")
-    years = program.eligible_study_years
+    # A level with its own rule (e.g. M.Tech year 2) uses it; otherwise the
+    # program-wide years apply. An empty list = any year.
+    level_rules = program.study_year_rules or {}
+    level = declaration.education_level.value
+    years = level_rules[level] if level in level_rules else program.eligible_study_years
     if years:
         if declaration.study_year is None:
             problems.append("Enter your current year of study.")
         elif declaration.study_year not in years:
             problems.append(
-                "This program is open to students in year "
-                + ", ".join(str(y) for y in years)
-                + " of their programme."
+                f"For {_EDUCATION_LABELS[declaration.education_level]} candidates this program is "
+                "open to year " + ", ".join(str(y) for y in years) + " of their programme."
             )
+    if program.minimum_cgpa is not None or program.minimum_percentage is not None:
+        meets_cgpa = (
+            program.minimum_cgpa is not None
+            and declaration.cgpa is not None
+            and declaration.cgpa >= program.minimum_cgpa
+        )
+        meets_percentage = (
+            program.minimum_percentage is not None
+            and declaration.percentage_score is not None
+            and declaration.percentage_score >= program.minimum_percentage
+        )
+        if not (meets_cgpa or meets_percentage):
+            thresholds = []
+            if program.minimum_cgpa is not None:
+                thresholds.append(f"a CGPA of at least {program.minimum_cgpa.normalize():f} (out of 10)")
+            if program.minimum_percentage is not None:
+                thresholds.append(f"at least {program.minimum_percentage.normalize():f}%")
+            problems.append("This program requires " + " or ".join(thresholds) + ".")
     specializations = program.eligible_specializations
     if specializations and declaration.specialization.lower() not in {
         s.lower() for s in specializations
@@ -713,6 +966,20 @@ async def record_enrollment(
     """Called inside the application's own transaction (before its first
     commit), so a program application never exists without its enrollment.
     The declared education also refreshes the candidate's profile."""
+    if program.max_applications is not None:
+        # Serialize concurrent applications so the limit can't be overshot.
+        await db.execute(
+            select(RecruitmentProgram.id)
+            .where(RecruitmentProgram.id == program.id)
+            .with_for_update()
+        )
+        received = await db.scalar(
+            select(func.count(ProgramEnrollment.id)).where(ProgramEnrollment.program_id == program.id)
+        )
+        if (received or 0) >= program.max_applications:
+            raise ConflictError(
+                "This program has reached its application limit.", code="program_application_limit"
+            )
     institution_name = declaration.institution_name or ""
     if declaration.institution_id is not None:
         institution = await db.get(Institution, declaration.institution_id)
@@ -737,10 +1004,13 @@ async def record_enrollment(
         institution_id=declaration.institution_id,
         institution_name=institution_name,
         expected_completion_date=declaration.expected_completion_date,
+        cgpa=declaration.cgpa,
+        percentage_score=declaration.percentage_score,
+        program_version_number=await ensure_current_version(db, program),
         terms_version_accepted=declaration.terms_version,
         terms_accepted_at=_now(),
         disclosure_snapshot=disclosure_text(program),
-        bond_duration_months=program.bond_duration_months,
+        bond_duration_months=program.bond_duration_months if program.bond_required else None,
     )
     db.add(enrollment)
     await db.flush()
@@ -789,6 +1059,8 @@ class EnrollmentView:
     # Detail only.
     funding_revisions: list[ProgramFundingRevision] = field(default_factory=list)
     interviews: list[ApplicationInterview] = field(default_factory=list)
+    internship: ProgramInternship | None = None
+    internship_events: list[ProgramInternshipEvent] = field(default_factory=list)
 
 
 async def _paid_totals(db: AsyncSession, enrollment_ids: list[uuid.UUID]) -> dict[uuid.UUID, Decimal]:
@@ -833,6 +1105,17 @@ async def _milestones(
     for milestone in result.scalars().all():
         grouped[milestone.enrollment_id].append(milestone)
     return grouped
+
+
+async def _internships(
+    db: AsyncSession, enrollment_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, ProgramInternship]:
+    if not enrollment_ids:
+        return {}
+    result = await db.execute(
+        select(ProgramInternship).where(ProgramInternship.enrollment_id.in_(enrollment_ids))
+    )
+    return {internship.enrollment_id: internship for internship in result.scalars().all()}
 
 
 async def _latest_invitations(
@@ -884,6 +1167,7 @@ async def list_enrollments(
     paid = await _paid_totals(db, enrollment_ids)
     affiliations = await _affiliations(db, application_ids)
     milestones = await _milestones(db, enrollment_ids)
+    internships = await _internships(db, enrollment_ids)
     return [
         EnrollmentView(
             enrollment=enrollment,
@@ -895,6 +1179,7 @@ async def list_enrollments(
             fee_paid_total=paid.get(enrollment.id, Decimal("0")),
             affiliation=affiliations.get(application.id),
             milestones=milestones.get(enrollment.id, []),
+            internship=internships.get(enrollment.id),
         )
         for enrollment, application, candidate in rows
     ]
@@ -933,6 +1218,18 @@ async def enrollment_view(db: AsyncSession, enrollment: ProgramEnrollment) -> En
         .where(ProgramFundingRevision.enrollment_id == enrollment.id)
         .order_by(ProgramFundingRevision.revision_number)
     )
+    internship = (await _internships(db, [enrollment.id])).get(enrollment.id)
+    events: list[ProgramInternshipEvent] = []
+    if internship is not None:
+        events = list(
+            (
+                await db.execute(
+                    select(ProgramInternshipEvent)
+                    .where(ProgramInternshipEvent.internship_id == internship.id)
+                    .order_by(ProgramInternshipEvent.created_at)
+                )
+            ).scalars().all()
+        )
     return EnrollmentView(
         enrollment=enrollment,
         application=application,
@@ -949,6 +1246,8 @@ async def enrollment_view(db: AsyncSession, enrollment: ProgramEnrollment) -> En
         interviews=await interview_service.list_for_application(
             db, enrollment.organization_id, application.id
         ),
+        internship=internship,
+        internship_events=events,
     )
 
 
@@ -1322,6 +1621,12 @@ async def propose_funding(
         )
     except FundingError as exc:
         raise UnprocessableError(str(exc), code="invalid_funding") from exc
+    if split.company_contribution == 0:
+        raise UnprocessableError(
+            "A funding proposal must contribute more than zero. To give no company funding, "
+            "mark the candidate not eligible for funding instead.",
+            code="invalid_funding",
+        )
     if program.scholarship_currency and program.scholarship_currency != enrollment.fee_currency:
         raise UnprocessableError(
             "Company funding and the training fee must be in the same currency.",
@@ -1451,9 +1756,11 @@ async def decide_funding(
             enrollment.funding_terms_accepted_revision = None
         if program.requires_agreement and enrollment.agreement_status == AgreementStatus.NOT_REQUIRED:
             enrollment.agreement_status = AgreementStatus.PENDING
-        if enrollment.bond_duration_months is None:
+        if enrollment.bond_duration_months is None and program.bond_required:
             enrollment.bond_duration_months = program.bond_duration_months
-        if enrollment.bond_duration_months:
+        if program.bond_required and enrollment.bond_duration_months and (
+            revision.company_contribution_amount > 0
+        ):
             enrollment.bond_applies_reason = (
                 f"Company funding approved (revision {revision.revision_number}: "
                 f"{_money(revision.company_contribution_amount, revision.currency)} of the "
@@ -1738,7 +2045,8 @@ async def update_training(
     note: str | None,
     actor: User,
 ) -> ProgramEnrollment:
-    """Full-time training (6 or 12 months). Enrolling fixes the fee
+    """Full-time training, for one of the program's configured durations.
+    Enrolling fixes the fee
     obligation when the program tracks fees; the planned end follows from
     start + duration unless HR enters one; completion needs its date;
     withdrawal/termination needs a reason."""
@@ -1922,6 +2230,22 @@ async def update_employment_review(
             "Record the training as completed before starting the employment review.",
             code="training_completion_required",
         )
+    if (
+        status == EmploymentReviewStatus.IN_REVIEW
+        and program.tracks_internship
+        and program.internship_required_for_employment
+    ):
+        internship = (await _internships(db, [enrollment.id])).get(enrollment.id)
+        if (
+            internship is None
+            or internship.status != InternshipStatus.COMPLETED
+            or internship.outcome != InternshipOutcome.QUALIFIED
+        ):
+            raise ConflictError(
+                "This program requires a completed internship with a qualifying evaluation "
+                "before the employment review.",
+                code="internship_completion_required",
+            )
     if status in (EmploymentReviewStatus.APPROVED, EmploymentReviewStatus.NOT_PROCEEDING):
         if not can_approve:
             raise ForbiddenError("You don't have permission to decide employment progression.")
@@ -2200,6 +2524,11 @@ async def set_bond(
     dates) follow from the duration."""
     if enrollment.scholarship_status != ScholarshipStatus.APPROVED:
         raise ConflictError("A bond applies only to a participant with approved company funding.")
+    program = await db.get(RecruitmentProgram, enrollment.program_id)
+    if program is not None and not program.bond_required and not enrollment.bond_applies_reason:
+        raise ConflictError(
+            "This program doesn't require a bond for funded participants.", code="bond_not_required"
+        )
     if enrollment.agreement_status != AgreementStatus.SIGNED:
         raise ConflictError("Record the signed agreement before the bond dates.", code="agreement_required")
     duration = duration_months or enrollment.bond_duration_months
@@ -2273,6 +2602,9 @@ async def program_report(db: AsyncSession, program: RecruitmentProgram) -> Progr
     def count(predicate: Any) -> int:
         return sum(1 for view in views if predicate(view.enrollment))
 
+    def internship_count(state: InternshipStatus) -> int:
+        return sum(1 for v in views if v.internship is not None and v.internship.status == state)
+
     today = date.today()
     statuses = Counter(
         program_finance.payment_status(
@@ -2312,6 +2644,16 @@ async def program_report(db: AsyncSession, program: RecruitmentProgram) -> Progr
         employment_not_proceeding=count(
             lambda e: e.employment_review_status == EmploymentReviewStatus.NOT_PROCEEDING
         ),
+        internship_planned=internship_count(InternshipStatus.PLANNED),
+        internship_active=internship_count(InternshipStatus.ACTIVE),
+        internship_completed=internship_count(InternshipStatus.COMPLETED),
+        internship_qualified=sum(
+            1
+            for v in views
+            if v.internship is not None and v.internship.outcome == InternshipOutcome.QUALIFIED
+        ),
+        internship_ended_early=internship_count(InternshipStatus.TERMINATED)
+        + internship_count(InternshipStatus.WITHDRAWN),
         affiliation_pending=sum(
             1 for v in views if v.affiliation is not None and v.affiliation.status == AffiliationStatus.PENDING
         ),

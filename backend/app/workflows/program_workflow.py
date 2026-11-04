@@ -10,7 +10,9 @@ application_service.change_status for every status change):
   eligible;
 * with a selection test configured, a candidate can't be shortlisted or
   interviewed without a final *passing* result on their latest attempt;
-* a selection decision needs the interview recorded as completed;
+* a selection decision needs the interview recorded as completed (when the
+  program requires an interview) and a free place (when it sets a
+  capacity);
 * HIRED (joined full-time employment) needs an accepted offer.
 
 Company funding moves through proposals (`FUNDING_REVISION_TRANSITIONS`):
@@ -23,7 +25,7 @@ action, and nothing is ever inferred from passing a test, receiving a
 scholarship or completing training.
 """
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError
@@ -34,8 +36,11 @@ from app.models.program import (
     EligibilityStatus,
     EmploymentReviewStatus,
     FundingRevisionStatus,
+    InternshipOutcome,
+    InternshipStatus,
     OfferStatus,
     ProgramEnrollment,
+    ProgramInternship,
     ProgramStatus,
     RecruitmentProgram,
     ScholarshipEligibility,
@@ -98,6 +103,20 @@ TRAINING_TRANSITIONS: dict[TrainingStatus, frozenset[TrainingStatus]] = {
     TrainingStatus.COMPLETED: frozenset(),
     TrainingStatus.WITHDRAWN: frozenset(),
     TrainingStatus.DISCONTINUED: frozenset(),
+}
+
+#: Internship lifecycle (docs/programs.md § 5f). Extensions keep it ACTIVE
+#: and are recorded as events.
+INTERNSHIP_TRANSITIONS: dict[InternshipStatus, frozenset[InternshipStatus]] = {
+    InternshipStatus.PLANNED: frozenset(
+        {InternshipStatus.ACTIVE, InternshipStatus.WITHDRAWN, InternshipStatus.TERMINATED}
+    ),
+    InternshipStatus.ACTIVE: frozenset(
+        {InternshipStatus.COMPLETED, InternshipStatus.WITHDRAWN, InternshipStatus.TERMINATED}
+    ),
+    InternshipStatus.COMPLETED: frozenset(),
+    InternshipStatus.TERMINATED: frozenset(),
+    InternshipStatus.WITHDRAWN: frozenset(),
 }
 
 #: Training states that end it without completion.
@@ -213,11 +232,41 @@ async def check_application_transition(
                 "candidate can be shortlisted or interviewed.",
                 code="program_test_pass_required",
             )
-    if to_status == ApplicationStatus.SELECTED and enrollment.interview_completed_at is None:
+    if (
+        to_status == ApplicationStatus.SELECTED
+        and program.requires_interview
+        and enrollment.interview_completed_at is None
+    ):
         raise ConflictError(
             "Record the interview as completed before making a selection decision.",
             code="program_interview_required",
         )
+    if (
+        to_status == ApplicationStatus.SELECTED
+        and program.capacity is not None
+        and application.status not in SELECTED_STATUSES
+    ):
+        # Lock the program row so two concurrent selections can't both take
+        # the last place.
+        await db.execute(
+            select(RecruitmentProgram.id)
+            .where(RecruitmentProgram.id == program.id)
+            .with_for_update()
+        )
+        selected = await db.scalar(
+            select(func.count(ProgramEnrollment.id))
+            .join(Application, Application.id == ProgramEnrollment.application_id)
+            .where(
+                ProgramEnrollment.program_id == program.id,
+                Application.deleted_at.is_(None),
+                Application.status.in_(SELECTED_STATUSES),
+            )
+        )
+        if (selected or 0) >= program.capacity:
+            raise ConflictError(
+                f"This program's capacity ({program.capacity}) is already filled.",
+                code="program_capacity_reached",
+            )
     if to_status == ApplicationStatus.HIRED and enrollment.offer_status != OfferStatus.ACCEPTED:
         raise ConflictError(
             "A program participant can be marked as joined only after accepting a "
@@ -226,7 +275,11 @@ async def check_application_transition(
         )
 
 
-def derive_stage(enrollment: ProgramEnrollment, application: Application) -> str:
+def derive_stage(
+    enrollment: ProgramEnrollment,
+    application: Application,
+    internship: ProgramInternship | None = None,
+) -> str:
     """One readable HR-facing stage label for lists (the detailed state is
     on the individual fields)."""
     status = application.status
@@ -247,8 +300,20 @@ def derive_stage(enrollment: ProgramEnrollment, application: Application) -> str
             if enrollment.employment_review_status == EmploymentReviewStatus.APPROVED
             else "Employment review"
         )
+    if internship is not None and internship.status != InternshipStatus.PLANNED:
+        if internship.status == InternshipStatus.ACTIVE:
+            return "Internship in progress"
+        if internship.status == InternshipStatus.COMPLETED:
+            qualified = internship.outcome == InternshipOutcome.QUALIFIED
+            return f"Internship completed — {'qualified' if qualified else 'not qualified'}"
+        return "Internship ended early"
     if enrollment.training_status == TrainingStatus.DISCONTINUED:
         return "Training terminated"
+    if internship is not None and enrollment.training_status in (
+        TrainingStatus.NOT_ENROLLED,
+        TrainingStatus.COMPLETED,
+    ):
+        return "Internship planned"
     if enrollment.training_status != TrainingStatus.NOT_ENROLLED:
         return f"Training {enrollment.training_status.value.replace('_', ' ').lower()}"
     if enrollment.scholarship_status == ScholarshipStatus.PENDING:

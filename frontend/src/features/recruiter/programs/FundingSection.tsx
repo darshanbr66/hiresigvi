@@ -30,7 +30,13 @@ export function FundingSection({ e, program, busy, can, run }: SectionProps) {
     e.scholarship_eligibility === "ELIGIBLE" &&
     !open &&
     ["PENDING", "APPROVED"].includes(e.scholarship_status);
-  const preview = fee && proposal.value ? splitFee(fee, proposal.type, proposal.value) : null;
+  const split = fee && proposal.value ? splitFee(fee, proposal.type, proposal.value) : null;
+  // A proposal must contribute something; declining funding is the
+  // not-eligible decision instead (the server enforces the same).
+  const preview =
+    split && typeof split !== "string" && split.companyContribution === "0.00"
+      ? "A funding proposal must contribute more than zero."
+      : split;
   const amendment = e.funding_terms_accepted_at !== null;
 
   return (

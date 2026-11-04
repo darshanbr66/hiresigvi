@@ -20,9 +20,18 @@ const EMPTY_DECLARATION: ProgramDeclaration = {
   institution_id: "",
   institution_name: "",
   expected_completion_date: "",
+  cgpa: "",
+  percentage_score: "",
   terms_version: "",
   terms_accepted: false,
 };
+
+function academicRequirement(program: PublicProgramView): string {
+  const parts: string[] = [];
+  if (program.minimum_cgpa !== null) parts.push(`a CGPA of at least ${Number(program.minimum_cgpa)} (out of 10)`);
+  if (program.minimum_percentage !== null) parts.push(`at least ${Number(program.minimum_percentage)}%`);
+  return parts.join(" or ");
+}
 
 function money(amount: string | null, currency: string | null): string | null {
   if (!amount || !currency) return null;
@@ -38,6 +47,14 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** The years of study open to `level`: its own rule when the program sets
+ * one, otherwise the program-wide years (empty = any year). Mirrors
+ * program_service.eligibility_problems. */
+function yearsFor(program: PublicProgramView, level: EducationLevel | ""): number[] {
+  if (level && program.study_year_rules[level] !== undefined) return program.study_year_rules[level] ?? [];
+  return program.eligible_study_years;
+}
+
 /** What the candidate's declaration still lacks for this program's
  * configured criteria — a convenience only; the server checks it all. */
 function declarationProblems(program: PublicProgramView, d: ProgramDeclaration): string[] {
@@ -49,11 +66,19 @@ function declarationProblems(program: PublicProgramView, d: ProgramDeclaration):
   ) {
     problems.push("This program isn't open to that education level.");
   }
-  if (program.eligible_study_years.length > 0) {
+  const years = yearsFor(program, d.education_level);
+  if (years.length > 0) {
     if (!d.study_year) problems.push("Enter your current year of study.");
-    else if (!program.eligible_study_years.includes(Number(d.study_year))) {
-      problems.push(`This program is open to year ${program.eligible_study_years.join(" / ")} students.`);
+    else if (!years.includes(Number(d.study_year))) {
+      problems.push(`For this education level the program is open to year ${years.join(" / ")} students.`);
     }
+  }
+  const minCgpa = program.minimum_cgpa;
+  const minPct = program.minimum_percentage;
+  if (minCgpa !== null || minPct !== null) {
+    const meetsCgpa = minCgpa !== null && d.cgpa.trim() !== "" && Number(d.cgpa) >= Number(minCgpa);
+    const meetsPct = minPct !== null && d.percentage_score.trim() !== "" && Number(d.percentage_score) >= Number(minPct);
+    if (!meetsCgpa && !meetsPct) problems.push(`Enter ${academicRequirement(program)}.`);
   }
   if (!d.specialization.trim()) problems.push("Enter your specialization.");
   if (program.eligible_institutions.length > 0 ? !d.institution_id : !d.institution_name.trim()) {
@@ -81,7 +106,16 @@ export function ProgramApplyPage() {
     queryFn: () => getPublicProgram(programId),
   });
   const [declaration, setDeclaration] = useState<ProgramDeclaration>(EMPTY_DECLARATION);
-  const ids = { level: useId(), year: useId(), spec: useId(), inst: useId(), done: useId(), terms: useId() };
+  const ids = {
+    level: useId(),
+    year: useId(),
+    spec: useId(),
+    inst: useId(),
+    done: useId(),
+    cgpa: useId(),
+    pct: useId(),
+    terms: useId(),
+  };
 
   const data = programQuery.data;
   const program = data?.kind === "program" ? data : null;
@@ -133,6 +167,16 @@ export function ProgramApplyPage() {
                 {program.eligible_study_years.length > 0 && (
                   <li>Current year of study: {program.eligible_study_years.join(" or ")}</li>
                 )}
+                {(Object.entries(program.study_year_rules) as [EducationLevel, number[]][])
+                  .filter(([, years]) => years.length > 0)
+                  .map(([level, years]) => (
+                    <li key={level}>
+                      {EDUCATION_LEVEL_LABELS[level]}: year {years.join(" or ")}
+                    </li>
+                  ))}
+                {(program.minimum_cgpa !== null || program.minimum_percentage !== null) && (
+                  <li>Academic standing: {academicRequirement(program)}</li>
+                )}
                 {program.eligible_specializations.length > 0 && (
                   <li>Specializations: {program.eligible_specializations.join(", ")}</li>
                 )}
@@ -179,14 +223,27 @@ export function ProgramApplyPage() {
               </p>
             </Section>
 
+            {program.tracks_internship && program.internship_duration_months && (
+              <Section title="Internship">
+                <p>
+                  Duration: {program.internship_duration_months} months
+                  {money(program.internship_stipend_amount, program.internship_stipend_currency)
+                    ? `, stipend ${money(program.internship_stipend_amount, program.internship_stipend_currency)} per month`
+                    : ""}
+                  .
+                </p>
+                {program.internship_terms && <p>{program.internship_terms}</p>}
+              </Section>
+            )}
+
             <Section title="Commitment and employment">
-              {program.bond_duration_months && (
+              {program.bond_required && program.bond_duration_months && (
                 <p>
                   Scholarship recipients agree to a {program.bond_duration_months}-month commitment under
                   the company's approved agreement.
                 </p>
               )}
-              {program.bond_terms_summary && <p>{program.bond_terms_summary}</p>}
+              {program.bond_required && program.bond_terms_summary && <p>{program.bond_terms_summary}</p>}
               {program.employment_pathway && <p>{program.employment_pathway}</p>}
               <p className="field-hint">
                 Passing the test, receiving a scholarship or completing training does not by itself
@@ -233,7 +290,9 @@ export function ProgramApplyPage() {
                     <label className="field" htmlFor={ids.year}>
                       <span>
                         Current year of study{" "}
-                        {program.eligible_study_years.length === 0 && <span className="optional-mark">(Optional)</span>}
+                        {yearsFor(program, declaration.education_level).length === 0 && (
+                          <span className="optional-mark">(Optional)</span>
+                        )}
                       </span>
                       <input
                         id={ids.year}
@@ -242,7 +301,7 @@ export function ProgramApplyPage() {
                         max={10}
                         value={declaration.study_year}
                         onChange={(e) => patch({ study_year: e.target.value })}
-                        required={program.eligible_study_years.length > 0}
+                        required={yearsFor(program, declaration.education_level).length > 0}
                       />
                     </label>
                   </div>
@@ -312,6 +371,38 @@ export function ProgramApplyPage() {
                       onChange={(e) => patch({ expected_completion_date: e.target.value })}
                     />
                   </label>
+                  {(program.minimum_cgpa !== null || program.minimum_percentage !== null) && (
+                    <div className="field-row">
+                      {program.minimum_cgpa !== null && (
+                        <label className="field" htmlFor={ids.cgpa}>
+                          <span>CGPA (out of 10)</span>
+                          <input
+                            id={ids.cgpa}
+                            type="number"
+                            min={0}
+                            max={10}
+                            step="0.01"
+                            value={declaration.cgpa}
+                            onChange={(e) => patch({ cgpa: e.target.value })}
+                          />
+                        </label>
+                      )}
+                      {program.minimum_percentage !== null && (
+                        <label className="field" htmlFor={ids.pct}>
+                          <span>Percentage</span>
+                          <input
+                            id={ids.pct}
+                            type="number"
+                            min={0}
+                            max={100}
+                            step="0.01"
+                            value={declaration.percentage_score}
+                            onChange={(e) => patch({ percentage_score: e.target.value })}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  )}
                   <p className="field-hint">
                     Your eligibility is reviewed by our team; what you declare here may be verified.
                   </p>

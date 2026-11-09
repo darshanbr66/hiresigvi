@@ -1,0 +1,87 @@
+# Zphirex API — FastAPI under uvicorn, managed by systemd.
+#
+# Install (docs/deployment-vps.md § 5):
+#   sudo cp deploy/vps/systemd/zphirex-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now zphirex-api
+#
+# Layout this unit assumes:
+#   /opt/zphirex/app            git checkout (owned by the `zphirex` user)
+#   /opt/zphirex/app/backend/.env   production settings (mode 0600, zphirex)
+#   /opt/zphirex/venv           Python 3.12 virtualenv
+#   /var/lib/zphirex            the only writable path (see ReadWritePaths)
+#
+# Uploaded files are stored in MongoDB Atlas GridFS
+# (RESUME_STORAGE_PROVIDER=mongodb_gridfs), not on this disk.
+#
+# Settings come from backend/.env, read by the app itself (pydantic-settings,
+# relative to WorkingDirectory) — the same file Alembic and `python -m
+# app.cli` read, so all three always see identical configuration. It is
+# deliberately not also loaded with EnvironmentFile=: one file read by one
+# parser (python-dotenv) means quoting — e.g. the JSON value of
+# CORS_ALLOW_ORIGINS — can never be interpreted two different ways.
+#
+# With ProtectSystem=strict the checkout is read-only to this process. If the
+# local-disk provider is ever used, RESUME_STORAGE_DIR must be an absolute
+# path under /var/lib/zphirex.
+
+[Unit]
+Description=Zphirex API (FastAPI / uvicorn)
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+# Never give up permanently. In mongodb_gridfs mode the API exits at startup
+# when MongoDB Atlas is unreachable (app/main.py) — a start-rate limit would
+# leave it stopped after a short Atlas or network outage, for example while
+# the VPS boots. The backoff below (not a burst limit) keeps the retries
+# controlled instead.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=zphirex
+Group=zphirex
+WorkingDirectory=/opt/zphirex/app/backend
+
+# ONE worker on purpose: rate limits (Sigvi, OTP, public apply) are counted
+# per process (backend/app/core/rate_limit.py), so N workers would silently
+# allow N times each limit. Raise only after moving those limits to shared
+# storage. --proxy-headers trusts X-Forwarded-* from nginx on 127.0.0.1
+# only, so request.url.scheme is https and client IPs are the real ones.
+ExecStart=/opt/zphirex/venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 \
+    --workers 1 \
+    --proxy-headers --forwarded-allow-ips 127.0.0.1 \
+    --no-server-header \
+    --timeout-graceful-shutdown 30
+
+# Restart after a crash or a failed start, never after a deliberate stop.
+# Backoff (systemd >= 254; Ubuntu 24.04 ships 255): 5 s after the first
+# failure, growing over 10 steps to at most 2 minutes between attempts, so
+# an outage costs about one start attempt every 2 minutes and the API comes
+# back on its own once Atlas is reachable. A clean run resets the delay.
+Restart=on-failure
+RestartSec=5
+RestartSteps=10
+RestartMaxDelaySec=120
+TimeoutStopSec=40
+
+# Hardening. The process can write only to /var/lib/zphirex.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Leading '-': a missing directory never blocks startup (files live in GridFS).
+ReadWritePaths=-/var/lib/zphirex
+UMask=0027
+# Python cannot write .pyc files into the read-only checkout; skip trying.
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

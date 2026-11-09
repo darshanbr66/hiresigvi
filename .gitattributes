@@ -1,0 +1,4 @@
+# VPS deployment files run on Linux: keep LF line endings in every checkout,
+# whatever core.autocrlf says (a CRLF shell script fails with "\r: command not found").
+*.sh text eol=lf
+deploy/vps/** text eol=lf

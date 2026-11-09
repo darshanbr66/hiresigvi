@@ -100,3 +100,29 @@ async def test_ping_mongo_returns_false_when_never_connected() -> None:
 async def test_get_mongo_client_raises_before_connect() -> None:
     with pytest.raises(RuntimeError):
         mongo_module.get_mongo_client()
+
+
+async def test_connect_for_legacy_reads_registers_client(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mongo_module, "get_settings", lambda: _FakeSettings(mongodb_uri="mongodb://x")
+    )
+    monkeypatch.setattr(mongo_module, "AsyncMongoClient", _FakeAsyncMongoClient)
+
+    assert await mongo_module.connect_mongo_for_legacy_reads() is True
+    assert isinstance(mongo_module.get_mongo_client(), _FakeAsyncMongoClient)
+
+    await mongo_module.disconnect_mongo()
+
+
+async def test_connect_for_legacy_reads_never_raises_when_unreachable(monkeypatch) -> None:
+    # MongoDB is not the active storage backend in this mode, so an
+    # unreachable deployment must not stop the API from starting — it only
+    # leaves the older GridFS files unavailable.
+    monkeypatch.setattr(
+        mongo_module, "get_settings", lambda: _FakeSettings(mongodb_uri="mongodb://x")
+    )
+    monkeypatch.setattr(mongo_module, "AsyncMongoClient", _FailingFakeAsyncMongoClient)
+
+    assert await mongo_module.connect_mongo_for_legacy_reads() is False
+    with pytest.raises(RuntimeError):
+        mongo_module.get_mongo_client()

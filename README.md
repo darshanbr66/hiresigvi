@@ -70,6 +70,7 @@ intentionally simplified for the local MVP — see each doc for specifics).
 /
 ├── backend/     FastAPI + SQLAlchemy + PostgreSQL/pgvector application (Phase 1+)
 ├── frontend/    React 19 + TypeScript + Vite application (Phase 1+)
+├── deploy/vps/  Production VPS files: nginx, systemd, PostgreSQL init, env templates, backup/deploy scripts
 ├── docs/        Architecture, database, API, security, and workflow documentation
 ├── CLAUDE.md    Binding project rules and architectural decision record
 └── README.md    This file
@@ -108,6 +109,11 @@ intentionally simplified for the local MVP — see each doc for specifics).
   knowledge layer, provider, security, frontend, operations.
 - [`docs/TEST_CREDENTIALS.md`](docs/TEST_CREDENTIALS.md) — local test/demo
   login credentials for every role.
+- [`docs/deployment-vps.md`](docs/deployment-vps.md) — **production
+  deployment** on the Hostinger VPS (zphirex.com): PostgreSQL + pgvector,
+  systemd, nginx/TLS, frontend build and FileZilla upload, backups.
+- [`docs/deployment.md`](docs/deployment.md) — the earlier Render + Vercel
+  deployment (kept, not the current target).
 
 ## Running locally
 

@@ -41,7 +41,15 @@ class MongoGridFSResumeStorage(ResumeStorage):
     provider_name = "mongodb_gridfs"
 
     def __init__(self) -> None:
-        self._bucket = AsyncGridFSBucket(get_mongo_database(), bucket_name=BUCKET_NAME)
+        try:
+            database = get_mongo_database()
+        except RuntimeError as exc:
+            # No MongoDB client in this process: MONGODB_URI is unset, or the
+            # optional connection for files from an earlier configuration
+            # failed at startup (app/main.py). Callers map StorageError to a
+            # clear "file unavailable" response rather than a 500.
+            raise StorageError("MongoDB file storage is not connected.") from exc
+        self._bucket = AsyncGridFSBucket(database, bucket_name=BUCKET_NAME)
 
     async def save(
         self,

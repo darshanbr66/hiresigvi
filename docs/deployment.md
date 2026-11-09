@@ -1,5 +1,10 @@
 # Deployment (Render + Vercel)
 
+> **The production target is now the Hostinger VPS (zphirex.com): see
+> [`deployment-vps.md`](deployment-vps.md).** This Render + Vercel
+> configuration is kept unchanged and still works, but it isn't the
+> target of the VPS deployment.
+
 **Status: preparation only.** This document describes how to deploy the
 SIGVITAS recruitment platform — backend to Render, frontend to Vercel,
 database to Render PostgreSQL. Nothing described here has been executed
@@ -483,6 +488,12 @@ startup and by `/readyz`. `/readyz` only checks MongoDB when
 `RESUME_STORAGE_PROVIDER=mongodb_gridfs`; it never checks it while
 `local` is selected, since that configuration has no MongoDB dependency
 to be ready.
+
+With `RESUME_STORAGE_PROVIDER=local` **and** `MONGODB_URI` set, startup
+also opens the client, best-effort, so resumes stored in GridFS by an
+earlier configuration stay readable. A failure there is logged and doesn't
+stop the API; reading such a file then reports a storage error rather than
+a 500 (see [`deployment-vps.md`](deployment-vps.md) § 8).
 
 **Before going live with real candidate applications, confirm
 `RESUME_STORAGE_PROVIDER=mongodb_gridfs` and `MONGODB_URI` are both set —

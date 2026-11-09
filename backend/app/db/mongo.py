@@ -47,6 +47,29 @@ async def connect_mongo() -> None:
     logger.info("MongoDB connection established")
 
 
+async def connect_mongo_for_legacy_reads() -> bool:
+    """Best-effort connection used when new resume files go to local disk
+    (`RESUME_STORAGE_PROVIDER=local`) but `MONGODB_URI` is still set, so
+    Resume rows written earlier under `mongodb_gridfs` keep resolving
+    (each row is read through its own `storage_provider` —
+    app/integrations/storage/__init__.py).
+
+    Unlike `connect_mongo`, a failure here never stops the API from
+    starting: MongoDB is not the active storage backend, so only those
+    older files become unavailable — and reading one reports a storage
+    error (app/integrations/storage/mongo_gridfs.py), never a 500.
+    Returns whether the connection was established."""
+    try:
+        await connect_mongo()
+    except Exception:
+        logger.warning(
+            "MongoDB is unreachable; resume files stored in GridFS by an earlier "
+            "configuration are unavailable until it is reachable and the API restarts"
+        )
+        return False
+    return True
+
+
 async def disconnect_mongo() -> None:
     global _client
     if _client is not None:

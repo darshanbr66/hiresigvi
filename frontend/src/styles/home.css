@@ -1,944 +1,548 @@
 /*
- * The HireZ home page (features/public/PublicHomePage.tsx). Shares the nav,
- * hero frame and footer with the careers pages (landing.css); this file holds
- * the home page's own layout. Neutral surfaces, charcoal ink, one muted-teal
- * accent used sparingly. No gradients, glows, blue bands or decorative
- * shapes — hierarchy comes from type, spacing and hairlines.
+ * The public ZPHIREX homepage (features/public/PublicHomePage.tsx): a
+ * single-screen opportunity picker for Zodiac Patent. Scoped under `.zx-home`.
+ *
+ * Palette — every value sampled from Zodiac Patent's official site
+ * (zodiacpatent.com home + /career/, inspected 2026-11-19):
+ *   #0092D4  logo/link blue; the 5px rule under the site's hero
+ *   #183B63  careers-page navy (logo, primary button)
+ *   #18334F  careers-page heading navy
+ *   #285B87  careers-page mid-blue (eyebrow, "Patent" in the wordmark)
+ *   #586678  careers-page body text
+ *   #F5F7F9  careers-page blue-grey section band
+ *   #E5E9EE  careers-page hairline borders
+ *
+ * Structure mirrors the official site's "dark hero → blue rule → light
+ * content": the header and heading sit on a deep navy band (soft blue light,
+ * a faint dot grid that nods to patent drawings), a brand-blue rule closes
+ * it, and the four white cards lift over that edge onto the blue-grey stage.
+ * The logo's wordmark is white, so it stays on the dark band, unaltered.
+ *
+ * #0092D4 is too light for small text on white (3.5:1), so card titles use
+ * the heading navy and CTAs a deeper shade of the brand blue (#0074A8).
+ *
+ * Fit: nothing has a fixed height; the band's padding scales with the
+ * viewport height so short laptops stay compact and tall screens get a
+ * fuller hero instead of empty space. Bottom padding reserves room for the
+ * Zodi launcher (fixed bottom-right, styles/sigvi.css).
  */
 
-.home {
-  --home-width: 1120px;
-  --home-gutter: clamp(1rem, 4vw, 2.5rem);
-}
+.zx-home {
+  --zx-brand: #0092d4;
+  --zx-brand-text: #0074a8;
+  --zx-navy: #183b63;
+  --zx-navy-deep: #10263f;
+  --zx-heading: #18334f;
+  --zx-body: #586678;
+  --zx-stage: #f5f7f9;
+  --zx-stage-end: #edf1f5;
+  --zx-card: #ffffff;
+  --zx-card-border: #e5e9ee;
+  --zx-card-shadow: 0 1px 2px rgb(24 51 79 / 6%), 0 12px 32px -14px rgb(24 51 79 / 22%);
+  --zx-card-shadow-hover: 0 1px 2px rgb(24 51 79 / 8%), 0 18px 40px -16px rgb(24 51 79 / 30%);
+  --zx-on-band: #ffffff;
+  --zx-on-band-muted: #b9c8d8;
+  --zx-gutter: 1rem;
+  --zx-overlap: 2rem;
 
-/* --- hero ------------------------------------------------------------------ */
-
-.home-hero {
   position: relative;
   isolation: isolate;
-  min-height: auto;
-  padding: clamp(6rem, 11vw, 7.5rem) var(--home-gutter) clamp(3.5rem, 6vw, 5rem);
-  background: var(--color-bg);
-  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  /* the navy band; the stage below paints over it */
+  background:
+    radial-gradient(60rem 26rem at 85% -10%, rgb(0 146 212 / 30%), transparent 70%),
+    radial-gradient(40rem 20rem at 0% 0%, rgb(40 91 135 / 45%), transparent 70%),
+    linear-gradient(180deg, var(--zx-navy-deep) 0%, var(--zx-navy) 100%);
+  color: var(--color-text);
+  overflow-x: clip;
 }
 
-/* the same quiet canvas as sign-in: a faint grid in a soft pool of light,
-   centred behind the product preview */
-.home-hero::before {
+/* faint dot grid over the band, fading out toward the blue rule */
+.zx-home::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 0 0 auto;
   z-index: -1;
+  height: 26rem;
+  background-image: radial-gradient(rgb(255 255 255 / 9%) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
   pointer-events: none;
-  background:
-    radial-gradient(40rem 28rem at 72% 45%, var(--canvas-light), transparent 70%),
-    linear-gradient(var(--canvas-grid) 1px, transparent 1px) 0 0 / 32px 32px,
-    linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px) 0 0 / 32px 32px;
-  -webkit-mask-image: radial-gradient(52rem 36rem at 72% 45%, #000 20%, transparent 72%);
-  mask-image: radial-gradient(52rem 36rem at 72% 45%, #000 20%, transparent 72%);
 }
 
-/* same content column as the sections below (their width minus gutters) */
-.home-hero-inner {
-  max-width: calc(var(--home-width) - 2 * var(--home-gutter));
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: clamp(2rem, 5vw, 4.5rem);
-}
-
-.home-hero .hero-title {
-  max-width: 17ch;
-  margin: 0 0 1.1rem;
-  font-size: var(--text-display);
-  font-weight: 650;
-  line-height: 1.06;
-  letter-spacing: -0.03em;
-  color: var(--color-text);
-}
-
-/* the second phrase takes its own line and steps back in the muted ink —
-   contrast, not colour */
-.home-hero-accent {
-  display: block;
-  /* a restrained indigo-to-teal sweep; both ends hold >= 3:1 as large text */
-  background: linear-gradient(100deg, var(--color-brand) 0%, var(--color-brand) 35%, var(--color-accent) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-@media (forced-colors: active) {
-  .home-hero-accent {
-    background: none;
-    color: CanvasText;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .zx-home {
+    --zx-brand-text: #4cb8ea;
+    --zx-navy: #11263d;
+    --zx-navy-deep: #0a1828;
+    --zx-heading: #e6edf5;
+    --zx-body: #9fb0c2;
+    --zx-stage: #0d141c;
+    --zx-stage-end: #0b1118;
+    --zx-card: #141e29;
+    --zx-card-border: #22303f;
+    --zx-card-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 14px 34px -16px rgb(0 0 0 / 70%);
+    --zx-card-shadow-hover: 0 1px 2px rgb(0 0 0 / 45%), 0 20px 42px -16px rgb(0 0 0 / 80%);
   }
 }
 
-.home-hero .hero-sub {
-  max-width: 30rem;
-  margin: 0 0 1.75rem;
-  font-size: var(--text-lead);
-  line-height: var(--leading-lead);
-  color: var(--color-text-muted);
-}
-
-.home-hero-visual {
-  position: relative;
-  isolation: isolate;
-  min-width: 0;
-}
-
-/* The glow: a large, soft indigo pool centred behind the product preview,
-   with a smaller teal tint lower left for depth. Always behind the cards
-   (z-index -1), never over text, clipped by the hero (no overflow). */
-.home-hero-visual::before,
-.home-hero-visual::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  pointer-events: none;
-  border-radius: 50%;
-}
-
-.home-hero-visual::before {
-  inset: -18% -14% -18% -10%;
-  background: radial-gradient(closest-side, var(--glow-brand), transparent);
-}
-
-.home-hero-visual::after {
-  width: 55%;
-  height: 55%;
-  left: -6%;
-  bottom: -10%;
-  background: radial-gradient(closest-side, var(--glow-accent), transparent);
-}
-
-/* --- the product preview (HeroProductPreview.tsx) ------------------------
-   A main application panel with two smaller cards resting on its corners.
-   Real product pieces (badges, stage colours, icons), placeholder lines for
-   anything that would be personal data. Depth comes from the shared shadow
-   tokens and a hairline — no glow, no glass. */
-
-/* top/bottom clearance so the resting cards overlap only the panel's edge
-   and placeholder content, never its badge or stage track */
-.hp {
-  position: relative;
-  padding: 3.6rem 1.5rem 2.75rem 2.25rem;
-}
-
-.hp-window {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 1.15rem;
-  padding: 1.25rem 1.35rem 1.4rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  /* clear separation from the canvas: the shared lift plus a faint brand-tinted
-     falloff underneath */
-  box-shadow:
-    var(--shadow-raised),
-    0 40px 70px -40px var(--glow-brand),
-    var(--highlight-top);
-}
-
-.hp-window-head {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.hp-avatar {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 999px;
-  background: var(--color-bg-subtle);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-}
-
-.hp-identity {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.hp-line {
-  display: block;
-  max-width: 100%;
-  height: 0.45rem;
-  border-radius: 999px;
-  background: var(--color-border);
-}
-
-.hp-line-strong {
-  height: 0.55rem;
-  background: var(--color-border-strong);
-}
-
-.hp-badge {
-  flex-shrink: 0;
-}
-
-/* compact stage track */
-.hp-track {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.hp-stage {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.hp-stage + .hp-stage::before {
-  content: "";
-  position: absolute;
-  top: 0.45rem;
-  right: 50%;
-  width: 100%;
-  height: 2px;
-  background: var(--color-border-strong);
-  z-index: 0;
-}
-
-.hp-stage.is-done + .hp-stage::before,
-.hp-stage.is-done + .hp-stage.is-current::before {
-  background: var(--color-text-muted);
-}
-
-.hp-node {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 0.95rem;
-  height: 0.95rem;
-  border-radius: 999px;
-  background: var(--color-surface);
-  border: 2px solid var(--color-border-strong);
-  color: var(--color-surface);
-}
-
-.hp-stage.is-done .hp-node {
-  background: var(--color-text);
-  border-color: var(--color-text);
-}
-
-.hp-stage.is-current .hp-node {
-  border-color: var(--color-surface);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pipeline-interview) 30%, transparent);
-}
-
-.hp-stage-label {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.6875rem;
-  font-weight: var(--weight-medium);
-  color: var(--color-text-muted);
-}
-
-.hp-stage.is-done .hp-stage-label,
-.hp-stage.is-current .hp-stage-label {
-  color: var(--color-text);
-}
-
-.hp-stage.is-current .hp-stage-label {
-  font-weight: var(--weight-strong);
-}
-
-/* next step */
-.hp-next {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg);
-}
-
-.hp-next-icon,
-.hp-float-icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
-}
-
-.hp-next-text,
-.hp-float-text {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.hp-next-title,
-.hp-float-title {
-  font-size: var(--text-label);
-  font-weight: var(--weight-strong);
-  color: var(--color-text);
-}
-
-.hp-next-meta,
-.hp-float-meta {
-  font-size: var(--text-meta);
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hp-next-action {
-  flex-shrink: 0;
-  padding: 0.3rem 0.65rem;
-  border-radius: var(--radius-md);
-  background: var(--color-brand-soft);
-  border: 1px solid var(--color-brand-soft-border);
-  color: var(--color-primary);
-  font-size: var(--text-meta);
-  font-weight: var(--weight-strong);
-}
-
-.hp-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.15rem 0.1rem 0;
-}
-
-/* the two resting cards */
-.hp-float {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  width: min(17.5rem, 62%);
-  padding: 0.75rem 0.85rem;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-popover), var(--highlight-top);
-}
-
-/* the resting cards carry the brand: an indigo (assessment) or teal
-   (feedback) icon tile and a top edge in the same hue */
-.hp-float {
-  border-top: 2px solid var(--hp-float-hue, var(--color-border));
-}
-
-.hp-float-assessment {
-  --hp-float-hue: var(--color-brand);
-}
-
-.hp-float-feedback {
-  --hp-float-hue: var(--color-accent);
-}
-
-.hp-float-assessment .hp-float-icon {
-  background: var(--color-brand-soft);
-  border-color: var(--color-brand-soft-border);
-  color: var(--color-primary);
-}
-
-.hp-float-feedback .hp-float-icon {
-  background: var(--color-accent-soft);
-  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
-  color: var(--color-accent-text);
-}
-
-.hp-float .hp-line {
-  height: 0.38rem;
-}
-
-.hp-float-assessment {
-  top: 0;
-  right: 0;
-}
-
-.hp-float-feedback {
-  bottom: 0;
-  left: 0;
-}
-
-.hp-float-feedback .hp-float-text {
-  gap: 0.35rem;
-}
-
-/* --- sections ---------------------------------------------------------------- */
-
-.home-section {
-  position: relative;
-  isolation: isolate;
-  max-width: var(--home-width);
-  margin: 0 auto;
-  padding: clamp(3.25rem, 7vw, 5rem) var(--home-gutter);
-}
-
-/* a full-bleed neutral band that keeps the centred column */
-.home-section-muted::before {
-  content: "";
-  position: absolute;
-  inset: 0 -100vmax;
-  z-index: -1;
-  background: var(--color-bg-subtle);
-  border-block: 1px solid var(--color-border);
-}
-
-.home-kicker {
-  margin: 0 0 0.75rem;
-  font-size: var(--text-meta);
-  font-weight: var(--weight-strong);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  color: var(--color-accent-text);
-}
-
-.home-heading {
-  margin: 0;
-  max-width: 18ch;
-  font-size: var(--text-headline);
-  font-weight: 650;
-  line-height: var(--leading-headline);
-  letter-spacing: var(--tracking-headline);
-  color: var(--color-text);
-}
-
-.home-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: clamp(2rem, 5vw, 4rem);
-  align-items: start;
-}
-
-.home-intro-center {
-  text-align: center;
-  margin-bottom: 2.5rem;
-}
-
-.home-intro-center .home-heading {
-  max-width: none;
-  margin-inline: auto;
-}
-
-/* intro with a short lead beside the heading */
-.home-intro-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
-  align-items: end;
-  gap: clamp(1.5rem, 4vw, 3rem);
-  margin-bottom: 2.25rem;
-}
-
-.home-intro-lead {
-  margin: 0;
-  max-width: 30rem;
-  font-size: var(--text-lead);
-  line-height: var(--leading-lead);
-  color: var(--color-text-muted);
-}
-
-/* capabilities: a grid of cards — three across, then two wider ones */
-.home-capability-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 1rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.home-capability-card {
-  position: relative;
-  grid-column: span 2;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  padding: 1.35rem 1.35rem 1.45rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-card), var(--highlight-top);
-  overflow: hidden;
-}
-
-.home-capability-card:nth-child(n + 4) {
-  grid-column: span 3;
-}
-
-/* a faint indigo wash that rises in on hover — feedback, not decoration */
-.home-capability-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: radial-gradient(28rem 12rem at 0% 0%, var(--color-primary-soft), transparent 70%);
-  opacity: 0;
-  transition: opacity var(--dur-base) var(--ease-out);
-}
-
-.home-capability-card > * {
-  position: relative;
-  z-index: 1;
-}
-
-.home-capability-card.is-visible {
-  transition:
-    opacity var(--dur-slow) var(--ease-out),
-    transform var(--dur-slow) var(--ease-out),
-    border-color var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
-}
-
-.home-capability-card:hover {
-  border-color: var(--color-brand-soft-border);
-  box-shadow: var(--shadow-raised), var(--highlight-top);
-  transform: translateY(-2px);
-}
-
-.home-capability-card:hover::before {
-  opacity: 1;
-}
-
-.home-capability-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  margin-bottom: 0.4rem;
-  border-radius: var(--radius-md);
-  background: var(--color-brand-soft);
-  border: 1px solid var(--color-brand-soft-border);
-  color: var(--color-primary);
-  transition:
-    background-color var(--dur-base) var(--ease-out),
-    color var(--dur-base) var(--ease-out),
-    border-color var(--dur-base) var(--ease-out);
-}
-
-.home-capability-card:hover .home-capability-icon {
-  background: var(--color-primary-solid);
-  border-color: var(--color-primary-solid);
-  color: var(--color-on-primary);
-}
-
-.home-capability-card h3,
-.home-journey-step h3 {
-  margin: 0;
-  font-size: var(--text-card-title);
-  font-weight: var(--weight-strong);
-  letter-spacing: -0.01em;
-}
-
-.home-capability-card p,
-.home-journey-step p {
-  margin: 0;
-  color: var(--color-text-muted);
-  line-height: 1.55;
-}
-
-/* how it works: four step cards on a track that draws itself in */
-.home-journey {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.home-journey::before {
-  content: "";
-  position: absolute;
-  top: 2.35rem;
-  left: 2rem;
-  right: 2rem;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--color-brand), var(--color-brand-soft-border) 60%, var(--color-border-strong));
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 900ms var(--ease-out) 150ms;
-}
-
-.home-journey-wrap.is-visible .home-journey::before {
-  transform: scaleX(1);
-}
-
-.home-journey-step {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding: 1.25rem 1.25rem 1.35rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-card), var(--highlight-top);
-  /* steps follow the line in, one after another */
-  opacity: 0;
-  transform: translateY(10px);
-  transition:
-    opacity var(--dur-slow) var(--ease-out),
-    transform var(--dur-slow) var(--ease-out),
-    border-color var(--dur-base) var(--ease-out);
-  transition-delay: calc(var(--step, 0) * 120ms + 200ms), calc(var(--step, 0) * 120ms + 200ms), 0ms;
-}
-
-.home-journey-wrap.is-visible .home-journey-step {
-  opacity: 1;
-  transform: none;
-}
-
-.home-journey-step:hover {
-  border-color: var(--color-brand-soft-border);
-}
-
-.home-journey-index {
-  display: inline-grid;
-  place-items: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  margin-bottom: 0.5rem;
-  border-radius: 999px;
-  border: 1px solid var(--color-brand-soft-border);
-  background: var(--color-brand-soft);
-  font-weight: var(--weight-strong);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-primary);
-  box-shadow: 0 0 0 4px var(--color-surface);
-}
-
-.home-journey-step:first-child .home-journey-index {
-  background: var(--color-primary-solid);
-  border-color: var(--color-primary-solid);
-  color: var(--color-on-primary);
-}
-
-/* campus */
-.home-campus-body p {
-  margin: 0 0 1.25rem;
-  max-width: 34rem;
-  font-size: var(--text-lead);
-  line-height: var(--leading-lead);
-  color: var(--color-text-muted);
-}
-
-.home-checklist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.home-checklist li {
+:root[data-theme="dark"] .zx-home {
+  --zx-brand-text: #4cb8ea;
+  --zx-navy: #11263d;
+  --zx-navy-deep: #0a1828;
+  --zx-heading: #e6edf5;
+  --zx-body: #9fb0c2;
+  --zx-stage: #0d141c;
+  --zx-stage-end: #0b1118;
+  --zx-card: #141e29;
+  --zx-card-border: #22303f;
+  --zx-card-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 14px 34px -16px rgb(0 0 0 / 70%);
+  --zx-card-shadow-hover: 0 1px 2px rgb(0 0 0 / 45%), 0 20px 42px -16px rgb(0 0 0 / 80%);
+}
+
+@media (min-width: 640px) {
+  .zx-home {
+    --zx-gutter: clamp(1.5rem, 4vw, 2.5rem);
+    --zx-overlap: 3rem;
+  }
+}
+
+/* --- wordmark (also referenced by shell.css) ------------------------------- */
+
+.zp-wordmark {
   display: inline-flex;
+  font-family: var(--font-display);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.16em;
+  line-height: 1;
+}
+
+.zp-wordmark-md {
+  font-size: 1.125rem;
+}
+
+.zp-wordmark-sm {
+  font-size: 1rem;
+}
+
+.zp-wordmark-z {
+  color: var(--color-primary);
+}
+
+.zx-home .zp-wordmark-z {
+  color: var(--zx-brand);
+}
+
+/* --- header (on the band) ------------------------------------------------------ */
+
+.zx-header {
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  font-size: var(--text-label);
-  font-weight: var(--weight-medium);
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.5rem var(--zx-gutter);
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  color: var(--zx-on-band);
 }
 
-.home-checklist svg {
-  color: var(--color-accent-text);
+.zx-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
 }
 
-/* closing call to action: a neutral band with one soft indigo/teal pool
-   of light behind the heading */
-.home-closing {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  padding: clamp(3.5rem, 8vw, 5.5rem) var(--home-gutter);
-  background: var(--color-bg-subtle);
-  border-top: 1px solid var(--color-border);
+.zx-header-zphirex {
+  display: inline-flex;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
 }
 
-.home-closing::before {
-  content: "";
-  position: absolute;
-  inset: -40% 10%;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(closest-side at 40% 50%, var(--glow-brand), transparent),
-    radial-gradient(closest-side at 65% 55%, var(--glow-accent), transparent);
-  opacity: 0.5;
+.zx-header-divider {
+  width: 1px;
+  height: 1.5rem;
+  background: rgb(255 255 255 / 22%);
+  flex-shrink: 0;
 }
 
-.home-closing-inner {
-  max-width: 40rem;
-  margin: 0 auto;
-  text-align: center;
+.zx-header-org {
+  display: inline-flex;
+  min-width: 0;
+  border-radius: var(--radius-sm);
 }
 
-.home-closing .home-heading {
-  margin: 0 auto 0.75rem;
+/* The official logo, scaled only — never recoloured or cropped. */
+.zx-org-logo {
+  display: block;
+  width: auto;
+  height: 1.375rem;
+  max-width: 100%;
 }
 
-.home-closing p {
-  margin: 0 auto 1.75rem;
-  max-width: 32rem;
-  line-height: 1.6;
-  color: var(--color-text-muted);
-}
-
-.home-closing .hero-actions {
-  justify-content: center;
-}
-
-.home .landing-footer {
-  max-width: calc(var(--home-width) - 2 * var(--home-gutter));
-  padding-inline: 0;
-}
-
-.home .landing-footer .wordmark {
-  font-size: 1.1875rem;
-}
-
-/* --- motion -----------------------------------------------------------------
-   One choreography: the headline, copy and actions rise in (landing.css),
-   then the product preview, then its two cards. Afterwards only the two
-   small cards drift (different, slow cycles; a few px), and the layers
-   follow the pointer by a few px (HeroProductPreview.tsx sets --px/--py).
-   Entrance uses opacity/scale, the drift `transform`, parallax `translate`
-   — three independent properties, so nothing fights. Reduced motion and
-   small screens: no drift, no parallax; tokens.css makes entrances instant. */
-
-.home-hero-visual {
-  animation: rise-in 900ms var(--ease-out) 320ms both;
-}
-
-.hp-float {
-  animation: hp-arrive 700ms var(--ease-out) both;
-}
-
-.hp-float-assessment {
-  animation-delay: 620ms;
-}
-
-.hp-float-feedback {
-  animation-delay: 760ms;
-}
-
-@keyframes hp-arrive {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
-  to {
-    opacity: 1;
-    scale: 1;
+@media (min-width: 640px) {
+  .zx-org-logo {
+    height: 1.75rem;
   }
 }
 
-@keyframes hp-drift {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
+.zx-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
 }
 
-@media (prefers-reduced-motion: no-preference) and (min-width: 561px) {
-  .hp-float-assessment {
-    animation:
-      hp-arrive 700ms var(--ease-out) 620ms both,
-      hp-drift 7s ease-in-out 1.4s infinite;
-  }
-
-  .hp-float-feedback {
-    animation:
-      hp-arrive 700ms var(--ease-out) 760ms both,
-      hp-drift 9s ease-in-out 2.2s infinite;
-  }
-
-  .hp-float,
-  .home-hero-visual::before {
-    transition: translate 700ms var(--ease-out);
-  }
-
-  .hp-window {
-    translate: calc(var(--px, 0) * -4px) calc(var(--py, 0) * -3px);
-  }
-
-  .hp-float-assessment {
-    translate: calc(var(--px, 0) * 9px) calc(var(--py, 0) * 7px);
-  }
-
-  .hp-float-feedback {
-    translate: calc(var(--px, 0) * 12px) calc(var(--py, 0) * 9px);
-  }
-
-  .home-hero-visual::before {
-    translate: calc(var(--px, 0) * -14px) calc(var(--py, 0) * -10px);
-  }
+.zx-header-staff {
+  color: var(--zx-on-band-muted);
+  font-size: var(--text-meta);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
 }
 
-/* the preview lifts a touch when the pointer is over it */
-.hp-window {
-  transition:
-    box-shadow var(--dur-base) var(--ease-out),
-    translate 700ms var(--ease-out);
+.zx-header-staff:hover {
+  color: var(--zx-on-band);
+  text-decoration: underline;
 }
 
-.home-hero-visual:hover .hp-window {
-  box-shadow:
-    var(--shadow-raised),
-    0 46px 80px -40px var(--glow-brand),
-    var(--highlight-top);
+.zx-header .theme-toggle {
+  border-color: rgb(255 255 255 / 18%);
+  background: transparent;
+  color: var(--zx-on-band);
 }
 
-/* the sticky nav turns lightly frosted once the page scrolls under it —
-   the one place glass is used, and only where content passes beneath */
-.home .landing-nav.is-scrolled {
-  background: color-mix(in srgb, var(--color-surface) 84%, transparent);
-  -webkit-backdrop-filter: saturate(160%) blur(12px);
-  backdrop-filter: saturate(160%) blur(12px);
+.zx-header .theme-toggle:hover {
+  background: rgb(255 255 255 / 8%);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .home-journey::before {
-    transform: none;
-  }
-
-  .home-journey-step {
-    opacity: 1;
-    transform: none;
-  }
-
-  .home-capability-card:hover {
-    transform: none;
-  }
+.zx-home :focus-visible {
+  outline: 2px solid var(--zx-brand);
+  outline-offset: 3px;
 }
 
-/* --- responsive ------------------------------------------------------------ */
-
-@media (max-width: 1000px) {
-  .home-hero-inner,
-  .home-columns,
-  .home-intro-split {
-    grid-template-columns: 1fr;
-  }
-
-  .home-capability-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .home-capability-card,
-  .home-capability-card:nth-child(n + 4) {
-    grid-column: auto;
-  }
-
-  .home-capability-card:last-child {
-    grid-column: 1 / -1;
-  }
-
-  .home-hero .hero-title {
-    max-width: 17ch;
-  }
-
-  .home-hero-visual {
-    max-width: 36rem;
-  }
-
-  .home-journey {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 2rem;
-  }
-
-  .home-journey::before {
+/* very narrow phones: keep brand + toggle on one line */
+@media (max-width: 400px) {
+  .zx-header-staff {
     display: none;
   }
 }
 
-@media (max-width: 640px) {
-  .home-capability-grid {
-    grid-template-columns: 1fr;
-  }
+/* --- main: heading on the band, cards on the stage ----------------------------- */
 
-  .home-capability-card:last-child {
-    grid-column: auto;
+.zx-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* The band grows with the viewport height (content centred within it), so a
+   tall screen gets a fuller hero rather than an empty strip below the cards;
+   on laptop heights the minimum is below the content's own height and has no
+   effect. */
+.zx-intro {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: max(0px, 52vh - 9rem);
+  padding: clamp(1.5rem, 6vh, 4.5rem) var(--zx-gutter) calc(clamp(1.5rem, 5vh, 3.5rem) + var(--zx-overlap));
+  text-align: center;
+}
+
+.zx-title {
+  margin: 0;
+  color: var(--zx-on-band);
+  font-family: var(--font-display);
+  font-size: var(--text-headline);
+  font-weight: 700;
+  line-height: var(--leading-headline);
+  letter-spacing: var(--tracking-headline);
+}
+
+/* a short brand-blue underline beneath the heading */
+.zx-title::after {
+  content: "";
+  display: block;
+  width: 2.5rem;
+  height: 3px;
+  margin: 0.75rem auto 0;
+  border-radius: 2px;
+  background: var(--zx-brand);
+}
+
+.zx-subtitle {
+  margin: 0.75rem 0 0;
+  color: var(--zx-on-band-muted);
+  font-size: var(--text-body);
+}
+
+/* The light surface below the band. Its top edge is the brand-blue rule
+   (the 5px rule under the official site's hero, slimmed to 4px). */
+.zx-stage {
+  flex: 1;
+  border-top: 4px solid var(--zx-brand);
+  background: linear-gradient(180deg, var(--zx-stage) 0%, var(--zx-stage-end) 100%);
+  /* bottom: room for the Zodi launcher (3rem button + 1rem gap on phones) */
+  padding: 0 var(--zx-gutter) calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .zx-stage {
+    padding-bottom: 4.5rem;
   }
 }
 
-@media (max-width: 1160px) {
-  .home .landing-footer {
-    margin-inline: var(--home-gutter);
+/* --- cards ------------------------------------------------------------------ */
+
+.zx-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 60rem;
+  /* lift over the band's edge */
+  margin: calc(-1 * var(--zx-overlap) - 4px) auto 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .zx-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
   }
 }
 
-@media (max-width: 560px) {
-  /* small screens: the resting cards follow the panel instead of overlapping */
-  .hp {
-    display: flex;
+.zx-cards > li {
+  display: flex;
+}
+
+.zx-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid var(--zx-card-border);
+  border-radius: var(--radius-lg);
+  background: var(--zx-card);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: var(--zx-card-shadow);
+  overflow: hidden;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+/* brand-blue top edge on hover/focus — the same rule, at card scale */
+.zx-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--zx-brand);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.zx-card:hover::before,
+.zx-card:focus-visible::before {
+  transform: scaleX(1);
+}
+
+@media (min-width: 640px) {
+  .zx-card {
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0;
+    gap: 1rem;
+    padding: clamp(1.25rem, 2.6vh, 1.75rem);
+  }
+}
+
+.zx-card:hover {
+  border-color: color-mix(in srgb, var(--zx-brand) 45%, var(--zx-card-border));
+  box-shadow: var(--zx-card-shadow-hover);
+}
+
+.zx-card:focus-visible {
+  outline: 2px solid var(--zx-brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .zx-card:hover {
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zx-card::before {
+    transition: none;
+  }
+}
+
+/* solid brand-blue square with a white glyph — the square mark of the
+   Zodiac Patent logo */
+.zx-card-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--zx-brand);
+  color: #ffffff;
+}
+
+.zx-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.zx-card-title {
+  color: var(--zx-heading);
+  font-family: var(--font-display);
+  font-size: var(--text-section);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.zx-card-text {
+  color: var(--zx-body);
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+.zx-card-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  color: var(--zx-brand-text);
+  font-size: var(--text-label);
+  font-weight: var(--weight-strong);
+}
+
+.zx-card-cta svg {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .zx-card:hover .zx-card-cta svg {
+    transform: translateX(3px);
+  }
+}
+
+/* phones: tighter rhythm so all four cards fit (or nearly) on short screens */
+@media (max-width: 639px) {
+  .zx-home {
+    --zx-overlap: 1.5rem;
   }
 
-  .hp-float {
-    position: static;
+  .zx-intro {
+    min-height: 0;
+    padding-top: 1.25rem;
+    padding-bottom: calc(1rem + var(--zx-overlap));
+  }
+
+  .zx-title {
+    font-size: 1.5rem;
+  }
+
+  .zx-title::after {
+    margin-top: 0.5rem;
+  }
+
+  .zx-subtitle {
+    margin-top: 0.5rem;
+    font-size: var(--text-label);
+  }
+
+  .zx-cards {
+    gap: 0.625rem;
+  }
+
+  .zx-card {
+    padding: 0.8rem 0.9rem;
+  }
+
+  .zx-card-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .zx-card-body {
+    gap: 0.125rem;
+  }
+
+  .zx-card-title {
+    font-size: var(--text-card-title);
+  }
+
+  .zx-card-text {
+    font-size: var(--text-label);
+    line-height: 1.4;
+  }
+
+  .zx-card-cta {
+    margin-top: 0.3rem;
+  }
+}
+
+/* short laptop screens (≤ 700px tall): a compact rhythm so the 2 × 2 grid
+   still fits without scrolling */
+@media (min-width: 640px) and (max-height: 700px) {
+  .zx-home {
+    --zx-overlap: 2.25rem;
+  }
+
+  .zx-intro {
+    min-height: 0;
+    padding-top: 1.25rem;
+    padding-bottom: calc(1.25rem + var(--zx-overlap));
+  }
+
+  .zx-title {
+    font-size: 1.75rem;
+  }
+
+  .zx-title::after {
+    margin-top: 0.5rem;
+  }
+
+  .zx-subtitle {
+    margin-top: 0.5rem;
+  }
+
+  .zx-cards {
+    gap: 1rem;
+  }
+
+  .zx-card {
+    gap: 0.75rem;
+    padding: 1.1rem 1.25rem;
+  }
+}
+
+/* 2 × 2: CTAs line up along the bottom of each row */
+@media (min-width: 640px) {
+  .zx-card-body {
+    flex: 1;
     width: 100%;
   }
 
-  .hp-window {
-    padding-inline: 1rem;
-  }
-
-  .hp-stage-label {
-    font-size: 0.6rem;
-    letter-spacing: -0.01em;
-  }
-}
-
-@media (max-width: 720px) {
-  .home-hero {
-    padding-top: 5.75rem;
-  }
-
-  .home-journey {
-    grid-template-columns: 1fr;
-  }
-
-  .home-hero .hero-actions .btn-lg,
-  .home-closing .hero-actions .btn-lg {
-    flex: 1 1 100%;
-    justify-content: center;
+  .zx-card-cta {
+    margin-top: auto;
+    padding-top: 0.6rem;
   }
 }

@@ -3,17 +3,19 @@
 Visual language, motion rules, the home-page hero, and how they are kept fast and
 accessible. This describes what is implemented; it is not a roadmap.
 
-## Identity: HireZ
+## Identity: ZPHIREX
 
-The product is **HireZ**. Its identity is a **text-only wordmark**
-(`shared/components/Wordmark.tsx`): "Hire" in the ink colour and the "Z" in
-brand indigo (`--color-wordmark-z`), display face, weight 750, tight
-tracking (-0.05em), upright — no italic, gradient, symbol or image. There is no image
-logo and no placeholder box anywhere in the UI; where the full word doesn't
-fit (the collapsed sidebar rail) the compact form is the wordmark's indigo
-"Z" on its own (`<Wordmark variant="mark" />`, weight 800). The accessible
-name is always "HireZ". The browser tab reads "HireZ" on the home page and "<Page> · HireZ"
-inside the app.
+The product is **ZPHIREX** — the same name and lockup as the public
+homepage (it was "HireZ" before; that name no longer appears in the UI).
+Its identity is a **text-only wordmark** (`shared/components/Wordmark.tsx`,
+mirroring `ZphirexWordmark` in `features/public/HomeGraphics.tsx`): the
+leading "Z" in brand indigo (`--color-wordmark-z`) and "PHIREX" in the ink
+colour, display face, `--weight-strong`, open uppercase tracking (0.16em),
+upright — no italic, gradient, symbol or image. There is no image logo and
+no placeholder box anywhere in the UI; where the full word doesn't fit (the
+collapsed sidebar rail) the compact form is the wordmark's indigo "Z" on
+its own (`<Wordmark variant="mark" />`, weight 800). The accessible name is
+always "ZPHIREX". The browser tab reads "<Page> · ZPHIREX" inside the app.
 
 - **Indigo is the brand.** Neutral surfaces (off-white / zinc) and
   charcoal / off-white ink carry the page; indigo (`#4F46E5`, hover
@@ -32,9 +34,12 @@ inside the app.
   could be verified (the company site exposes only image logos), so the
   palette is an independent choice. Every value lives in `tokens.css`;
   changing the brand means changing those values only.
-- **Company vs product.** HireZ is the product name. SIGVITAS remains the
-  company name where it is the actual organization: its careers page
-  (`/org/sigvitas`), the footer copyright, the candidate-facing pages (which
+- **Company vs product.** ZPHIREX is the product name, in the staff app
+  and the public homepage alike. Everything candidate-facing is branded
+  ZPHIREX / Zodiac Patent: the homepage (see "The
+  public home page"), the careers site at `/org/zodiac-patent` (old careers
+  links redirect), the public assistant "Zodi", and the
+  candidate-facing pages (which
   show the *hiring organization's* name, not the product's) and the Sigvi
   assistant. API titles, the CLI and environment variables were not renamed.
 
@@ -49,7 +54,7 @@ inherits the palette. Light / dark values:
 | `--color-on-primary` | #ffffff | #ffffff | text on primary fills |
 | `--color-primary` (hover) | #4f46e5 (#4338ca) | #a5b4fc (#c7d2fe) | links, active nav text, indigo icons |
 | `--color-brand` / `-brand-soft` / `-brand-soft-border` | #4f46e5 / #eef2ff / #c7d2fe | #818cf8 / #1f1e3d / #34336a | brand graphics, soft indigo tiles |
-| `--color-wordmark-z` | #4f46e5 | #818cf8 | the Z in "HireZ" |
+| `--color-wordmark-z` | #4f46e5 | #818cf8 | the Z in "ZPHIREX" |
 | `--color-accent` / `-text` | #0d9488 / #0f766e | #2dd4bf / #5eead4 | teal: selected-nav bar, kickers, supporting details |
 | `--color-focus` | #4f46e5 | #818cf8 | focus ring (global `:focus-visible`) |
 | `--glow-brand` / `--glow-accent` | indigo 22% / teal 10% | indigo 22% / teal 9% | the hero glow behind the product preview |
@@ -128,7 +133,7 @@ edges. The `<aside>` itself is `overflow: hidden`. The phone drawer leaves
 room for the safe-area inset.
 
 The header is one compact row (`.sidebar-brand`, 36px): the collapse/expand
-button on the far left, the HireZ wordmark beside it, both vertically
+button on the far left, the ZPHIREX wordmark beside it, both vertically
 centred; the nav starts 12px below. The toggle is a borderless 36px icon
 button with the same corner radius and hover fill as a nav link. On the
 collapsed 72px rail the same 36px row shows the toggle and the compact
@@ -212,7 +217,6 @@ continuity. Only `transform`/`opacity` animate; movement is ≤ ~14px.
 |---|---|---|
 | `PageTransition` | recruiter/admin shell | 200ms fade + 6px rise on route change; entrance only, never waits on an outgoing page |
 | `Reveal` / `useInView` | landing, careers | scroll-in with direction and stagger; latches. Fail-open: visible without IntersectionObserver, if creating the observer throws, and — for an element too tall to ever show `threshold` of itself — as soon as any of it is on screen |
-| Home hero | public home | headline, copy and actions rise in, then the product preview (320ms later), then its two small cards (scale/opacity). Afterwards only those two cards drift a few px on slow 7s/9s cycles, and the layers follow the pointer by a few px (fine pointer, ≥1000px wide). Entrance, drift and parallax use `scale`/`opacity`, `transform` and `translate` respectively, so they never fight |
 | Capability cards, journey | public home | cards stagger in; on hover a faint indigo wash, a 2px lift and a filled icon tile. The "how it works" line draws itself left to right, then the four steps follow it in |
 | Header | public home | turns lightly frosted once content scrolls beneath it — the one use of blur |
 | `AnimatedNumber` | dashboard figures | counts up when first seen and on change; **renders the true value at once** for reduced motion / no rAF / no IO |
@@ -225,10 +229,8 @@ continuity. Only `transform`/`opacity` animate; movement is ≤ ~14px.
 
 **Reduced motion** is global: `tokens.css` collapses all durations and
 animation counts under `prefers-reduced-motion`, and `Reveal`/`AnimatedNumber`/
-FLIP each opt out explicitly; the home page's drift and parallax only exist
-under `prefers-reduced-motion: no-preference` and above 560px. Verified in a
-real browser (headless Edge): two infinite animations on the home page with
-motion allowed, zero with reduced motion, and every reveal visible.
+FLIP each opt out explicitly; the home page's only motion is a small card
+hover lift, which is off under reduced motion.
 
 Not done, deliberately: dialogs have an entrance but **no exit animation**.
 `Modal` closes synchronously (`onClose` is called immediately and its tests pin
@@ -238,31 +240,61 @@ snap, so a partial version would look inconsistent.
 
 ## The public home page
 
-`features/public/PublicHomePage.tsx` + `styles/home.css`. Short and
-outward-facing: header (wordmark, four section links, theme, staff sign-in),
-hero, five core capabilities as a card grid (three across, then two wider)
-beside a short lead, a four-step "how it works" as step cards, a short campus-recruitment section, a neutral closing band (staff
-sign-in, open roles) and a minimal footer with the SIGVITAS copyright.
-Internal operating rules — approvals, separation of duties, audit
-mechanics, tenancy, grading and status rules — are deliberately not on the
-public page; they live in the signed-in product and the docs. No
-testimonials, logos, statistics or integrations.
+`features/public/PublicHomePage.tsx` + `styles/home.css` (classes scoped
+under `.zx-home`). The homepage is a **single-screen opportunity picker for
+Zodiac Patent candidates** — many arrive from a newspaper advertisement and
+only need to choose a path. It is branded ZPHIREX (the platform) with Zodiac
+Patent's official logo, browser tab "Careers at Zodiac Patent | ZPHIREX", and
+never shows a former brand name (enforced by `PublicHomePage.test`).
 
-The hero visual (`HeroProductPreview.tsx`) is a layered preview of the
-product itself, in HTML/CSS: an application panel (stage badge, the six real
-pipeline stages as a compact track with the current stage in its pipeline
-colour, the next step), with an assessment card (indigo edge and icon tile)
-and an interview-feedback card (teal) resting on its corners. Behind it, a
-large, soft indigo radial glow with a smaller teal tint (`--glow-*`) sits at
-z-index -1 — always behind the cards, clipped by the hero. The headline's
-second line uses a restrained indigo-to-teal text gradient (solid text in
-forced-colours mode). Capability icons sit on soft indigo tiles; the "how it
-works" track starts solid indigo and fades to a hairline. Names in the
-preview are placeholder lines; there are no scores, counts or rates. It is
-one image to assistive tech (role="img" with a description). Under 560px the
-resting cards follow the panel instead of overlapping. The earlier Three.js
-scene, network artwork and simple SVG pipeline were removed (with the
-`three` dependency).
+Contents, and nothing else: a compact dark header (ZPHIREX wordmark · divider ·
+the official Zodiac Patent logo linking to zodiacpatent.com in a new tab; on the
+right a quiet "Staff sign in" text link to `/recruiter/login`, hidden below
+400px, and the theme switch), the heading "Explore Opportunities" with one
+supporting line, and four equal cards. No sections, footer or marketing copy.
+
+| Card | Opens | Lists |
+|---|---|---|
+| Open Jobs | `/org/<slug>?view=jobs` | open roles that aren't internships |
+| Internships | `/org/<slug>?view=internships` | open roles of type Internship |
+| Campus Hiring | `/org/<slug>?view=campus` | how campus drives work (drives have no public list — each is applied to by its private link) |
+| Training Programs | `/org/<slug>?view=programs` | published programs |
+
+The views are filters over the careers page's existing public API data
+(`features/careers/careersView.ts`); the careers page shows them as a tab row
+(All · Jobs · Internships · Campus hiring · Training programs). The slug comes
+from `VITE_CAREERS_ORG_SLUG` (default `zodiac-patent`,
+`features/public/careersOrg.ts`). Card copy lives in
+`features/public/homeContent.ts`.
+
+**Fit.** Header + heading + cards fit the viewport without scrolling on
+laptops/desktops (checked at 1024×640, 1280×720, 1366×768, 1920×1080), tablets
+(820×1180) and phones (390×844); on a 360×640 phone all four cards are visible
+and only the reserved launcher space scrolls. Layout: 2 × 2 from 640px, one
+column below with tighter spacing. Nothing has a fixed height, so nothing
+clips on shorter screens — the page just scrolls. Bottom padding reserves room
+for the Zodi launcher, and the one-time Zodi teaser bubble is not shown on
+phones, so neither covers a card.
+
+**Brand.** Colours are sampled from Zodiac Patent's official site
+(zodiacpatent.com home and /career/): logo/link blue `#0092D4`, careers navy
+`#183B63` / heading navy `#18334F`, mid-blue `#285B87`, body `#586678`,
+blue-grey band `#F5F7F9`, hairlines `#E5E9EE`. The page follows the official
+site's "dark hero → blue rule → light content" structure: header and heading
+sit on a deep navy band (two soft blue radial lights and a faint 22px dot grid
+that fades out — a nod to patent drawings), a 4px `#0092D4` rule (the official
+hero's 5px rule) closes it, and the four white cards lift over that edge onto
+the blue-grey stage. Cards: navy titles, `#586678` text, `#0074A8` CTAs
+(`#0092D4` is too light for small text on white), a solid `#0092D4` icon square
+with a white glyph (the logo's square mark), a navy-tinted soft shadow, and a
+3px brand-blue top edge that draws in on hover/focus. The band grows with the
+viewport height on screens ≥ 640px wide so tall screens stay balanced, with a
+compact rhythm at ≤ 700px tall. Dark mode keeps the structure: darker navy
+band, near-black blue stage, dark cards with light titles and `#4CB8EA` CTAs.
+The logo (`public/brand/zodiac-patent-logo.png`, downloaded unaltered) has a
+white wordmark, so it appears only on the navy band — scaled, never
+recoloured or cropped. The official site's Montserrat is not loaded (no
+web-font dependency added); headings use the display font with weight 700.
 
 ## Sigvi (the public AI assistant)
 
@@ -278,7 +310,8 @@ head, used as an icon (launcher, header, beside replies) and always
 decorative. Motion is limited to short fades; nothing runs at rest, and
 reduced motion switches every Sigvi animation off.
 
-Rendered through a portal into `<body>` (same reason as dialogs). Non-modal
+Visitors see it as **Zodi** ("Ask Zodi"); the code keeps the `sigvi` names
+(`docs/sigvi.md`). Rendered through a portal into `<body>` (same reason as dialogs). Non-modal
 floating panel on desktop; full-screen sheet ≤ 640px that tracks the visible
 viewport (16px input to prevent iOS zoom, safe-area padding, page scroll locked
 beneath, keyboard-aware). It appears only on the home, careers and role pages —

@@ -42,7 +42,7 @@ import {
 import { EmailComposerModal } from "./EmailComposerModal";
 
 /** Non-accusatory, human-readable labels for observed monitoring events
- * (SIGVITAS platform overhaul § 7) — describes what was observed, never
+ * (ZPHIREX platform overhaul § 7) — describes what was observed, never
  * accuses the candidate of anything. */
 const MONITORING_EVENT_LABELS: Record<MonitoringEventType, string> = {
   MONITORING_CONSENT_GIVEN: "Candidate agreed to assessment monitoring",

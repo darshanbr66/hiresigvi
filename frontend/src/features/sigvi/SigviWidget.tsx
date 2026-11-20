@@ -39,7 +39,7 @@ function AssistantTurn({ turn, onNavigate }: { turn: ChatTurn; onNavigate: () =>
           // The specific topics are in the tooltip; the chip itself stays
           // simple and never names anything internal.
           <p className="sigvi-sources" title={knowledge.map((source) => source.title).join(" · ")}>
-            Based on SIGVITAS Careers
+            Based on Zodiac Patent careers information
           </p>
         )}
       </div>
@@ -196,7 +196,7 @@ export function SigviWidget({
         id="sigvi-panel"
         className="sigvi-panel"
         role="dialog"
-        aria-label="Sigvi, AI assistant"
+        aria-label="Zodi, AI assistant"
         aria-modal="false"
         aria-hidden={!open}
         inert={!open}
@@ -210,8 +210,8 @@ export function SigviWidget({
             <SigviMascot size={28} variant="head" state={mascotState} />
           </span>
           <div className="sigvi-header-text">
-            <h2 className="sigvi-title">Sigvi</h2>
-            <p className="sigvi-subtitle">AI assistant for SIGVITAS</p>
+            <h2 className="sigvi-title">Zodi</h2>
+            <p className="sigvi-subtitle">AI assistant for Zodiac Patent careers</p>
           </div>
           <button
             type="button"
@@ -230,7 +230,7 @@ export function SigviWidget({
           <button
             type="button"
             className="sigvi-icon-btn"
-            aria-label="Close Sigvi"
+            aria-label="Close Zodi"
             title="Close — your conversation is kept"
             onClick={close}
           >
@@ -242,7 +242,7 @@ export function SigviWidget({
           ref={logRef}
           className="sigvi-log"
           role="log"
-          aria-label="Conversation with Sigvi"
+          aria-label="Conversation with Zodi"
           aria-live="polite"
           aria-relevant="additions"
           tabIndex={0}
@@ -268,7 +268,7 @@ export function SigviWidget({
                   <span />
                   <span />
                 </span>
-                <span>Sigvi is thinking…</span>
+                <span>Zodi is thinking…</span>
               </div>
             </div>
           )}
@@ -288,7 +288,7 @@ export function SigviWidget({
             <textarea
               ref={inputRef}
               className="sigvi-input"
-              aria-label="Message Sigvi"
+              aria-label="Message Zodi"
               placeholder="Ask about roles, applying, or careers…"
               rows={1}
               maxLength={SIGVI_MAX_MESSAGE_CHARS}

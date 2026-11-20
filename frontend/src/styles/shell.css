@@ -194,31 +194,30 @@
   min-width: 0;
 }
 
-/* --- HireZ wordmark (shared/components/Wordmark.tsx) — text only -----------
-   "Hire" in the ink colour, the "Z" in brand indigo; heavy weight, tight
-   tracking, upright (no italic, gradient or symbol) so it stays crisp small. */
+/* --- ZPHIREX wordmark (shared/components/Wordmark.tsx) — text only ---------
+   The leading "Z" in the brand accent, "PHIREX" in the ink colour; the same
+   weight, open uppercase tracking and sizes as the public homepage lockup
+   (.zp-wordmark in home.css), upright so it stays crisp small. */
 .wordmark {
   display: inline-flex;
   align-items: baseline;
   font-family: var(--font-display);
-  font-weight: 750;
-  letter-spacing: -0.05em;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.16em;
   line-height: 1;
   color: var(--color-text);
   white-space: nowrap;
   /* never squeezed or distorted by a narrow container */
   flex-shrink: 0;
-  font-feature-settings: "ss01" 1;
 }
 
 .wordmark-z {
   color: var(--color-wordmark-z);
-  margin-left: 0.01em;
 }
 
-.wordmark-sm { font-size: 1.1875rem; } /* 19px bold: WCAG "large text" */
-.wordmark-md { font-size: 1.375rem; }
-.wordmark-lg { font-size: 1.75rem; }
+.wordmark-sm { font-size: 1rem; }
+.wordmark-md { font-size: 1.125rem; }
+.wordmark-lg { font-size: 1.5rem; }
 
 /* The compact mark (Wordmark variant="mark"): the wordmark's indigo "Z" on
    its own, a touch larger and heavier so it holds up as a standalone
@@ -229,10 +228,6 @@
   font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: 0;
-}
-
-.wordmark-mark .wordmark-z {
-  margin-left: 0;
 }
 
 /* Collapsing/expanding swaps the full wordmark for the compact mark (they
@@ -764,7 +759,7 @@
   }
 }
 
-/* --- HireZ shell refinements -------------------------------------------------
+/* --- Shell refinements -------------------------------------------------
    Five responsibility groups: a tighter link rhythm keeps them on one screen;
    the active item is the soft neutral indicator plus a short accent bar, so the
    state never relies on colour alone (weight changes too). */

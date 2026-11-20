@@ -74,11 +74,11 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
     smtp_from_email: str | None = None
-    smtp_from_name: str = "AI Recruitment Platform"
+    smtp_from_name: str = "Zodiac Patent Recruitment"
     smtp_use_tls: bool = True
 
     # `email_from` is the Resend sender: a verified-domain address, optionally
-    # with a display name, e.g. `SIGVITAS <hr@yourdomain.com>`.
+    # with a display name, e.g. `Zodiac Patent Recruitment <hr@zodiacpatent.com>`.
     resend_api_key: SecretStr | None = None
     email_from: str | None = None
 
@@ -93,7 +93,10 @@ class Settings(BaseSettings):
     ollama_base_url: str | None = None
     ollama_model: str = "llama3.1"
 
-    # Sigvi — the public AI assistant (POST /api/v1/public/ai/chat). Gemini is
+    # Zodi — the public AI assistant on the Zodiac Patent careers site
+    # (POST /api/v1/public/ai/chat). Internally still the `sigvi` feature, so
+    # the settings below keep their SIGVI_* names (renaming them would break
+    # deployed environments). Gemini is
     # the chat provider (free tier is enough for development/demo use); the
     # key is a SecretStr so it can never leak through a repr/log of Settings.
     # Unset means "assistant unavailable", never a canned/fake answer.
@@ -108,9 +111,15 @@ class Settings(BaseSettings):
     # model's real observed latency, not a guess.
     sigvi_request_timeout_seconds: float = 45.0
     sigvi_max_output_tokens: int = 700
-    # The careers site Sigvi answers about when the request names no
+    # The careers site the assistant answers about when the request names no
     # organization (this deployment serves one: docs/architecture.md).
-    sigvi_organization_slug: str = "sigvitas"
+    sigvi_organization_slug: str = "zodiac-patent"
+    # Careers-site slugs an organization used before it was renamed, mapped to
+    # its current slug. Public lookups by an old slug resolve to the renamed
+    # organization, so links already sent (emails, bookmarks) keep working.
+    # The frontend redirects the same old paths (features/public/careersOrg.ts).
+    # JSON in the environment, e.g. ORGANIZATION_SLUG_ALIASES={"old":"new"}.
+    organization_slug_aliases: dict[str, str] = {"sigvitas": "zodiac-patent"}
     # In-process limits (per instance): per client, and across all clients —
     # the global cap protects the provider's free-tier quota even if a caller
     # rotates client identifiers.

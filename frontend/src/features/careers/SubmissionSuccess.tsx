@@ -1,6 +1,6 @@
 /**
  * Candidate-facing submission confirmation — deliberately shows no
- * score/percentage (SIGVITAS platform overhaul § 4). Recruiters/admins see
+ * score/percentage (ZPHIREX platform overhaul § 4). Recruiters/admins see
  * the score elsewhere, per their permissions.
  */
 export function SubmissionSuccess() {

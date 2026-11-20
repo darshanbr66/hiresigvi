@@ -1,4 +1,5 @@
-"""Sigvi orchestration — the public AI assistant.
+"""Orchestration for Zodi — the public AI assistant on the Zodiac Patent
+careers site (internally the `sigvi` feature).
 
     request
       -> intent / context handling   (does this need public jobs?)
@@ -40,6 +41,7 @@ from app.integrations.ai import (
 )
 from app.knowledge import KnowledgeEntry, get_knowledge_retriever
 from app.schemas.sigvi import ChatHistoryMessage, ChatRequest, ChatResponse, ChatSource
+from app.services import organization_service
 from app.services import sigvi_job_context as jobs_ctx
 from app.services.sigvi_prompts import (
     DECLINED_REPLY,
@@ -53,10 +55,10 @@ _HISTORY_MESSAGES_USED = 8
 _HISTORY_MESSAGE_CHARS = 1500
 _KNOWLEDGE_ENTRIES = 3
 
-UNAVAILABLE_MESSAGE = "Sigvi is temporarily unavailable. Please try again in a little while."
-BUSY_MESSAGE = "Sigvi is getting a lot of questions right now. Please try again in a moment."
-TIMEOUT_MESSAGE = "Sigvi took too long to respond. Please try again."
-EMPTY_MESSAGE = "Sigvi couldn't come up with an answer. Please try rephrasing your question."
+UNAVAILABLE_MESSAGE = "Zodi is temporarily unavailable. Please try again in a little while."
+BUSY_MESSAGE = "Zodi is getting a lot of questions right now. Please try again in a moment."
+TIMEOUT_MESSAGE = "Zodi took too long to respond. Please try again."
+EMPTY_MESSAGE = "Zodi couldn't come up with an answer. Please try rephrasing your question."
 
 
 def _sanitize(text: str) -> str:
@@ -128,6 +130,11 @@ async def answer_chat(
 
     knowledge = _retrieve_knowledge(message, request.history)
 
+    # The recruitment team's published careers email, if any — the only
+    # contact the assistant may give (never guessed).
+    organization = await organization_service.get_organization_by_slug(db, slug)
+    contact_email = organization.careers_contact_email if organization else None
+
     all_jobs: list[jobs_ctx.PublicJob] = []
     shown_jobs: list[jobs_ctx.PublicJob] = []
     jobs_block: str | None = None
@@ -136,11 +143,24 @@ async def answer_chat(
         previous = next((t.content for t in reversed(request.history) if t.role == "user"), "")
         shown_jobs = jobs_ctx.select_relevant_jobs(all_jobs, f"{previous} {message}")
         jobs_block = jobs_ctx.format_jobs_block(shown_jobs, len(all_jobs))
-        # Reads are done: release the pooled DB connection now rather than
-        # holding it open across the (slow) model call.
-        await db.commit()
 
-    system_prompt = build_system_prompt(knowledge=knowledge, jobs_block=jobs_block)
+    programs_block: str | None = None
+    programs_in_context = 0
+    if jobs_ctx.needs_program_context(message, request.history):
+        programs = await jobs_ctx.load_public_programs(db, slug)
+        programs_in_context = min(len(programs), jobs_ctx.MAX_PROGRAMS_IN_PROMPT)
+        programs_block = jobs_ctx.format_programs_block(programs)
+
+    # Reads are done: release the pooled DB connection now rather than
+    # holding it open across the (slow) model call.
+    await db.commit()
+
+    system_prompt = build_system_prompt(
+        knowledge=knowledge,
+        jobs_block=jobs_block,
+        programs_block=programs_block,
+        contact_email=contact_email,
+    )
     conversation = build_conversation(request.history, message)
     log_fields = {
         "conversation_id": str(conversation_id),
@@ -150,6 +170,7 @@ async def answer_chat(
         "history_messages": len(conversation) - 1,
         "knowledge_entries": [entry.id for entry in knowledge],
         "jobs_in_context": len(shown_jobs),
+        "programs_in_context": programs_in_context,
     }
 
     try:
@@ -159,11 +180,11 @@ async def answer_chat(
             max_output_tokens=settings.sigvi_max_output_tokens,
         )
     except AIProviderBlockedError:
-        logger.info("Sigvi request declined by provider", extra={"extra_fields": log_fields})
+        logger.info("Zodi request declined by provider", extra={"extra_fields": log_fields})
         return ChatResponse(conversation_id=conversation_id, message=DECLINED_REPLY)
     except AIProviderError as exc:
         logger.warning(
-            "Sigvi provider error",
+            "Zodi provider error",
             extra={
                 "extra_fields": {
                     **log_fields,
@@ -177,7 +198,7 @@ async def answer_chat(
     secrets = [settings.gemini_api_key.get_secret_value()] if settings.gemini_api_key else []
     reply = validate_reply(raw, secrets=secrets)
     if reply is None:
-        logger.warning("Sigvi empty reply", extra={"extra_fields": log_fields})
+        logger.warning("Zodi empty reply", extra={"extra_fields": log_fields})
         raise _map_provider_error(AIProviderEmptyResponseError("Empty reply after validation."))
 
     cards = jobs_ctx.find_mentioned_jobs(reply, shown_jobs, slug)
@@ -190,7 +211,7 @@ async def answer_chat(
     ]
 
     logger.info(
-        "Sigvi answered",
+        "Zodi answered",
         extra={
             "extra_fields": {
                 **log_fields,

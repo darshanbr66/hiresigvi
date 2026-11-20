@@ -1,7 +1,7 @@
 import { SigviAvatar } from "./SigviAvatar";
 import { SIGVI_SUGGESTIONS } from "./suggestions";
 
-/** Sigvi's opening message. It stays at the top of the conversation; the
+/** Zodi's opening message. It stays at the top of the conversation; the
  * suggested questions beneath it go away once the visitor asks something. */
 export function SigviWelcome({
   onPick,
@@ -17,8 +17,8 @@ export function SigviWelcome({
       <div className="sigvi-row sigvi-row-assistant">
         <SigviAvatar size={24} />
         <div className="sigvi-bubble sigvi-bubble-assistant sigvi-greeting">
-          <h3 className="sigvi-greeting-title">Hi! How can I help?</h3>
-          <p className="sigvi-greeting-text">Ask me about careers at SIGVITAS.</p>
+          <h3 className="sigvi-greeting-title">Hi, I'm Zodi!</h3>
+          <p className="sigvi-greeting-text">How can I help you explore opportunities at Zodiac Patent?</p>
         </div>
       </div>
 

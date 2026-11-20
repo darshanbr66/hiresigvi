@@ -13,7 +13,7 @@ const sentInvitation: PublicInvitationView = {
   instructions: "Answer everything.",
   duration_minutes: 30,
   job_title: "Backend Engineer",
-  organization_name: "SIGVITAS",
+  organization_name: "Zodiac Patent",
   expires_at: new Date(Date.now() + 86_400_000).toISOString(),
   started_at: null,
   questions: [

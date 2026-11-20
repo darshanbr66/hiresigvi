@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ComponentType } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { LoginPage } from "../features/auth/LoginPage";
+import { LEGACY_ORG_SLUGS } from "../features/public/careersOrg";
 import { PublicHomePage } from "../features/public/PublicHomePage";
 import { SigviLayer } from "../features/sigvi/SigviLayer";
 import { AppReady, HoldBrandLoading } from "../shared/components/BrandLoading";
@@ -59,8 +60,18 @@ const UsersPage = page(() => import("../features/recruiter/users/UsersPage"), "U
 const AdminLayout = page(() => import("./AdminLayout"), "AdminLayout");
 const RecruiterLayout = page(() => import("./RecruiterLayout"), "RecruiterLayout");
 
+/** `/org/<old-slug>/...` -> the same page under the organization's current
+ * slug (careersOrg.ts::LEGACY_ORG_SLUGS), keeping the rest of the path, the
+ * query string and the hash. A `replace`, so Back doesn't bounce. */
+export function LegacyOrgRedirect({ to }: { to: string }) {
+  const { jobId } = useParams<{ jobId?: string }>();
+  const { search, hash } = useLocation();
+  const path = jobId ? `/org/${to}/jobs/${jobId}` : `/org/${to}`;
+  return <Navigate to={`${path}${search}${hash}`} replace />;
+}
+
 /** Full-page pending state for public routes (the app shell has its own).
- * On a cold start the HireZ startup screen covers it until the code arrives. */
+ * On a cold start the startup screen covers it until the code arrives. */
 function PublicFallback() {
   return (
     <div className="public-shell">
@@ -83,8 +94,12 @@ export function AppRoutes() {
   return (
     <Suspense fallback={<PublicFallback />}>
       <Routes>
-        {/* The Sigvi assistant appears on these three pages only — never on
+        {/* The Zodi assistant (the `sigvi` feature) appears on these three pages only — never on
             the assessment / campus-drive pages, nor in the staff app. */}
+        {Object.entries(LEGACY_ORG_SLUGS).flatMap(([from, to]) => [
+          <Route key={from} path={`/org/${from}`} element={<LegacyOrgRedirect to={to} />} />,
+          <Route key={`${from}-job`} path={`/org/${from}/jobs/:jobId`} element={<LegacyOrgRedirect to={to} />} />,
+        ])}
         <Route element={<SigviLayer />}>
           <Route path="/" element={<PublicHomePage />} />
           <Route path="/org/:slug" element={<CareersPage />} />

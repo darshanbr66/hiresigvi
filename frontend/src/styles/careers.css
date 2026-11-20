@@ -1,0 +1,750 @@
+/*
+ * The public careers listing (features/careers/CareersPage.tsx). Scoped
+ * under `.careers-page`.
+ *
+ * Palette — Zodiac Patent's official site (zodiacpatent.com, /career/), the
+ * same values as the homepage (styles/home.css):
+ *   #10263F / #183B63  deep navy / navy (header + hero band)
+ *   #0092D4            brand blue (rule, accents, active tab)
+ *   #18334F            heading navy      #586678  body text
+ *   #F5F7F9            blue-grey page    #E5E9EE  hairline borders
+ * #0092D4 is too light for small text on white (3.5:1), so text-sized blue
+ * (CTAs, the active tab label, links) uses #0074A8; dark mode lifts it to
+ * #4CB8EA.
+ *
+ * Composition: a compact navy hero closed by the brand-blue rule (as on the
+ * official site and the ZPHIREX homepage), the view tabs lifted over that
+ * edge, then a two-column grid of white cards on the blue-grey page. The
+ * hero stays short so the first row of roles is visible on a laptop
+ * without scrolling.
+ */
+
+.careers-page {
+  --cr-brand: #0092d4;
+  --cr-brand-text: #0074a8;
+  --cr-brand-soft: rgb(0 146 212 / 9%);
+  --cr-navy: #183b63;
+  --cr-navy-deep: #10263f;
+  --cr-heading: #18334f;
+  --cr-body: #586678;
+  --cr-page: #f5f7f9;
+  --cr-surface: #ffffff;
+  --cr-border: #e5e9ee;
+  --cr-border-strong: #d3dbe4;
+  --cr-pill: #f3f6f9;
+  --cr-shadow: 0 1px 2px rgb(24 51 79 / 5%), 0 10px 28px -16px rgb(24 51 79 / 20%);
+  --cr-shadow-hover: 0 1px 2px rgb(24 51 79 / 7%), 0 18px 38px -18px rgb(24 51 79 / 30%);
+  --cr-gutter: 1rem;
+  --cr-lift: 1.4rem;
+
+  background: var(--cr-page);
+  color: var(--cr-body);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .careers-page {
+    --cr-brand-text: #4cb8ea;
+    --cr-brand-soft: rgb(0 146 212 / 16%);
+    --cr-navy: #11263d;
+    --cr-navy-deep: #0a1828;
+    --cr-heading: #e6edf5;
+    --cr-body: #9fb0c2;
+    --cr-page: #0d141c;
+    --cr-surface: #141e29;
+    --cr-border: #22303f;
+    --cr-border-strong: #2f4053;
+    --cr-pill: #1a2633;
+    --cr-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 30px -16px rgb(0 0 0 / 70%);
+    --cr-shadow-hover: 0 1px 2px rgb(0 0 0 / 45%), 0 18px 38px -16px rgb(0 0 0 / 80%);
+  }
+
+  :root:not([data-theme="light"]) .careers-page .public-nav {
+    background: #0a1828;
+  }
+}
+
+:root[data-theme="dark"] .careers-page {
+  --cr-brand-text: #4cb8ea;
+  --cr-brand-soft: rgb(0 146 212 / 16%);
+  --cr-navy: #11263d;
+  --cr-navy-deep: #0a1828;
+  --cr-heading: #e6edf5;
+  --cr-body: #9fb0c2;
+  --cr-page: #0d141c;
+  --cr-surface: #141e29;
+  --cr-border: #22303f;
+  --cr-border-strong: #2f4053;
+  --cr-pill: #1a2633;
+  --cr-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 30px -16px rgb(0 0 0 / 70%);
+  --cr-shadow-hover: 0 1px 2px rgb(0 0 0 / 45%), 0 18px 38px -16px rgb(0 0 0 / 80%);
+}
+
+:root[data-theme="dark"] .careers-page .public-nav {
+  background: #0a1828;
+}
+
+@media (min-width: 640px) {
+  .careers-page {
+    --cr-gutter: clamp(1.5rem, 4vw, 2.5rem);
+  }
+}
+
+/* the header continues straight into the hero band */
+.careers-page .public-nav {
+  background: var(--cr-navy-deep);
+}
+
+.careers-container {
+  width: 100%;
+  max-width: 68rem;
+  margin: 0 auto;
+  padding-inline: var(--cr-gutter);
+}
+
+/* --- hero --------------------------------------------------------------------- */
+
+.careers-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(1.75rem, 4.5vh, 2.75rem) 0 calc(clamp(1.75rem, 4.5vh, 2.5rem) + var(--cr-lift));
+  border-bottom: 4px solid var(--cr-brand);
+  background:
+    radial-gradient(48rem 20rem at 88% -20%, rgb(0 146 212 / 28%), transparent 70%),
+    radial-gradient(36rem 18rem at 0% 0%, rgb(40 91 135 / 40%), transparent 70%),
+    linear-gradient(180deg, var(--cr-navy-deep) 0%, var(--cr-navy) 100%);
+  color: #ffffff;
+}
+
+/* faint dot grid, fading toward the rule — the homepage's texture */
+.careers-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(rgb(255 255 255 / 8%) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 90%);
+  pointer-events: none;
+}
+
+.careers-eyebrow {
+  margin: 0 0 0.6rem;
+  color: #8fc9ea;
+  font-size: var(--text-meta);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.careers-title {
+  margin: 0;
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: clamp(1.625rem, 1.2rem + 1.5vw, 2.25rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: var(--tracking-headline);
+}
+
+.careers-subtitle {
+  max-width: 40rem;
+  margin: 0.6rem 0 0;
+  color: #b9c8d8;
+  font-size: var(--text-body);
+  line-height: 1.55;
+}
+
+.careers-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+  padding: 0.3rem 0.8rem 0.3rem 0.65rem;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: var(--radius-pill);
+  background: rgb(255 255 255 / 7%);
+  color: #ffffff;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+}
+
+.careers-count-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgb(52 211 153 / 20%);
+}
+
+/* --- body + view tabs ------------------------------------------------------------ */
+
+.careers-body {
+  padding-bottom: 4.5rem; /* clear of the Zodi launcher */
+}
+
+/* A white tab bar lifted over the hero's blue rule. Wraps on narrow
+   screens rather than scrolling, so every option stays visible. */
+.careers-views {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: calc(-1 * var(--cr-lift) - 4px) 0 1.5rem;
+  padding: 0.3rem;
+  border: 1px solid var(--cr-border);
+  border-radius: var(--radius-lg);
+  background: var(--cr-surface);
+  box-shadow: var(--cr-shadow);
+}
+
+.careers-view-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.95rem;
+  border-radius: var(--radius-md);
+  color: var(--cr-body);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.careers-view-link:hover {
+  background: var(--cr-pill);
+  color: var(--cr-heading);
+}
+
+.careers-view-link[aria-current="page"] {
+  background: var(--cr-brand);
+  color: #ffffff;
+  font-weight: var(--weight-strong);
+}
+
+.careers-view-link:focus-visible {
+  outline: 2px solid var(--cr-brand);
+  outline-offset: 2px;
+}
+
+/* --- opening cards --------------------------------------------------------------- */
+
+.opening-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.875rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 720px) {
+  .opening-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+}
+
+.opening-grid > li {
+  display: flex;
+}
+
+.opening-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 1.15rem 1.25rem 1.1rem 1.4rem;
+  border: 1px solid var(--cr-border);
+  border-radius: var(--radius-lg);
+  background: var(--cr-surface);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: var(--cr-shadow);
+  overflow: hidden;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+/* the brand-blue accent: a short bar on the card's left edge that runs the
+   full height on hover/focus */
+.opening-card::before {
+  content: "";
+  position: absolute;
+  top: 1.2rem;
+  bottom: auto;
+  left: 0;
+  width: 3px;
+  height: 1.5rem;
+  border-radius: 0 2px 2px 0;
+  background: var(--cr-brand);
+  transition:
+    top var(--dur-base) var(--ease-out),
+    height var(--dur-base) var(--ease-out);
+}
+
+.opening-card:hover {
+  border-color: var(--cr-border-strong);
+  box-shadow: var(--cr-shadow-hover);
+}
+
+.opening-card:hover::before,
+.opening-card:focus-visible::before {
+  top: 0;
+  height: 100%;
+  border-radius: 0;
+}
+
+.opening-card:focus-visible {
+  outline: 2px solid var(--cr-brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .opening-card:hover {
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .opening-card,
+  .opening-card::before,
+  .careers-view-link,
+  .opening-card-cta svg {
+    transition: none;
+  }
+}
+
+.opening-card-kicker {
+  color: var(--cr-brand-text);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.opening-card-title {
+  color: var(--cr-heading);
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.opening-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.opening-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--cr-border);
+  border-radius: var(--radius-pill);
+  background: var(--cr-pill);
+  color: var(--cr-body);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+}
+
+.opening-pill svg {
+  flex-shrink: 0;
+  color: var(--cr-brand-text);
+}
+
+.opening-card-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: auto;
+  padding-top: 0.75rem;
+  color: var(--cr-brand-text);
+  font-size: var(--text-label);
+  font-weight: var(--weight-strong);
+}
+
+.opening-card-cta svg {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .opening-card:hover .opening-card-cta svg {
+    transform: translateX(3px);
+  }
+}
+
+.opening-card-skeleton {
+  min-height: 9.5rem;
+  gap: 0.6rem;
+}
+
+/* the shared EmptyState/Alert sit on the page surface */
+.careers-body .empty-state {
+  border-color: var(--cr-border);
+  background: var(--cr-surface);
+}
+
+/* =============================================================================
+ * Candidate pages — one ZPHIREX / Zodiac Patent look from the homepage to
+ * the submitted application. Every candidate-facing page wraps its content in
+ * `.public-page` (careers list, job details, campus drive, program,
+ * assessment). Inside it the app's existing shared tokens are pointed at the
+ * Zodiac palette instead of the staff app's indigo, so every shared
+ * component there — .btn-primary/.btn-ghost, .field inputs/selects/textareas,
+ * file pickers, .card, the application stepper, focus rings — follows without
+ * a second set of components or token names.
+ *
+ * Contrast (WCAG AA): white on --color-primary-solid #0077B6 is 4.9:1;
+ * #0074A8 text on white 5.2:1; the #7F97AD input border is 3:1 against
+ * white. Dark mode: #4CB8EA text on #141E29 8.2:1; #5F7F9C input border
+ * 4.2:1 against its field.
+ * ========================================================================== */
+
+.public-page {
+  --color-bg: #f5f7f9;
+  --color-bg-subtle: #eef2f6;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-border: #d3dfea;
+  --color-border-strong: #b7cadb;
+  --color-input-border: #7f97ad;
+  --color-input-bg: #ffffff;
+  --color-text: #18283a;
+  --color-text-muted: #586678;
+  --color-primary: #0074a8;
+  --color-primary-hover: #005d88;
+  --color-primary-solid: #0077b6;
+  --color-primary-solid-hover: #00669c;
+  --color-on-primary: #ffffff;
+  --color-primary-soft: rgb(0 146 212 / 9%);
+  --color-primary-ring: rgb(0 146 212 / 30%);
+  --color-focus: #0092d4;
+  --color-brand: #0092d4;
+  --color-brand-soft: #e7f4fb;
+  --color-brand-soft-border: #b6dbef;
+  --color-wordmark-z: #0092d4;
+  --glow-brand: rgb(0 146 212 / 22%);
+  --shadow-brand: 0 1px 2px rgb(0 116 168 / 22%), 0 6px 16px -4px rgb(0 146 212 / 38%);
+  --shadow-card: 0 1px 2px rgb(24 51 79 / 5%), 0 8px 24px -16px rgb(24 51 79 / 18%);
+  --color-skeleton-base: #e6edf3;
+  --color-skeleton-shine: #f3f7fa;
+  --job-heading: #18334f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .public-page {
+    --color-bg: #0d141c;
+    --color-bg-subtle: #0b1118;
+    --color-surface: #141e29;
+    --color-surface-raised: #1a2633;
+    --color-border: #2a3d52;
+    --color-border-strong: #3a5c7c;
+    --color-input-border: #5f7f9c;
+    --color-input-bg: #0f1822;
+    --color-text: #e6edf5;
+    --color-text-muted: #9fb0c2;
+    --color-primary: #4cb8ea;
+    --color-primary-hover: #7ccbf0;
+    --color-primary-solid: #0077b6;
+    --color-primary-solid-hover: #006aa3;
+    --color-primary-soft: rgb(56 189 248 / 12%);
+    --color-primary-ring: rgb(76 184 234 / 40%);
+    --color-focus: #4cb8ea;
+    --color-brand: #4cb8ea;
+    --color-brand-soft: #0f2638;
+    --color-brand-soft-border: #1f4a66;
+    --color-wordmark-z: #4cb8ea;
+    --glow-brand: rgb(0 146 212 / 24%);
+    --shadow-brand: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px -4px rgb(0 146 212 / 45%);
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 26px -16px rgb(0 0 0 / 70%);
+    --color-skeleton-base: #1a2633;
+    --color-skeleton-shine: #223142;
+    --job-heading: #e6edf5;
+  }
+}
+
+:root[data-theme="dark"] .public-page {
+  --color-bg: #0d141c;
+  --color-bg-subtle: #0b1118;
+  --color-surface: #141e29;
+  --color-surface-raised: #1a2633;
+  --color-border: #2a3d52;
+  --color-border-strong: #3a5c7c;
+  --color-input-border: #5f7f9c;
+  --color-input-bg: #0f1822;
+  --color-text: #e6edf5;
+  --color-text-muted: #9fb0c2;
+  --color-primary: #4cb8ea;
+  --color-primary-hover: #7ccbf0;
+  --color-primary-solid: #0077b6;
+  --color-primary-solid-hover: #006aa3;
+  --color-primary-soft: rgb(56 189 248 / 12%);
+  --color-primary-ring: rgb(76 184 234 / 40%);
+  --color-focus: #4cb8ea;
+  --color-brand: #4cb8ea;
+  --color-brand-soft: #0f2638;
+  --color-brand-soft-border: #1f4a66;
+  --color-wordmark-z: #4cb8ea;
+  --glow-brand: rgb(0 146 212 / 24%);
+  --shadow-brand: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px -4px rgb(0 146 212 / 45%);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 26px -16px rgb(0 0 0 / 70%);
+  --color-skeleton-base: #1a2633;
+  --color-skeleton-shine: #223142;
+  --job-heading: #e6edf5;
+}
+
+/* cards on candidate pages: a visible blue-grey edge, as on the homepage */
+.public-page .card {
+  border-color: var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+/* --- application stepper and sections: brand blue, not green/indigo ---------- */
+
+.public-page .apply-step-current {
+  border-top-color: var(--color-brand);
+}
+
+.public-page .apply-step-current .apply-step-node {
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+.public-page .apply-step-done {
+  border-top-color: var(--color-brand);
+}
+
+.public-page .apply-step-done .apply-step-node {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+  color: var(--color-primary);
+}
+
+.public-page .apply-fieldset legend {
+  color: var(--color-primary);
+}
+
+.public-page .apply-card .field input[type="file"]::file-selector-button {
+  border-color: var(--color-brand-soft-border);
+  background: var(--color-brand-soft);
+  color: var(--color-primary);
+}
+
+/* Application-form buttons: text and icon (Continue →, Submit, Back) laid out
+   with flex so the arrow sits on the text's centre line with a fixed gap,
+   instead of riding the inline baseline. Size, padding and colours are the
+   shared .btn ones. */
+.public-page .apply-card .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.public-page .apply-card .btn svg {
+  flex-shrink: 0;
+}
+
+/* --- job details page ---------------------------------------------------------- */
+
+.job-container {
+  max-width: 56rem;
+}
+
+/* the careers hero band, closed for this page (no tabs lifted over it) */
+.job-page .job-hero-band {
+  padding-bottom: clamp(1.75rem, 4.5vh, 2.5rem);
+}
+
+.job-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  color: #b9c8d8;
+  font-size: var(--text-label);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.job-back:hover {
+  color: #ffffff;
+}
+
+.job-back:focus-visible {
+  outline: 2px solid #8fc9ea;
+  outline-offset: 3px;
+}
+
+.job-back .back-link-icon {
+  transform: rotate(180deg);
+}
+
+.job-title {
+  font-size: clamp(1.625rem, 1.2rem + 1.6vw, 2.375rem);
+}
+
+.job-hero-skeleton {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.job-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: var(--radius-pill);
+  background: rgb(255 255 255 / 7%);
+  color: #e6edf5;
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+}
+
+.job-pill svg {
+  color: #8fc9ea;
+}
+
+/* published pay: set apart in the brand cyan */
+.job-pill-pay {
+  border-color: rgb(56 189 248 / 45%);
+  background: rgb(0 146 212 / 22%);
+  color: #ffffff;
+  font-weight: var(--weight-strong);
+}
+
+.job-apply-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.job-apply-btn:focus-visible {
+  outline-color: #8fc9ea;
+}
+
+.job-body {
+  display: grid;
+  gap: 1.25rem;
+  padding-top: 1.75rem;
+}
+
+.job-section {
+  padding: clamp(1.15rem, 3vw, 1.75rem);
+}
+
+.job-section h2 {
+  margin: 0 0 1rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--job-heading);
+  font-family: var(--font-display);
+  font-size: var(--text-section);
+  font-weight: 700;
+}
+
+.job-details-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem 1.5rem;
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .job-details-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.job-details-list dt {
+  margin-bottom: 0.15rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.job-details-list dd {
+  margin: 0;
+  color: var(--color-text);
+  white-space: pre-line;
+}
+
+/* the employer's description: readable measure, rhythm and lists */
+.job-description-body {
+  max-width: 70ch;
+  color: var(--color-text);
+  font-size: var(--text-body);
+  line-height: 1.7;
+}
+
+.job-description-body > :first-child {
+  margin-top: 0;
+}
+
+.job-description-body h3 {
+  margin: 1.5rem 0 0.4rem;
+  color: var(--job-heading);
+  font-size: var(--text-card-title);
+  font-weight: 700;
+}
+
+.job-description-body p {
+  margin: 0 0 0.85rem;
+  white-space: pre-line;
+}
+
+/* emphasis: section headings (h3 above), the lead statement and leading
+   labels ("Interview Process:") in bold heading navy; body text regular */
+.job-description-body strong {
+  color: var(--job-heading);
+  font-weight: 700;
+}
+
+.job-description-body .job-lead {
+  margin-bottom: 1.1rem;
+}
+
+.job-description-body ul,
+.job-description-body ol {
+  margin: 0 0 0.85rem;
+  padding-left: 1.25rem;
+}
+
+.job-description-body li {
+  margin: 0.25rem 0;
+  padding-left: 0.25rem;
+}
+
+.job-description-body ul li::marker {
+  color: var(--color-brand);
+}
+
+.job-page #apply {
+  scroll-margin-top: 4.5rem;
+}

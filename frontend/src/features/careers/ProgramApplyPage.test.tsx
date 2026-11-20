@@ -29,7 +29,7 @@ const unfinalized: PublicProgramView = {
   id: "prog-1",
   title: "MTech/PhD Scholarship & Paid Training",
   description: "Train with us, then build a career here.",
-  organization_name: "SIGVITAS",
+  organization_name: "Zodiac Patent",
   careers_contact_email: null,
   eligible_education_levels: ["MTECH", "PHD"],
   eligible_study_years: [2],

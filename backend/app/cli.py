@@ -17,7 +17,7 @@ Usage:
 
     # A realistic, clearly-labelled demo job (app/demo_data.py) for
     # exercising AI resume screening — DRAFT unless --open is given.
-    python -m app.cli seed-demo-job --org-slug sigvitas \\
+    python -m app.cli seed-demo-job --org-slug zodiac-patent \\
         --created-by-email hr.admin@example.com [--open]
 """
 

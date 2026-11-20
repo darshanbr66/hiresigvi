@@ -1,10 +1,10 @@
 /**
- * The HireZ wordmark — text only, by design: no image logo, no placeholder
- * box. "Hire" in the ink colour, the closing "Z" in the accent, set in the
- * display face with tight tracking so it reads as one deliberate word at
- * every size. `variant="mark"` is the compact form for tight spaces (the
- * collapsed 72px sidebar rail): the same indigo "Z" on its own. Either way
- * the accessible name is "HireZ".
+ * The ZPHIREX wordmark — text only, by design: no image logo, no placeholder
+ * box. The leading "Z" in the accent, "PHIREX" in the ink colour, set in the
+ * display face with open uppercase tracking — the same lockup as the public
+ * homepage (features/public/HomeGraphics.tsx). `variant="mark"` is the
+ * compact form for tight spaces (the collapsed 72px sidebar rail): the same
+ * accent "Z" on its own. Either way the accessible name is "ZPHIREX".
  */
 export function Wordmark({
   size = "md",
@@ -17,9 +17,9 @@ export function Wordmark({
 }) {
   const classes = `wordmark wordmark-${size}${variant === "mark" ? " wordmark-mark" : ""}${className ? ` ${className}` : ""}`;
   return (
-    <span className={classes} role="img" aria-label="HireZ">
-      {variant === "full" && <span aria-hidden="true">Hire</span>}
+    <span className={classes} role="img" aria-label="ZPHIREX">
       <span className="wordmark-z" aria-hidden="true">Z</span>
+      {variant === "full" && <span aria-hidden="true">PHIREX</span>}
     </span>
   );
 }

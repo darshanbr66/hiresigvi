@@ -56,8 +56,10 @@ export function PublicHomePage() {
         <div className="zx-stage">
           <ul className="zx-cards" aria-label="Opportunity categories">
             {OPPORTUNITIES.map((card) => (
-              <li key={card.view}>
-                <Link to={careersViewPath(card.view)} className="zx-card">
+              <li key={card.id}>
+                <Link to={careersViewPath(card.destination)} className="zx-card">
+                  {/* decoration only: corner rings and dot pattern (styles/home.css) */}
+                  <span className="zx-card-deco" aria-hidden="true" />
                   <span className="zx-card-icon">
                     <OpportunityGlyph name={card.glyph} size={22} />
                   </span>

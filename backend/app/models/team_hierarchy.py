@@ -17,7 +17,7 @@ class EmploymentStatus(StrEnum):
 
 class Department(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     """A configurable org-chart grouping for the Team Hierarchy feature
-    (SIGVITAS platform overhaul § 9-10) — deliberately separate from the
+    (ZPHIREX platform overhaul § 9-10) — deliberately separate from the
     RBAC `Role`/login `User` domain (app/models/rbac.py, app/models/user.py):
     departments group `Employee` directory entries, which model job titles
     like "Software Engineer" or "HR Employee", never platform permissions.

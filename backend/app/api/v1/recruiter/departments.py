@@ -1,4 +1,4 @@
-"""Department management for the Team Hierarchy feature (SIGVITAS platform
+"""Department management for the Team Hierarchy feature (ZPHIREX platform
 overhaul § 9-10). `organization_id` always comes from the authenticated
 caller, never the request."""
 

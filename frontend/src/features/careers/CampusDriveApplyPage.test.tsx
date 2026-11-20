@@ -31,11 +31,11 @@ describe("CampusDriveApplyPage lifecycle states", () => {
       description: null,
       job_title: "Graduate Engineer",
       job_description: "Entry-level role.",
-      organization_name: "SIGVITAS",
+      organization_name: "Zodiac Patent",
       registration_deadline: null,
       status: "ACTIVE",
       has_assessment: false,
-      careers_contact_email: "careers@sigvitas.test",
+      careers_contact_email: "hr@zodiacpatent.com",
     };
     vi.spyOn(careersApi, "getCampusDriveByToken").mockResolvedValue(active);
 
@@ -48,7 +48,8 @@ describe("CampusDriveApplyPage lifecycle states", () => {
       expect(screen.getByLabelText(label)).toBeRequired();
     }
     expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Your details");
-    expect(screen.getByText("Verify email")).toBeInTheDocument();
+    // the stepper's second step (its label is just "Verify")
+    expect(screen.getByRole("list", { name: "Application steps" })).toHaveTextContent("Verify");
   });
 
   it("shows the unavailable panel and no recruitment content for a closed drive", async () => {

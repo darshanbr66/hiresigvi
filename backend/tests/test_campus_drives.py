@@ -255,7 +255,7 @@ async def test_public_view_of_paused_drive_still_shows_details(
 ) -> None:
     """PAUSED is different from CLOSED/DELETED — the drive still exists and
     can be reactivated, so its details stay visible; only applying is
-    blocked (SIGVITAS platform overhaul § 16)."""
+    blocked (ZPHIREX platform overhaul § 16)."""
     ctx = await _bootstrap_org_with_job(client, "campus-paused-view")
     drive = await _create_drive(client, ctx)
     await client.patch(

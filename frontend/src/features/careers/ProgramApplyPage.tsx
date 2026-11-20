@@ -130,7 +130,7 @@ export function ProgramApplyPage() {
   const problems = program ? declarationProblems(program, effective) : [];
 
   return (
-    <div>
+    <div className="public-page">
       <PublicHeader title={program?.organization_name ?? "Careers"} />
       <div className="public-shell">
         {programQuery.isPending && <p role="status">Loading program details…</p>}

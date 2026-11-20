@@ -3,7 +3,7 @@ import { greetingName } from "./greeting";
 
 describe("greetingName", () => {
   it("greets an organization admin as Admin, whatever their account name is", () => {
-    expect(greetingName({ full_name: "SIGVITAS Admin", roles: ["ORG_ADMIN"] })).toBe("Admin");
+    expect(greetingName({ full_name: "ZODIAC Admin", roles: ["ORG_ADMIN"] })).toBe("Admin");
   });
 
   it("greets other roles by their own first name", () => {

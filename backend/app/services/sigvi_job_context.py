@@ -1,4 +1,5 @@
-"""Public-job context for Sigvi.
+"""Public-job and public-program context for Zodi, the public assistant
+(internally the `sigvi` feature).
 
 Jobs come from the existing services — the same OPEN-only, tenant-scoped path
 the anonymous careers page uses (app/api/v1/public/jobs.py) — and are reduced
@@ -17,9 +18,15 @@ from app.db.rls import set_tenant_context
 from app.knowledge.keyword_retriever import tokenize
 from app.models.job import EMPLOYMENT_TYPE_LABELS, JobStatus
 from app.schemas.sigvi import ChatHistoryMessage, ChatJobCard
-from app.services import job_service, organization_service
+from app.services import (
+    job_service,
+    organization_service,
+    program_service,
+    public_program_service,
+)
 
 MAX_JOBS_IN_PROMPT = 10
+MAX_PROGRAMS_IN_PROMPT = 10
 _PROMPT_DESCRIPTION_CHARS = 500
 _CARD_SUMMARY_CHARS = 140
 MAX_JOB_CARDS = 3
@@ -30,6 +37,15 @@ MAX_JOB_CARDS = 3
 _JOB_INTENT_TERMS = frozenset(
     "job jobs role roles opening openings position positions vacancy vacancies hiring hire "
     "hires career careers opportunity opportunities internship internships posting postings".split()
+)
+
+
+# Words that mean the visitor is asking about programs (Zodiac Training
+# Academy, scholarships, trainee programs). Programs are published separately
+# from jobs, so they get their own lookup.
+_PROGRAM_INTENT_TERMS = frozenset(
+    "program programs programme programmes scholarship scholarships training trainee "
+    "trainees traineeship academy course courses".split()
 )
 
 
@@ -173,3 +189,71 @@ def find_mentioned_jobs(reply: str, jobs: Sequence[PublicJob], slug: str) -> lis
             )
         )
     return cards
+
+
+@dataclass(frozen=True)
+class PublicProgram:
+    """Only what the public program list already shows."""
+
+    id: uuid.UUID
+    title: str
+    accepting_applications: bool
+    application_closes_at: str | None
+    training_duration_options: tuple[int, ...]
+
+
+def needs_program_context(message: str, history: Sequence[ChatHistoryMessage]) -> bool:
+    """True when the visitor is asking about programs, in this message or the
+    recent conversation."""
+    recent = [message, *(turn.content for turn in history[-4:])]
+    return any(tokenize(text) & _PROGRAM_INTENT_TERMS for text in recent)
+
+
+async def load_public_programs(db: AsyncSession, slug: str) -> list[PublicProgram]:
+    """Published programs only — the same set the public program list shows
+    (app/api/v1/public/programs.py::list_programs)."""
+    organization = await organization_service.get_organization_by_slug(db, slug)
+    if organization is None:
+        return []
+    await set_tenant_context(db, organization.id)
+    programs = await public_program_service.list_published(db, organization.id)
+    return [
+        PublicProgram(
+            id=program.id,
+            title=program.title,
+            accepting_applications=program_service.accepting_applications(program)[0],
+            application_closes_at=(
+                program.application_closes_at.date().isoformat()
+                if program.application_closes_at
+                else None
+            ),
+            training_duration_options=tuple(program.training_duration_options or ()),
+        )
+        for program in programs
+    ]
+
+
+def format_programs_block(programs: Sequence[PublicProgram]) -> str:
+    """The <open_programs> reference block for the system prompt."""
+    if not programs:
+        return (
+            '<open_programs count="0">No training, scholarship or trainee programs are '
+            "published right now.</open_programs>"
+        )
+    shown = programs[:MAX_PROGRAMS_IN_PROMPT]
+    lines = []
+    for index, program in enumerate(shown, start=1):
+        facts = [f"Title: {_clean(program.title)}"]
+        facts.append(
+            "Accepting applications"
+            if program.accepting_applications
+            else "Not accepting applications"
+        )
+        if program.application_closes_at:
+            facts.append(f"Closes: {program.application_closes_at}")
+        if program.training_duration_options:
+            months = " or ".join(str(m) for m in program.training_duration_options)
+            facts.append(f"Training duration options: {months} months")
+        lines.append(f"{index}. {' | '.join(facts)}")
+    header = f'<open_programs count="{len(programs)}" shown="{len(shown)}">'
+    return header + "\n" + "\n".join(lines) + "\n</open_programs>"

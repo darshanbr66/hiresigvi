@@ -9,7 +9,7 @@ const FLUSH_INTERVAL_MS = 4000;
  * "Before You Begin" screen (MonitoringConsentScreen.tsx) — active only
  * while the candidate's attempt is STARTED. Events are queued and flushed
  * in small batches rather than one request per event; a failed/dropped
- * flush never blocks or fails the candidate's attempt (SIGVITAS platform
+ * flush never blocks or fails the candidate's attempt (ZPHIREX platform
  * overhaul § 6). Only listens for what a standard browser can reliably
  * report — see docs/assessment.md for documented limitations (e.g.
  * `devicechange` only fires on add/remove, not a live permission

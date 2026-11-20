@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 function renderAt(path: string) {
-  // The same shape as app/routes.tsx: Sigvi wraps the public pages only.
+  // The same shape as app/routes.tsx: Zodi wraps the public pages only.
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
@@ -26,13 +26,13 @@ function renderAt(path: string) {
   );
 }
 
-const launcher = () => screen.findByRole("button", { name: /ask sigvi/i });
+const launcher = () => screen.findByRole("button", { name: /ask zodi/i });
 
 describe("SigviLayer", () => {
   it.each([
     ["/", "home"],
-    ["/org/sigvitas", "careers"],
-    ["/org/sigvitas/jobs/abc", "job"],
+    ["/org/zodiac-patent", "careers"],
+    ["/org/zodiac-patent/jobs/abc", "job"],
   ])("offers the assistant on %s without displacing the page", async (path, text) => {
     renderAt(path);
 
@@ -48,12 +48,12 @@ describe("SigviLayer", () => {
 
     expect(screen.getByText(text)).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 500)); // longer than the idle delay
-    expect(screen.queryByRole("button", { name: /ask sigvi/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ask zodi/i })).not.toBeInTheDocument();
   });
 
   it("loads after first paint, not with the page", () => {
     renderAt("/");
 
-    expect(screen.queryByRole("button", { name: /ask sigvi/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ask zodi/i })).not.toBeInTheDocument();
   });
 });

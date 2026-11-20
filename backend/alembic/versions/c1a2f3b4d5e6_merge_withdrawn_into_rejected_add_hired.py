@@ -4,7 +4,7 @@ Revision ID: c1a2f3b4d5e6
 Revises: 7b8857298c92
 Create Date: 2026-09-18 12:00:00.000000
 
-Product decision (see CLAUDE.md / SIGVITAS platform overhaul): the
+Product decision (see CLAUDE.md / ZPHIREX platform overhaul): the
 recruiter-facing workflow no longer distinguishes "Rejected" from
 "Withdrawn" — every application previously in WITHDRAWN is data-migrated to
 REJECTED, and the value is removed from the native Postgres

@@ -194,7 +194,7 @@ job; re-applying after `REJECTED` is a product decision deferred to Phase 3
 once the unique constraint is scoped by e.g. a reopen counter — not
 finalized).
 
-`WITHDRAWN` was merged into `REJECTED` (SIGVITAS platform overhaul): the
+`WITHDRAWN` was merged into `REJECTED` (ZPHIREX platform overhaul): the
 platform no longer distinguishes a candidate-initiated withdrawal from a
 recruiter rejection at the status-vocabulary level. Existing `WITHDRAWN`
 rows were data-migrated to `REJECTED` and the value was dropped from the
@@ -525,7 +525,7 @@ run `alembic upgrade head` automatically, so before deploying that revision,
 run the same check against production data and fix any duplicates by hand.
 Its downgrade guard is described in § 3.5.
 
-Recent revisions (linear chain, current head `5e6f70819203`):
+Recent revisions (linear chain, current head `8b9c0d1e2f3a`):
 
 | Revision | Adds |
 |---|---|
@@ -535,6 +535,8 @@ Recent revisions (linear chain, current head `5e6f70819203`):
 | `4d5e6f708192` | job employment types (internship / part-time / full-time) and type details |
 | `5e6f70819203` | program funding revisions, fee obligations, training milestones, agreement terms, employment review, `application_interviews`, program affiliation verification, `pass_score_applied`, permissions `interview.read/manage`, `program.employment.approve` |
 | `6f7081920314` | organization program settings, program configuration versions, per-level study years, CGPA/percentage minimums, capacity and application limit, optional interview and bond, zero funding, configurable 1–60 month durations, internships and their events, permission `program.settings.manage`. Downgrade refuses while any program/participant uses a non-6/12 duration or a 0 funding value |
+| `7a8b9c0d1e2f` | data only: renames the careers organization `sigvitas` → `zodiac-patent` and its name to "Zodiac Patent" (only if it still reads as a SIGVITAS name). Same `id`, so users, roles, permissions and all tenant data are untouched. No-op when `sigvitas` is absent or `zodiac-patent` is taken. Downgrade restores the slug and the name "Sigvitas Pvt. Ltd.". Old public links keep working via `ORGANIZATION_SLUG_ALIASES` |
+| `8b9c0d1e2f3a` | data only: sets the `zodiac-patent` organization's `careers_contact_email` (the public recruitment contact on the careers site, candidate emails and Zodi) to `hr@zodiacpatent.com` — only when it is unset or still a `@sigvitas.com` address. Downgrade is a no-op (it would re-publish the Sigvitas address). |
 
 All three are non-destructive on upgrade. Their downgrades drop what they
 added; `2b3c4d5e6f70`'s downgrade refuses to run while any question uses a

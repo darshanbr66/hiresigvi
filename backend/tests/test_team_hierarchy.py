@@ -1,4 +1,4 @@
-"""Team Hierarchy: departments and employees (SIGVITAS platform overhaul
+"""Team Hierarchy: departments and employees (ZPHIREX platform overhaul
 § 9-13) — a directory domain deliberately separate from the existing
 users/RBAC Team page. ORG_ADMIN and HR (RECRUITER) have full CRUD;
 HIRING_MANAGER is read-only."""

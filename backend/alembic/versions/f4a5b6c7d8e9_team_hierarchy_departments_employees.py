@@ -4,7 +4,7 @@ Revision ID: f4a5b6c7d8e9
 Revises: e3f4a5b6c7d8
 Create Date: 2026-09-18 14:00:00.000000
 
-New, additive domain (SIGVITAS platform overhaul § 9-13) — an HR/org-chart
+New, additive domain (ZPHIREX platform overhaul § 9-13) — an HR/org-chart
 directory, deliberately separate from the existing `users`/RBAC (portal
 login) domain, which is untouched by this migration. `department.manage`
 and `employee.manage` are ORG_ADMIN-only; `RECRUITER`/`HIRING_MANAGER` get

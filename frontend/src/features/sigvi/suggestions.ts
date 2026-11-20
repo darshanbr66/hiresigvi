@@ -4,7 +4,7 @@
  * `question` as the visitor's message, so the conversation reads naturally. */
 export const SIGVI_SUGGESTIONS = [
   { label: "View open positions", question: "What positions are open right now?" },
+  { label: "Internships & training", question: "What internships and training programs are available?" },
+  { label: "What does Zodiac Patent do?", question: "What kind of work does Zodiac Patent do?" },
   { label: "How do I apply?", question: "How do I apply?" },
-  { label: "Campus opportunities", question: "What campus opportunities do you offer?" },
-  { label: "Hiring process", question: "How does the hiring process work?" },
 ] as const;

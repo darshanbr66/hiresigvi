@@ -4,7 +4,7 @@ import { holdBrandLoading, markAppReady } from "../lib/brandLoading";
 /**
  * Rendered by a screen that can't show the right content yet (a protected
  * route restoring the session, a pending redirect, a page whose code is
- * still loading): on a cold start the HireZ startup screen stays up instead
+ * still loading): on a cold start the ZPHIREX startup screen stays up instead
  * of revealing that interim state. Renders nothing itself; after startup it
  * has no visible effect.
  */

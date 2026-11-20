@@ -191,6 +191,16 @@ async def _load_organization(db: AsyncSession, organization_id: uuid.UUID | None
     return organization
 
 
+def _contact_email(organization: Organization, actor: User) -> str:
+    """The address an outgoing email names as its contact (footer, and the
+    `{{recruiter_email}}` placeholder) and sets as Reply-To: the
+    organization's published recruitment contact
+    (`organizations.careers_contact_email`) when it has one, so recipients
+    reach the recruitment team rather than one staff member's login
+    address; otherwise the sender's own address."""
+    return organization.careers_contact_email or actor.email
+
+
 async def _prepare_for_application(
     db: AsyncSession,
     application: Application,
@@ -210,7 +220,7 @@ async def _prepare_for_application(
         "job_title": application.job.title,
         "company_name": organization.name,
         "recruiter_name": actor.full_name,
-        "recruiter_email": actor.email,
+        "recruiter_email": _contact_email(organization, actor),
     }
 
     invitation: AssessmentInvitation | None = None
@@ -279,7 +289,7 @@ async def _prepare_general(
         "candidate_name": display.get("candidate_name") or _FALLBACK_RECIPIENT_NAME,
         "company_name": organization.name,
         "recruiter_name": actor.full_name,
-        "recruiter_email": actor.email,
+        "recruiter_email": _contact_email(organization, actor),
     }
     return _Prepared(
         template=template,
@@ -373,7 +383,7 @@ async def preview_email(
     rendered, has_cta = _render_draft(prepared, draft.subject, draft.body)
     return PreviewedEmail(
         to=application.candidate.email,
-        reply_to=actor.email,
+        reply_to=prepared.values["recruiter_email"],
         rendered=rendered,
         has_call_to_action=has_cta,
     )
@@ -403,7 +413,7 @@ async def send_email(
             subject=rendered.subject,
             html=rendered.html,
             text=rendered.text,
-            reply_to=actor.email,
+            reply_to=prepared.values["recruiter_email"],
         )
     except EmailError as exc:
         if invitation is not None and previous_token_hash is not None:
@@ -448,7 +458,10 @@ async def send_email(
         ),
     )
     return PreviewedEmail(
-        to=candidate.email, reply_to=actor.email, rendered=rendered, has_call_to_action=has_cta
+        to=candidate.email,
+        reply_to=prepared.values["recruiter_email"],
+        rendered=rendered,
+        has_call_to_action=has_cta,
     )
 
 
@@ -485,7 +498,7 @@ async def preview_general_email(
         to=list(draft.to),
         cc=list(draft.cc),
         bcc=list(draft.bcc),
-        reply_to=actor.email,
+        reply_to=prepared.values["recruiter_email"],
         rendered=rendered,
         has_call_to_action=has_cta,
     )
@@ -514,7 +527,7 @@ async def send_general_email(
             subject=rendered.subject,
             html=rendered.html,
             text=rendered.text,
-            reply_to=actor.email,
+            reply_to=prepared.values["recruiter_email"],
         )
     except EmailError as exc:
         await activity_service.record_activity(
@@ -542,5 +555,10 @@ async def send_general_email(
         description=f'{prepared.template.name} email "{rendered.subject}" sent to {summary}.',
     )
     return PreviewedGeneralEmail(
-        to=to, cc=cc, bcc=bcc, reply_to=actor.email, rendered=rendered, has_call_to_action=has_cta
+        to=to,
+        cc=cc,
+        bcc=bcc,
+        reply_to=prepared.values["recruiter_email"],
+        rendered=rendered,
+        has_call_to_action=has_cta,
     )

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Zphirex — AI-powered recruitment. Launching soon.">
+  <title>Zphirex | Coming Soon</title>
+
+  <style>
+    :root {
+      --bg: #05070f;
+      --violet: #8c78ff;
+      --violet-deep: #5538ff;
+      --cyan: #36caff;
+      --text: #ffffff;
+      --muted: #a5aec4;
+      --dim: #65718b;
+      --line: rgba(255, 255, 255, 0.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* ---------- Background layers ---------- */
+
+    .bg {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .glow {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(140px);
+      animation: drift 18s ease-in-out infinite alternate;
+    }
+
+    .glow.one {
+      width: 620px; height: 620px;
+      background: var(--violet-deep);
+      opacity: 0.25;
+      top: -260px; left: -200px;
+    }
+
+    .glow.two {
+      width: 520px; height: 520px;
+      background: #00a8ff;
+      opacity: 0.16;
+      bottom: -240px; right: -160px;
+      animation-delay: -9s;
+    }
+
+    @keyframes drift {
+      to { transform: translate(80px, 60px) scale(1.12); }
+    }
+
+    /* Starfield built from box-shadows */
+    .stars, .stars::after {
+      position: absolute;
+      top: 0; left: 0;
+      width: 2px; height: 2px;
+      border-radius: 50%;
+      background: transparent;
+      box-shadow:
+        12vw 8vh #fff, 24vw 22vh #c9c2ff, 38vw 12vh #fff, 52vw 30vh #9fe3ff,
+        66vw 6vh #fff, 78vw 18vh #fff, 91vw 9vh #c9c2ff, 6vw 34vh #fff,
+        18vw 48vh #9fe3ff, 31vw 40vh #fff, 45vw 56vh #fff, 58vw 44vh #c9c2ff,
+        72vw 52vh #fff, 85vw 38vh #9fe3ff, 96vw 46vh #fff, 9vw 62vh #fff,
+        27vw 70vh #c9c2ff, 41vw 78vh #fff, 63vw 68vh #fff, 80vw 74vh #9fe3ff,
+        93vw 64vh #fff, 15vw 88vh #fff, 50vw 90vh #c9c2ff, 70vw 86vh #fff;
+      animation: twinkle 4s ease-in-out infinite alternate;
+    }
+
+    .stars::after {
+      content: "";
+      transform: translate(5vw, 4vh);
+      animation-delay: -2s;
+      opacity: 0.6;
+    }
+
+    @keyframes twinkle {
+      from { opacity: 0.35; }
+      to   { opacity: 1; }
+    }
+
+    /* 3D perspective grid floor */
+    .floor {
+      position: absolute;
+      left: -50%;
+      right: -50%;
+      bottom: -10%;
+      height: 60%;
+      perspective: 420px;
+      perspective-origin: 50% 0%;
+    }
+
+    .floor .grid {
+      position: absolute;
+      inset: 0;
+      transform: rotateX(72deg);
+      transform-origin: top center;
+      background-image:
+        linear-gradient(rgba(140, 120, 255, 0.35) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(54, 202, 255, 0.25) 1px, transparent 1px);
+      background-size: 60px 60px;
+      animation: floor-move 3s linear infinite;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 35%, #000 70%, transparent 100%);
+      mask-image: linear-gradient(to bottom, transparent 0%, #000 35%, #000 70%, transparent 100%);
+    }
+
+    @keyframes floor-move {
+      to { background-position: 0 60px; }
+    }
+
+    /* ---------- Layout ---------- */
+
+    .page {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+      text-align: center;
+    }
+
+    .logo {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 6px;
+      margin-bottom: 28px;
+      animation: rise 0.9s ease both;
+    }
+
+    .logo span { color: var(--violet); }
+
+    /* ---------- 3D gyroscope ---------- */
+
+    .scene {
+      width: 240px;
+      height: 240px;
+      margin: 6px auto 34px;
+      perspective: 900px;
+      animation: rise 0.9s 0.1s ease both;
+    }
+
+    .gyro {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      transform-style: preserve-3d;
+      animation: tumble 22s linear infinite;
+    }
+
+    @keyframes tumble {
+      from { transform: rotateX(18deg) rotateY(0deg); }
+      to   { transform: rotateX(18deg) rotateY(360deg); }
+    }
+
+    .core {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 70px; height: 70px;
+      margin: -35px 0 0 -35px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 35% 30%, #ffffff 0%, #c7bcff 18%, var(--violet) 45%, var(--violet-deep) 75%, #1a0f5c 100%);
+      box-shadow:
+        0 0 30px rgba(140, 120, 255, 0.9),
+        0 0 80px rgba(85, 56, 255, 0.6),
+        0 0 140px rgba(54, 202, 255, 0.35);
+      animation: pulse 3.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.12); }
+    }
+
+    /* Each ring = an orientation wrapper + a spinning ellipse */
+    .orbit {
+      position: absolute;
+      inset: 0;
+      transform-style: preserve-3d;
+    }
+
+    .orbit.a { transform: rotateX(75deg); }
+    .orbit.b { transform: rotateX(75deg) rotateY(60deg); }
+    .orbit.c { transform: rotateX(75deg) rotateY(-60deg); }
+    .orbit.d { transform: rotateY(90deg); inset: 30px; }
+
+    .ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1.5px solid rgba(140, 120, 255, 0.55);
+      box-shadow:
+        0 0 18px rgba(140, 120, 255, 0.35),
+        inset 0 0 18px rgba(54, 202, 255, 0.2);
+      transform-style: preserve-3d;
+      animation: spin 9s linear infinite;
+    }
+
+    .orbit.b .ring { border-color: rgba(54, 202, 255, 0.55); animation-duration: 12s; animation-direction: reverse; }
+    .orbit.c .ring { animation-duration: 15s; }
+    .orbit.d .ring { border-style: dashed; border-color: rgba(255, 255, 255, 0.25); animation-duration: 20s; box-shadow: none; }
+
+    @keyframes spin {
+      to { transform: rotateZ(360deg); }
+    }
+
+    /* Glowing nodes riding each ring — "candidates" being matched */
+    .node {
+      position: absolute;
+      top: -6px; left: 50%;
+      width: 11px; height: 11px;
+      margin-left: -5.5px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 10px #fff, 0 0 22px var(--cyan);
+    }
+
+    .node.v { background: #e3dcff; box-shadow: 0 0 10px #fff, 0 0 22px var(--violet); }
+    .node.bottom { top: auto; bottom: -6px; }
+
+    .halo {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 300px; height: 300px;
+      margin: -150px 0 0 -150px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(140, 120, 255, 0.18) 0%, transparent 65%);
+      animation: pulse 5s ease-in-out infinite;
+    }
+
+    /* ---------- Text ---------- */
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 18px;
+      border: 1px solid rgba(145, 125, 255, 0.4);
+      border-radius: 50px;
+      color: #c4b8ff;
+      background: rgba(111, 85, 255, 0.10);
+      backdrop-filter: blur(8px);
+      font-size: 12px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      margin-bottom: 26px;
+      animation: rise 0.9s 0.2s ease both;
+    }
+
+    .tag .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #4dffb5;
+      box-shadow: 0 0 0 0 rgba(77, 255, 181, 0.7);
+      animation: ping 1.8s ease-out infinite;
+    }
+
+    @keyframes ping {
+      to { box-shadow: 0 0 0 10px rgba(77, 255, 181, 0); }
+    }
+
+    h1 {
+      font-size: clamp(38px, 7vw, 78px);
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 22px;
+      animation: rise 0.9s 0.3s ease both;
+    }
+
+    h1 .grad {
+      background: linear-gradient(90deg, #b0a1ff, var(--cyan), #b0a1ff);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      animation: shimmer 6s linear infinite;
+    }
+
+    @keyframes shimmer {
+      to { background-position: 200% center; }
+    }
+
+    .description {
+      max-width: 620px;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.75;
+      animation: rise 0.9s 0.4s ease both;
+    }
+
+    .features {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 36px 0 44px;
+      animation: rise 0.9s 0.5s ease both;
+    }
+
+    .feature {
+      padding: 12px 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.035);
+      backdrop-filter: blur(10px);
+      color: #d0d7e8;
+      font-size: 14px;
+      transition: transform 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+    }
+
+    .feature:hover {
+      transform: translateY(-3px);
+      border-color: rgba(140, 120, 255, 0.5);
+      background: rgba(140, 120, 255, 0.08);
+    }
+
+    .feature span { color: var(--violet); margin-right: 7px; }
+
+    /* Loading bar — "almost ready" */
+    .launch {
+      width: min(360px, 100%);
+      animation: rise 0.9s 0.6s ease both;
+    }
+
+    .launch-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #9ba6bd;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .bar {
+      height: 6px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.07);
+      overflow: hidden;
+    }
+
+    .bar i {
+      display: block;
+      height: 100%;
+      width: 86%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--violet-deep), var(--violet), var(--cyan));
+      background-size: 200% 100%;
+      box-shadow: 0 0 14px rgba(54, 202, 255, 0.6);
+      animation: fill 2.4s 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both, shimmer 3s linear infinite;
+    }
+
+    @keyframes fill {
+      from { width: 0; }
+    }
+
+    .launch strong {
+      display: block;
+      margin-top: 18px;
+      font-size: 22px;
+      letter-spacing: 1px;
+    }
+
+    footer {
+      margin-top: 56px;
+      font-size: 13px;
+      line-height: 1.8;
+      color: var(--dim);
+      animation: rise 0.9s 0.7s ease both;
+    }
+
+    footer span { color: #9a88ff; }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* ---------- Responsive ---------- */
+
+    @media (max-width: 600px) {
+      .logo { font-size: 22px; letter-spacing: 5px; margin-bottom: 18px; }
+      .scene { width: 170px; height: 170px; margin-bottom: 26px; }
+      .core { width: 52px; height: 52px; margin: -26px 0 0 -26px; }
+      .orbit.d { inset: 20px; }
+      .halo { width: 220px; height: 220px; margin: -110px 0 0 -110px; }
+      .description { font-size: 16px; }
+      .features { gap: 8px; margin: 28px 0 36px; }
+      .feature { font-size: 12px; padding: 10px 12px; }
+      .launch strong { font-size: 19px; }
+      footer { margin-top: 44px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg" aria-hidden="true">
+    <div class="glow one"></div>
+    <div class="glow two"></div>
+    <div class="stars"></div>
+    <div class="floor"><div class="grid"></div></div>
+  </div>
+
+  <main class="page">
+
+    <div class="logo">ZPHIREX<span>.</span></div>
+
+    <div class="scene" aria-hidden="true">
+      <div class="gyro">
+        <div class="halo"></div>
+        <div class="orbit a"><div class="ring"><i class="node"></i><i class="node v bottom"></i></div></div>
+        <div class="orbit b"><div class="ring"><i class="node v"></i></div></div>
+        <div class="orbit c"><div class="ring"><i class="node"></i><i class="node bottom"></i></div></div>
+        <div class="orbit d"><div class="ring"></div></div>
+        <div class="core"></div>
+      </div>
+    </div>
+
+    <div class="tag"><span class="dot"></span>Something extraordinary is coming</div>
+
+    <h1>
+      The Future of<br>
+      <span class="grad">Recruitment</span> Starts Here.
+    </h1>
+
+    <p class="description">
+      We're building a smarter recruitment experience powered by
+      artificial intelligence. Discover a better way to connect
+      talent, opportunities, and organizations.
+    </p>
+
+    <div class="features">
+      <div class="feature"><span>✦</span>AI-Powered Recruitment</div>
+      <div class="feature"><span>✦</span>Smart Candidate Screening</div>
+      <div class="feature"><span>✦</span>Intelligent Hiring</div>
+    </div>
+
+    <div class="launch">
+      <div class="launch-label"><span>Getting ready</span><span>86%</span></div>
+      <div class="bar"><i></i></div>
+      <strong>Launching Soon</strong>
+    </div>
+
+    <footer>
+      © 2026 <span>Zphirex</span>. All rights reserved.<br>
+      Building the future of intelligent hiring.
+    </footer>
+
+  </main>
+</body>
+</html>
+fkldvj

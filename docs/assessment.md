@@ -16,7 +16,7 @@ recruiter's API response so it can be copied manually, see
 `app/api/v1/recruiter/assessments.py`); the recruiter emails it explicitly
 with "Send Assessment Invitation" (see § 8).
 
-## 0. Assessment monitoring ("proctoring") — SIGVITAS platform overhaul
+## 0. Assessment monitoring ("proctoring") — ZPHIREX platform overhaul
 
 Transparent, browser-based monitoring, not hidden surveillance. Before
 starting an attempt, the candidate sees a "Before You Begin" screen

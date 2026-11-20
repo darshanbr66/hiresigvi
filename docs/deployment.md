@@ -6,7 +6,7 @@
 > target of the VPS deployment.
 
 **Status: preparation only.** This document describes how to deploy the
-SIGVITAS recruitment platform — backend to Render, frontend to Vercel,
+ZPHIREX recruitment platform — backend to Render, frontend to Vercel,
 database to Render PostgreSQL. Nothing described here has been executed
 against a production environment as part of writing this document; no
 Render/Vercel resources, secrets, or DNS records have been created.
@@ -94,7 +94,7 @@ nothing sensitive is stored in the Blueprint file itself.
 | `MONGODB_URI` | Yes, if `RESUME_STORAGE_PROVIDER=mongodb_gridfs` | Connection string for the MongoDB deployment storing resume files (e.g. an Atlas cluster). Never commit the real value. |
 | `MONGODB_DATABASE` | No (default `ai_recruitment`) | Database name within the MongoDB deployment; the `resumes` GridFS bucket is created inside it. |
 | `RESEND_API_KEY` | **For email in production** | **Secret** — a Resend API key (`re_…`); set only in the Render dashboard (`sync: false`). Render's free web services block outbound SMTP (ports 25/465/587), so production email must use Resend's HTTPS API. Never commit it. |
-| `EMAIL_FROM` | **For email in production** | The Resend `From:` — an address on a domain you have **verified in Resend**, optionally with a display name: `SIGVITAS <hr@yourdomain.com>`. |
+| `EMAIL_FROM` | **For email in production** | The Resend `From:` — an address on a domain you have **verified in Resend**, optionally with a display name: `Zodiac Patent Recruitment <hr@zodiacpatent.com>`. |
 | `SMTP_HOST` | Local development only | SMTP server, e.g. `smtp.gmail.com`. Ignored whenever `RESEND_API_KEY` + `EMAIL_FROM` are both set. |
 | `SMTP_PORT` | No (default `587`) | `587` = STARTTLS, `465` = implicit TLS. |
 | `SMTP_USERNAME` | For email | SMTP login (also usually the from address). |
@@ -109,7 +109,8 @@ nothing sensitive is stored in the Blueprint file itself.
 | `GEMINI_SCREENING_MODEL` / `GEMINI_SCREENING_THINKING_BUDGET` | No (defaults `gemini-2.5-flash` / `0`) | The Gemini model used for AI resume screening (when Gemini is the screening provider), and its thinking budget (`0` = thinking off; empty = send no `thinkingConfig`). See `docs/ai-screening.md`. |
 | `GROQ_API_KEY` | For Groq-primary screening | **Secret**: a Groq API key (<https://console.groq.com/keys>). Set it only in the Render dashboard (`sync: false`). When set, Groq is the primary resume-screening provider, and Gemini (if `GEMINI_API_KEY` is set) gets one fallback attempt when Groq fails. Never commit it. |
 | `GROQ_SCREENING_MODEL` / `GROQ_SCREENING_REASONING_EFFORT` / `GROQ_REQUEST_TIMEOUT_SECONDS` / `AI_SCREENING_PROVIDER` | No (defaults `openai/gpt-oss-120b` / `low` / `30` / `groq`) | The Groq screening model, which must support strict structured outputs. The others are its reasoning effort (empty = send no reasoning parameters), its timeout, and which of `groq`/`gemini` is tried first. See `docs/ai-screening.md`. |
-| `SIGVI_*` | No | `SIGVI_REQUEST_TIMEOUT_SECONDS`, `SIGVI_MAX_OUTPUT_TOKENS`, `SIGVI_ORGANIZATION_SLUG`, `SIGVI_RATE_LIMIT_PER_MINUTE`, `SIGVI_GLOBAL_RATE_LIMIT_PER_MINUTE` — see `docs/sigvi.md` § 9. |
+| `SIGVI_*` | No | Settings for the public assistant (shown to visitors as "Zodi"): `SIGVI_REQUEST_TIMEOUT_SECONDS`, `SIGVI_MAX_OUTPUT_TOKENS`, `SIGVI_ORGANIZATION_SLUG` (default `zodiac-patent`), `SIGVI_RATE_LIMIT_PER_MINUTE`, `SIGVI_GLOBAL_RATE_LIMIT_PER_MINUTE` — see `docs/sigvi.md` § 9. |
+| `ORGANIZATION_SLUG_ALIASES` | No | JSON map of old careers slugs to the current one; default `{"sigvitas":"zodiac-patent"}` so links sent before the rename keep working. |
 | `DEFAULT_PHONE_REGION`, `EMAIL_OTP_*`, `EMAIL_VERIFICATION_TOKEN_TTL_MINUTES`, `PUBLIC_*_LIMIT_PER_WINDOW` | No (safe defaults) | Candidate intake tuning. Defaults and meanings are in `backend/.env.example`; the flow is in `docs/recruitment-workflow.md` § 6. |
 
 Email is optional for startup: with neither Resend nor SMTP configured, the
@@ -217,7 +218,7 @@ team hierarchy/departments/employees → resume storage provider → the
 public application form), seeding system roles and permissions
 as it goes. This full chain was verified locally (`alembic downgrade base`
 → `alembic upgrade head` → `alembic downgrade base` → `alembic upgrade
-head`) during the SIGVITAS platform work — see git history — with no
+head`) during the ZPHIREX platform work — see git history — with no
 manual intervention required.
 
 **In-app notifications (`b2c3d4e5f6a7`).** Adds the `notifications` table and
@@ -428,7 +429,7 @@ the fresh process.
 1. `GET /healthz` → `{"status":"ok"}`.
 2. `GET /readyz` → `{"status":"ok","database":"ok","mongodb":"ok"}` (the
    `mongodb` key is only present when `RESUME_STORAGE_PROVIDER=mongodb_gridfs`).
-3. Log in as the super admin created in § 4, create the SIGVITAS
+3. Log in as the super admin created in § 4, create the Zodiac Patent
    organization + admin via `/api/v1/admin/organizations`.
 4. Log in as that org admin from the deployed frontend; confirm CORS
    works (no browser console CORS errors) and the refresh-token cookie is
@@ -528,7 +529,7 @@ on Render is harmless; the SMTP provider is kept for local development.
 | Variable | Value |
 |---|---|
 | `RESEND_API_KEY` | An API key from the Resend dashboard (API Keys). A "sending access" key is enough. |
-| `EMAIL_FROM` | `SIGVITAS <hr@yourdomain.com>` — the domain must be verified in Resend (Domains -> add the DNS records it shows, wait for "Verified"). |
+| `EMAIL_FROM` | `Zodiac Patent Recruitment <hr@zodiacpatent.com>` — the domain must be verified in Resend (Domains -> add the DNS records it shows, wait for "Verified"). |
 
 **Sender-domain requirement.** Until a domain is verified, Resend only lets an
 account send test mail *to its own address* and rejects anything else with a
@@ -560,10 +561,14 @@ recipients or the message body.
   blocks preview/send with a `422 unresolved_placeholders` error, so a raw
   placeholder can never reach a candidate.
 - **HTML.** One shared table-based layout (company header, content, optional
-  button, footer with recruiter contact), inline CSS only — no images,
+  button, footer with a contact address), inline CSS only — no images,
   scripts or external resources — with a plain-text alternative. The message
-  is sent from the configured sender address (`EMAIL_FROM` on Resend,
-  `SMTP_FROM_EMAIL` on SMTP) with the sending recruiter as `Reply-To`.
+  is sent from the configured sender (`EMAIL_FROM` on Resend;
+  `SMTP_FROM_NAME <SMTP_FROM_EMAIL>` on SMTP, display name "Zodiac Patent
+  Recruitment" by default). The footer contact, the `{{recruiter_email}}`
+  placeholder and `Reply-To` are the organization's published recruitment
+  contact (`careers_contact_email`, e.g. hr@zodiacpatent.com); only when an
+  organization has none is the sending staff member's own address used.
 - **General email.** The **Email** page (`/recruiter/email`, visible to
   ORG_ADMIN and RECRUITER) sends the same templates to addresses the sender
   types, with no application: `POST /api/v1/recruiter/email/{compose,preview,send}`

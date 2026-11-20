@@ -12,7 +12,7 @@ export const SigviLauncher = forwardRef<
       ref={ref}
       type="button"
       className="sigvi-launcher"
-      aria-label="Ask Sigvi, the AI assistant"
+      aria-label="Ask Zodi, the AI assistant"
       aria-haspopup="dialog"
       aria-expanded={open}
       aria-controls="sigvi-panel"
@@ -23,7 +23,7 @@ export const SigviLauncher = forwardRef<
       <span className="sigvi-launcher-icon">
         <SigviMascot size={26} variant="head" animated={false} />
       </span>
-      <span className="sigvi-launcher-label">Ask Sigvi</span>
+      <span className="sigvi-launcher-label">Ask Zodi</span>
     </button>
   );
 });

@@ -19,7 +19,7 @@ export function ProtectedRoute({
   const location = useLocation();
 
   if (status === "loading") {
-    // On a cold start the HireZ startup screen covers this until the
+    // On a cold start the ZPHIREX startup screen covers this until the
     // session settles (or its time limit passes); the text below is what
     // remains if restoring takes longer than that.
     return (

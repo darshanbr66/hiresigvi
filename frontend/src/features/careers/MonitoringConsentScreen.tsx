@@ -2,7 +2,7 @@ import { useState } from "react";
 
 /**
  * "Before You Begin" — transparent disclosure of assessment monitoring
- * (SIGVITAS platform overhaul § 5). Only lists events this build actually
+ * (ZPHIREX platform overhaul § 5). Only lists events this build actually
  * implements (see useProctoring.ts) — never overclaims a capability the
  * browser can't reliably provide.
  */

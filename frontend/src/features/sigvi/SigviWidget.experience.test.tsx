@@ -23,8 +23,8 @@ function renderWidget(props: { organizationSlug?: string; teaser?: boolean } = {
   );
 }
 
-const launcher = () => screen.getByRole("button", { name: /ask sigvi/i });
-const input = () => screen.getByRole("textbox", { name: /message sigvi/i });
+const launcher = () => screen.getByRole("button", { name: /ask zodi/i });
+const input = () => screen.getByRole("textbox", { name: /message zodi/i });
 const openPanel = () => fireEvent.click(launcher());
 const type = (text: string) => fireEvent.change(input(), { target: { value: text } });
 const pressEnter = () => fireEvent.keyDown(input(), { key: "Enter" });
@@ -40,7 +40,7 @@ function deferred<T>() {
 let send: MockInstance<typeof sigviApi.sendChatMessage>;
 
 beforeEach(() => {
-  send = vi.spyOn(sigviApi, "sendChatMessage").mockResolvedValue(reply("Hello from Sigvi."));
+  send = vi.spyOn(sigviApi, "sendChatMessage").mockResolvedValue(reply("Hello from Zodi."));
 });
 
 afterEach(() => {
@@ -58,10 +58,10 @@ describe("welcome screen", () => {
     openPanel();
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByRole("heading", { name: "Hi! How can I help?" })).toBeInTheDocument();
-    expect(within(dialog).getByText("Ask me about careers at SIGVITAS.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "Hi, I'm Zodi!" })).toBeInTheDocument();
+    expect(within(dialog).getByText("How can I help you explore opportunities at Zodiac Patent?")).toBeInTheDocument();
     // The long introduction is gone.
-    expect(within(dialog).queryByText(/your ai assistant for sigvitas/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/your ai assistant for zodiac-patent/i)).not.toBeInTheDocument();
     // No oversized artwork: every mascot in the panel is a small decorative icon.
     expect(within(dialog).queryByRole("img")).not.toBeInTheDocument();
   });
@@ -69,15 +69,15 @@ describe("welcome screen", () => {
   it.each([
     ["View open positions", "What positions are open right now?"],
     ["How do I apply?", "How do I apply?"],
-    ["Campus opportunities", "What campus opportunities do you offer?"],
-    ["Hiring process", "How does the hiring process work?"],
+    ["Internships & training", "What internships and training programs are available?"],
+    ["What does Zodiac Patent do?", "What kind of work does Zodiac Patent do?"],
   ])("the “%s” suggestion sends its question through the chat", async (label, question) => {
     renderWidget();
     openPanel();
 
     fireEvent.click(screen.getByRole("button", { name: label }));
 
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ message: question, history: [] }));
     // The visitor's bubble shows what was asked.
@@ -98,22 +98,22 @@ describe("welcome screen", () => {
     openPanel();
     type("hello");
     pressEnter();
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
 
-    expect(screen.getByRole("heading", { name: "Hi! How can I help?" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hi, I'm Zodi!" })).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: /suggested questions/i })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "Hi! How can I help?" })).toHaveLength(1);
+    expect(screen.getAllByRole("heading", { name: "Hi, I'm Zodi!" })).toHaveLength(1);
   });
 });
 
 describe("the launcher", () => {
-  it("shows Sigvi's head beside an 'Ask Sigvi' label, with a single accessible name", () => {
+  it("shows Zodi's head beside an 'Ask Zodi' label, with a single accessible name", () => {
     renderWidget();
 
     const button = launcher();
-    expect(within(button).getByText("Ask Sigvi")).toBeInTheDocument();
+    expect(within(button).getByText("Ask Zodi")).toBeInTheDocument();
     expect(button.querySelector("svg.sigvi-mascot")).toHaveAttribute("aria-hidden", "true");
-    expect(button).toHaveAccessibleName("Ask Sigvi, the AI assistant");
+    expect(button).toHaveAccessibleName("Ask Zodi, the AI assistant");
   });
 
   it("stays still: no animated mascot and nothing that keeps waking it", () => {
@@ -146,7 +146,7 @@ describe("the header avatar", () => {
     const status = await screen.findByRole("status");
 
     expect(headerMascot()).toHaveAttribute("data-state", "thinking");
-    expect(within(status).getByText(/sigvi is thinking/i)).toBeInTheDocument();
+    expect(within(status).getByText(/zodi is thinking/i)).toBeInTheDocument();
 
     await act(async () => pending.resolve(reply("All done.")));
     await screen.findByText("All done.");
@@ -170,7 +170,7 @@ describe("the header avatar", () => {
     openPanel();
     type("hi");
     pressEnter();
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
 
     document.querySelectorAll(".sigvi-row-assistant svg.sigvi-mascot").forEach((svg) => {
       expect(svg).toHaveAttribute("data-animated", "false");
@@ -184,7 +184,7 @@ describe("the one-time teaser", () => {
     window.sessionStorage.clear();
   });
 
-  const teaserText = () => screen.queryByText("Ask me about open roles.");
+  const teaserText = () => screen.queryByText("Ask me about opportunities.");
   const advance = (ms: number) =>
     act(() => {
       vi.advanceTimersByTime(ms);
@@ -197,9 +197,9 @@ describe("the one-time teaser", () => {
     expect(teaserText()).not.toBeInTheDocument();
     advance(1500);
     expect(teaserText()).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /i'm sigvi/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /i'm zodi/i })).toBeInTheDocument();
     // it never competes for the launcher's accessible name
-    expect(screen.getAllByRole("button", { name: /ask sigvi/i })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /ask zodi/i })).toHaveLength(1);
   });
 
   it("does not appear on pages that didn't ask for it", () => {
@@ -213,7 +213,7 @@ describe("the one-time teaser", () => {
     const { unmount } = renderWidget({ teaser: true });
     advance(5500);
 
-    fireEvent.click(screen.getByRole("button", { name: /i'm sigvi/i }));
+    fireEvent.click(screen.getByRole("button", { name: /i'm zodi/i }));
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(teaserText()).not.toBeInTheDocument();
@@ -309,7 +309,7 @@ describe("phone keyboard", () => {
     act(() => listeners.get("resize")?.());
     expect(panel.style.getPropertyValue("--sigvi-vh")).toBe("430px");
 
-    fireEvent.click(screen.getByRole("button", { name: /close sigvi/i }));
+    fireEvent.click(screen.getByRole("button", { name: /close zodi/i }));
     expect(panel.style.getPropertyValue("--sigvi-vh")).toBe("");
   });
 

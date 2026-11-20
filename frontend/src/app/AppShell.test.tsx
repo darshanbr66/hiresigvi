@@ -30,7 +30,7 @@ function renderShell({
             path="/recruiter"
             element={
               <AppShell
-                brandTitle="HireZ"
+                brandTitle="ZPHIREX"
                 contextLabel="Recruiter Portal"
                 sections={SECTIONS}
                 upcoming={["Sourcing"]}
@@ -93,7 +93,7 @@ describe("AppShell", () => {
     const sidebar = container.querySelector(".sidebar") as HTMLElement;
     expect(within(sidebar).getByText("Workspace")).toBeInTheDocument();
     // Text-only wordmark: the product name, no image logo.
-    expect(within(sidebar).getByRole("img", { name: "HireZ" })).toHaveTextContent("HireZ");
+    expect(within(sidebar).getByRole("img", { name: "ZPHIREX" })).toHaveTextContent("ZPHIREX");
     expect(sidebar.querySelector(".logo-mark")).toBeNull();
     for (const item of ITEMS) {
       expect(within(sidebar).getByRole("link", { name: item.label })).toHaveAttribute("href", item.to);
@@ -205,14 +205,14 @@ describe("AppShell", () => {
     const { container } = renderShell();
     const brand = container.querySelector(".sidebar-brand") as HTMLElement;
 
-    const full = within(brand).getByRole("img", { name: "HireZ" });
-    expect(full).toHaveTextContent("HireZ");
+    const full = within(brand).getByRole("img", { name: "ZPHIREX" });
+    expect(full).toHaveTextContent("ZPHIREX");
     expect(full).not.toHaveClass("wordmark-mark");
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     // Same header row: the toggle first, then the compact mark — still
-    // named "HireZ", showing only the indigo Z.
-    const mark = within(brand).getByRole("img", { name: "HireZ" });
+    // named "ZPHIREX", showing only the indigo Z.
+    const mark = within(brand).getByRole("img", { name: "ZPHIREX" });
     expect(mark).toHaveClass("wordmark-mark");
     expect(mark).toHaveTextContent(/^Z$/);
     expect(mark.querySelector(".wordmark-z")).toBeInTheDocument();
@@ -220,7 +220,7 @@ describe("AppShell", () => {
     expect(toggle.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     fireEvent.click(toggle);
-    expect(within(brand).getByRole("img", { name: "HireZ" })).toHaveTextContent("HireZ");
+    expect(within(brand).getByRole("img", { name: "ZPHIREX" })).toHaveTextContent("ZPHIREX");
   });
 
   it("keeps the full wordmark and the close button in the phone drawer, even with a stored collapse", () => {
@@ -236,8 +236,8 @@ describe("AppShell", () => {
       const sidebar = container.querySelector(".sidebar") as HTMLElement;
       expect(sidebar).not.toHaveClass("sidebar-collapsed");
       const brand = container.querySelector(".sidebar-brand") as HTMLElement;
-      const wordmark = within(brand).getByRole("img", { name: "HireZ", hidden: true });
-      expect(wordmark).toHaveTextContent("HireZ");
+      const wordmark = within(brand).getByRole("img", { name: "ZPHIREX", hidden: true });
+      expect(wordmark).toHaveTextContent("ZPHIREX");
       expect(wordmark).not.toHaveClass("wordmark-mark");
       expect(brand.querySelector(".sidebar-collapse-toggle")).toBeNull();
       expect(brand.querySelector(".sidebar-close")).toBeInTheDocument();

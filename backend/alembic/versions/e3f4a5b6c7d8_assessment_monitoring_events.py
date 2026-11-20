@@ -4,7 +4,7 @@ Revision ID: e3f4a5b6c7d8
 Revises: d2b3c4e5f6a7
 Create Date: 2026-09-18 13:00:00.000000
 
-Adds `assessment_monitoring_events` (SIGVITAS platform overhaul § 5-7):
+Adds `assessment_monitoring_events` (ZPHIREX platform overhaul § 5-7):
 one row per observed browser-monitoring event during a candidate's
 attempt (tab switch, window blur/focus, fullscreen exit, camera/mic
 permission or device change, connection interruption, consent given).

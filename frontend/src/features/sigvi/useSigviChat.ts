@@ -13,7 +13,7 @@ export interface ChatTurn {
 
 export type ChatStatus = "idle" | "pending" | "error";
 
-const NETWORK_ERROR = "Sigvi couldn't be reached. Check your connection and try again.";
+const NETWORK_ERROR = "Zodi couldn't be reached. Check your connection and try again.";
 
 let turnCounter = 0;
 const nextId = () => `turn-${++turnCounter}`;

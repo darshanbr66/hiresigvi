@@ -500,7 +500,7 @@ async def list_monitoring_events(
 ) -> list[AssessmentMonitoringEvent]:
     """Recruiter/admin read of one attempt's observed monitoring events, in
     chronological order — permission-gated by `assessment.read` at the
-    route layer (SIGVITAS platform overhaul § 7)."""
+    route layer (ZPHIREX platform overhaul § 7)."""
     result = await db.execute(
         select(AssessmentMonitoringEvent)
         .where(AssessmentMonitoringEvent.invitation_id == invitation_id)

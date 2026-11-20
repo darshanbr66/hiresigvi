@@ -1,4 +1,12 @@
-# Sigvi — the public AI assistant
+# Zodi — the public AI assistant
+
+**Name.** Visitors know the assistant as **Zodi**, the assistant on the
+ZPHIREX careers site for **Zodiac Patent** (greeting: "Hi, I'm Zodi! How can I
+help you explore opportunities at Zodiac Patent?", launcher: "Ask Zodi").
+In the code it is still the `sigvi` feature — module, component, CSS class
+and `SIGVI_*` setting names were kept so deployed configuration keeps
+working; none of them is visible to visitors. This document uses "Zodi" for
+the assistant and the code names for code.
 
 **Implementation status:** implemented end-to-end (backend endpoint, provider,
 knowledge layer, frontend widget). Sigvi is the first visible AI feature and
@@ -10,11 +18,14 @@ hiring recommendations — those are separate phases.
 
 A chat assistant on the public careers site. It answers:
 
-- **SIGVITAS / platform questions** (what SIGVITAS is, how to apply, what an
-  application needs, how assessments and campus drives work, what happens
-  after applying) — *only* from the curated knowledge and live public jobs
-  below. If the fact isn't there it says the information isn't currently
-  available.
+- **Zodiac Patent and its opportunities** (what Zodiac Patent does, its
+  work areas, full-time jobs, internships, Zodiac Training Academy, campus
+  recruitment, scholarships, trainee programs, how to apply, what an
+  application needs, assessments, what happens after applying) — *only* from
+  the curated knowledge, live public jobs and programs, and the published
+  careers contact email. If the fact isn't there (salaries, eligibility,
+  scholarship amounts, durations, benefits…) it says it doesn't have that
+  information and points to the listing, program page or contact.
 - **Career / recruitment questions** and **general questions** — answered
   from the model's general knowledge, naturally; it only declines what is
   clearly unsafe, illegal, malicious or inappropriate.
@@ -54,7 +65,7 @@ table, another tenant, or private data.
     {"role": "user", "content": "What jobs are available?"},
     {"role": "assistant", "content": "…"}
   ],
-  "organization_slug": "sigvitas"                // optional; default SIGVI_ORGANIZATION_SLUG
+  "organization_slug": "zodiac-patent"                // optional; default SIGVI_ORGANIZATION_SLUG
 }
 
 // response 200
@@ -63,8 +74,8 @@ table, another tenant, or private data.
   "message": "…",
   "sources": [{"id": "assessments", "title": "How assessments work", "type": "knowledge", "url": "/#process"}],
   "jobs":    [{"id": "…", "title": "…", "department": "…", "location": "…", "employment_type": "…",
-               "summary": "…", "organization_slug": "sigvitas",
-               "view_path": "/org/sigvitas/jobs/<id>", "apply_path": "/org/sigvitas/jobs/<id>#apply"}]
+               "summary": "…", "organization_slug": "zodiac-patent",
+               "view_path": "/org/zodiac-patent/jobs/<id>", "apply_path": "/org/zodiac-patent/jobs/<id>#apply"}]
 }
 ```
 
@@ -106,10 +117,13 @@ in the history.
 `app/knowledge/` is separate from orchestration:
 
 - `base.py` — `KnowledgeEntry` and the `KnowledgeRetriever` protocol.
-- `sigvitas_public.py` — the curated, public-safe entries. Every statement
-  mirrors the shipped landing page, application form, assessment consent
-  screen or `docs/`. Where nothing is published (a contact email/phone,
-  company history) the entry *says so*, so the model has nothing to invent.
+- `zodiac_public.py` — the curated, public-safe entries. Statements about
+  Zodiac Patent's work come only from zodiacpatent.com (home,
+  /patent-drafting/, /quality-control/); statements about opportunities and
+  applying mirror the shipped homepage, careers and program pages,
+  application form, assessment consent screen or `docs/`. A dedicated
+  `not-published` entry lists what is never published (salaries, benefits,
+  durations, amounts, eligibility…), so the model has nothing to invent.
 - `keyword_retriever.py` — term overlap. Honest about being keyword matching,
   not semantic search; entries list generous keywords, and generic words
   (`job`, `resume`, `skills`, `interview`) are deliberately *not* keywords so
@@ -120,14 +134,21 @@ chunking → embeddings → pgvector) that returns the same `KnowledgeEntry`
 values, and changing `get_knowledge_retriever()`. The service, prompt and API
 are unchanged. LangChain/LangGraph are not used — they would add nothing yet.
 
-**Editing knowledge:** change `sigvitas_public.py` in the same change that
+**Editing knowledge:** change `zodiac_public.py` in the same change that
 alters the behaviour it describes (CLAUDE.md § 7). It is Python rather than a
 data file so it is always packaged with `pip install .` on Render and is
 type-checked.
 
 **Public jobs** come from the existing `job_service.list_jobs(status=OPEN)`
 through the same organization-slug + tenant-context path as the anonymous
-careers page, reduced to the fields that page already shows. A recruiter's
+careers page, reduced to the fields that page already shows. **Public
+programs** (Zodiac Training Academy, scholarship and trainee programs) are
+loaded the same way, only when the question is about programs, as an
+`<open_programs>` block: title, accepting applications or not, closing date
+and training-duration options — nothing else (no amounts, fees or
+eligibility). The organization's **published careers contact email**
+(`organizations.careers_contact_email`) is passed as a `<contact>` block when
+set; it is the only contact the assistant may give. A recruiter's
 hidden job description stays hidden (the job may be listed; its text is not
 sent). A job card is shown only for a job whose *whole* title appears in the reply (so "patent engineering" does not produce a "Patent Engineer" card, and "Senior Patent Engineer" is one card, not two). Jobs are looked up only when the visitor is asking about openings
 (now, or in the last few turns), at most 10 are placed in the prompt, ranked by
@@ -201,28 +222,31 @@ Gemini generations.
   one-time teaser.
 - `SigviWidget` — the panel (portal to `<body>`): compact header (small
   avatar, title, Clear, Close — closing keeps the conversation, so it doubles
-  as minimize), the greeting, bubbles, job cards, "Based on SIGVITAS Careers"
+  as minimize), the greeting, bubbles, job cards, "Based on Zodiac Patent
+  careers information"
   note, thinking row, error + Retry, auto-scroll, Enter / Shift+Enter
   (IME-safe), 1000-char limit with counter, mobile full-screen sheet that
   follows the visible viewport (so the on-screen keyboard cannot cover the
   input).
-- `SigviMascot` — Sigvi's character: a small white-and-blue robot head, inline
+- `SigviMascot` — Zodi's character: a small white-and-blue robot head, inline
   SVG only (no filters, images or libraries). Used purely as an icon —
   launcher, header, beside replies — and always decorative (`aria-hidden`).
   The component still supports the `full` variant and its halo/particle
   parts, but the widget hides those (`styles/sigvi.css`). Only the header
   avatar animates: an occasional blink, and scanning eyes while a reply is on
   its way.
-- `SigviLauncher` — a quiet pill (head + "Ask Sigvi") that stays still; on
+- `SigviLauncher` — a quiet pill (head + "Ask Zodi") that stays still; on
   phones just the round head, labelled for assistive tech. `SigviTeaser` — a
-  one-time "Hi, I'm Sigvi" nudge on the home page, ~5 s after load, once per
+  one-time "Hi, I'm Zodi" nudge on the home page (not on phones, where it
+  would sit over an opportunity card), ~5 s after load, once per
   browser session, dismissible, opens the chat; a real button, never a live
-  region. `SigviWelcome` — the greeting ("Hi! How can I help?" with one
-  muted line, "Ask me about careers at SIGVITAS."), which stays at the top of
-  the conversation, and four compact suggestion chips (View open positions ·
-  How do I apply? · Campus opportunities · Hiring process), shown until the
-  visitor asks something. Each chip sends a full question (e.g. "What campus
-  opportunities do you offer?") through the normal chat flow
+  region. `SigviWelcome` — the greeting ("Hi, I'm Zodi!" with one muted line,
+  "How can I help you explore opportunities at Zodiac Patent?"), which stays
+  at the top of the conversation, and four compact suggestion chips (View
+  open positions · Internships & training · What does Zodiac Patent do? · How
+  do I apply?), shown until the visitor asks something. Each chip sends a
+  full question (e.g. "What internships and training programs are
+  available?") through the normal chat flow
   (`suggestions.ts`). `SigviJobCard` — "Open role" card (title, location · type,
   department, summary, *View role →*, *Apply*); only fields the careers page
   already shows.
@@ -266,7 +290,8 @@ is simpler and safer to test; streaming would add an SSE endpoint, a provider
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Any Gemini model your key can call. |
 | `SIGVI_REQUEST_TIMEOUT_SECONDS` | `20` | |
 | `SIGVI_MAX_OUTPUT_TOKENS` | `700` | |
-| `SIGVI_ORGANIZATION_SLUG` | `sigvitas` | Careers site used when the request names none. |
+| `SIGVI_ORGANIZATION_SLUG` | `zodiac-patent` | Careers site used when the request names none. An old slug still resolves (below). |
+| `ORGANIZATION_SLUG_ALIASES` | `{"sigvitas":"zodiac-patent"}` | JSON. Old careers slugs → current slug, for every public lookup (careers API, programs, the assistant). |
 | `SIGVI_RATE_LIMIT_PER_MINUTE` | `8` | Per client, per instance. |
 | `SIGVI_GLOBAL_RATE_LIMIT_PER_MINUTE` | `40` | All clients, per instance. Keep at or below your Gemini quota. |
 
@@ -291,4 +316,4 @@ upstream message means the key is wrong; `429` means the free-tier quota.
   (`gemini-3.5-flash-lite`) and the error handling (invalid key -> 400 "API key
   not valid", unknown model -> 404) were verified once by hand against the live
   Gemini API and in a real browser session on 2026-09-21. After deploying,
-  ask Sigvi one question to confirm the production key works.
+  ask Zodi one question to confirm the production key works.

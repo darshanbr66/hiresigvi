@@ -255,14 +255,15 @@ supporting line, and four equal cards. No sections, footer or marketing copy.
 
 | Card | Opens | Lists |
 |---|---|---|
-| Open Jobs | `/org/<slug>?view=jobs` | open roles that aren't internships |
-| Internships | `/org/<slug>?view=internships` | open roles of type Internship |
-| Campus Hiring | `/org/<slug>?view=campus` | how campus drives work (drives have no public list — each is applied to by its private link) |
-| Training Programs | `/org/<slug>?view=programs` | published programs |
+| Open Roles | `/org/<slug>?view=all` | the All tab: every published role and program |
+| Internships | `/org/<slug>?view=jobs` | the Open Roles tab: open roles that aren't internships |
+| Campus Hiring | `/org/<slug>?view=jobs` | the Open Roles tab |
+| Training Programs | `/org/<slug>?view=jobs` | the Open Roles tab |
 
 The views are filters over the careers page's existing public API data
-(`features/careers/careersView.ts`); the careers page shows them as a tab row
-(All · Jobs · Internships · Campus hiring · Training programs). The slug comes
+(`features/careers/careersView.ts`); the careers page's own tabs are only All (every published role and
+program, as cards) and Open Roles (`view=jobs`); the other views have no tab
+and are reached from these cards. The slug comes
 from `VITE_CAREERS_ORG_SLUG` (default `zodiac-patent`,
 `features/public/careersOrg.ts`). Card copy lives in
 `features/public/homeContent.ts`.
@@ -285,9 +286,24 @@ sit on a deep navy band (two soft blue radial lights and a faint 22px dot grid
 that fades out — a nod to patent drawings), a 4px `#0092D4` rule (the official
 hero's 5px rule) closes it, and the four white cards lift over that edge onto
 the blue-grey stage. Cards: navy titles, `#586678` text, `#0074A8` CTAs
-(`#0092D4` is too light for small text on white), a solid `#0092D4` icon square
-with a white glyph (the logo's square mark), a navy-tinted soft shadow, and a
-3px brand-blue top edge that draws in on hover/focus. The band grows with the
+(`#0092D4` is too light for small text on white). Resting state, so the cards
+read as designed before any hover: a surface fading from white to `#F2F7FC`
+with a cyan corner glow (top-right) and a faint blue wash (bottom-left); a
+clearly visible blue-grey `#A8C3D9` border (1px plus a 0.5px inner ring, so it
+reads as ~1.5px without changing the card size; dark `#3A5C7C`), inner top
+highlight and navy-tinted shadow; a short
+brand-blue → cyan (`#38BDF8`) accent bar at the top-left; in the top-right
+corner two concentric rings (26% / 14% brand blue) whose inner disc holds a
+faint dot grid, plus a wider dashed arc carrying a small cyan node (arc and
+node omitted on phones, where text reaches the corner); and a blue → cyan
+gradient icon tile with a fine light border, inner highlight and soft glow.
+Hover/focus: the accent bar draws across the full top edge, the border brightens
+to `#1FA2DF` (dark `#3EB1E8`) with a 4px blue glow ring, the card lifts 4px, the rings scale
+slightly, the arc turns so its node travels, the icon lifts and its glow
+strengthens, and the CTA arrow nudges right (all motion off under reduced
+motion). Every decoration is `aria-hidden`/pseudo-element, behind the content
+and `pointer-events: none`. Dark mode uses the same treatment on `#172331`
+cards with cyan (`#5CC8F2`) rings, dots and glow. The band grows with the
 viewport height on screens ≥ 640px wide so tall screens stay balanced, with a
 compact rhythm at ≤ 700px tall. Dark mode keeps the structure: darker navy
 band, near-black blue stage, dark cards with light titles and `#4CB8EA` CTAs.
@@ -295,6 +311,33 @@ The logo (`public/brand/zodiac-patent-logo.png`, downloaded unaltered) has a
 white wordmark, so it appears only on the navy band — scaled, never
 recoloured or cropped. The official site's Montserrat is not loaded (no
 web-font dependency added); headings use the display font with weight 700.
+
+## Candidate pages (careers, job details, application)
+
+Every candidate-facing page wraps its content in `.public-page` (careers
+list, job details, campus drive, program, assessment). `styles/careers.css`
+points the app's shared tokens at the Zodiac palette inside that wrapper —
+`--color-primary*` (`#0074A8` text, `#0077B6` button fill: white text 4.9:1),
+`--color-focus`/`--color-brand` (`#0092D4`), blue-grey `--color-border`
+(`#D3DFEA`) and `--color-input-border` (`#7F97AD`, 3:1), navy text and soft
+navy shadows; dark mode uses `#4CB8EA` accents on `#141E29` surfaces. Shared
+components (buttons, fields, file pickers, cards, the application stepper)
+therefore follow with no second component set and no purple. The stepper's
+done steps are brand-tinted (not green) on these pages.
+
+**Job details** (`features/careers/JobDetailPage.tsx`): the careers navy hero
+band with eyebrow, title, metadata pills (department, location, type, mode,
+duration, hours, openings) and — only when published — the pay range in a
+highlighted cyan pill; then "Role details" and "Job Description" cards and
+the application form. The description is plain text from the recruiter;
+`jobDescription.ts` structures it into headings, paragraphs and lists by
+the conventions recruiters type (short unpunctuated lead lines, `- `/`• `/`1.`
+markers, blank lines) without changing a word.
+
+**Pay visibility:** careers-list cards never show compensation
+(`jobCardChips` omits the pay range and "Unpaid"); the job details page
+shows it whenever the job has it. Display only — the data and API are
+unchanged.
 
 ## Sigvi (the public AI assistant)
 

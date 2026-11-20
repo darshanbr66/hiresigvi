@@ -41,7 +41,7 @@ _INVALID_MESSAGE = "This campus drive link is no longer valid."
 async def get_drive_by_token(db: AsyncSession, token: str) -> CampusDrive:
     """A soft-deleted drive (`deleted_at` set) is excluded here — it must
     behave exactly like an invalid/unknown token to a public caller
-    (SIGVITAS platform overhaul § 16), never fall through to the CLOSED
+    (ZPHIREX platform overhaul § 16), never fall through to the CLOSED
     branch's slightly more specific messaging."""
     token_hash = hash_opaque_token(token)
     async with rls_bypass(db):

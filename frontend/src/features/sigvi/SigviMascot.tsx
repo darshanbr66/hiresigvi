@@ -61,7 +61,7 @@ function useIdleLife(ref: React.RefObject<SVGSVGElement | null>, active: boolean
 }
 
 /**
- * Sigvi — SIGVITAS' AI assistant: a small rounded white-and-blue robot with a
+ * Zodi — the Zodiac Patent careers assistant (internally the `sigvi` feature): a small rounded white-and-blue robot with a
  * dark visor, glowing eyes and a tell-tale antenna light.
  *
  * Pure inline SVG. The 3D feel comes from gradients, a rim highlight and a

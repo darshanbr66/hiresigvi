@@ -169,7 +169,7 @@ export function RecruiterLayout() {
     <>
       <NotificationToaster />
       <AppShell
-        brandTitle="HireZ"
+        brandTitle="ZPHIREX"
         contextLabel="Recruiter Portal"
         sections={sections}
         upcoming={UPCOMING_NAV_ITEMS}

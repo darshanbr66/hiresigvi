@@ -49,7 +49,7 @@ class SubmitAnswersRequest(BaseModel):
 
 
 class PublicSubmissionResult(BaseModel):
-    """Deliberately carries no score/percentage/pass-fail (SIGVITAS platform
+    """Deliberately carries no score/percentage/pass-fail (ZPHIREX platform
     overhaul § 4) — the candidate sees a polished submission confirmation,
     never a number. Recruiters/admins see the full score via
     `AssessmentResultResponse` (app/schemas/assessment.py), a completely

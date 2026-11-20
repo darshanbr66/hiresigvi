@@ -14,9 +14,9 @@ describe("SigviMascot", () => {
     expect(svgOf(container)).toHaveAttribute("aria-hidden", "true");
     expect(svgOf(container)).not.toHaveAttribute("role");
 
-    rerender(<SigviMascot label="Sigvi, a friendly robot" />);
+    rerender(<SigviMascot label="Zodi, a friendly robot" />);
     expect(svgOf(container)).toHaveAttribute("role", "img");
-    expect(svgOf(container)).toHaveAttribute("aria-label", "Sigvi, a friendly robot");
+    expect(svgOf(container)).toHaveAttribute("aria-label", "Zodi, a friendly robot");
     expect(svgOf(container)).not.toHaveAttribute("aria-hidden");
   });
 

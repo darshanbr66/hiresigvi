@@ -19,8 +19,8 @@ function renderWidget(props: { organizationSlug?: string } = {}) {
   );
 }
 
-const launcher = () => screen.getByRole("button", { name: /ask sigvi/i });
-const input = () => screen.getByRole("textbox", { name: /message sigvi/i });
+const launcher = () => screen.getByRole("button", { name: /ask zodi/i });
+const input = () => screen.getByRole("textbox", { name: /message zodi/i });
 const openPanel = () => fireEvent.click(launcher());
 const type = (text: string) => fireEvent.change(input(), { target: { value: text } });
 const pressEnter = (init: KeyboardEventInit = {}) =>
@@ -40,7 +40,7 @@ function deferred<T>() {
 let send: MockInstance<typeof sigviApi.sendChatMessage>;
 
 beforeEach(() => {
-  send = vi.spyOn(sigviApi, "sendChatMessage").mockResolvedValue(reply("Hello from Sigvi."));
+  send = vi.spyOn(sigviApi, "sendChatMessage").mockResolvedValue(reply("Hello from Zodi."));
 });
 
 afterEach(() => {
@@ -62,27 +62,27 @@ describe("opening and closing", () => {
     renderWidget();
     openPanel();
 
-    const dialog = screen.getByRole("dialog", { name: /sigvi/i });
-    expect(within(dialog).getByText("Hi! How can I help?")).toBeInTheDocument();
-    expect(within(dialog).getByText("Ask me about careers at SIGVITAS.")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: /zodi/i });
+    expect(within(dialog).getByText("Hi, I'm Zodi!")).toBeInTheDocument();
+    expect(within(dialog).getByText("How can I help you explore opportunities at Zodiac Patent?")).toBeInTheDocument();
     for (const suggestion of [
       "View open positions",
+      "Internships & training",
+      "What does Zodiac Patent do?",
       "How do I apply?",
-      "Campus opportunities",
-      "Hiring process",
     ]) {
       expect(within(dialog).getByRole("button", { name: suggestion })).toBeInTheDocument();
     }
     await waitFor(() => expect(input()).toHaveFocus());
     // The launcher steps aside while the panel is open.
-    expect(screen.queryByRole("button", { name: /ask sigvi/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ask zodi/i })).not.toBeInTheDocument();
   });
 
   it("closes with the Close button and returns focus to the launcher", async () => {
     renderWidget();
     openPanel();
 
-    fireEvent.click(screen.getByRole("button", { name: /close sigvi/i }));
+    fireEvent.click(screen.getByRole("button", { name: /close zodi/i }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(launcher()).toHaveFocus());
@@ -103,27 +103,27 @@ describe("opening and closing", () => {
   it("keeps the conversation when closed and reopened", async () => {
     renderWidget();
     openPanel();
-    type("Hi Sigvi");
+    type("Hi Zodi");
     pressEnter();
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
 
-    fireEvent.click(screen.getByRole("button", { name: /close sigvi/i }));
+    fireEvent.click(screen.getByRole("button", { name: /close zodi/i }));
     openPanel();
 
-    expect(screen.getByText("Hi Sigvi")).toBeInTheDocument();
-    expect(screen.getByText("Hello from Sigvi.")).toBeInTheDocument();
+    expect(screen.getByText("Hi Zodi")).toBeInTheDocument();
+    expect(screen.getByText("Hello from Zodi.")).toBeInTheDocument();
   });
 });
 
 describe("sending messages", () => {
   it("sends on Enter, shows both sides, and clears the box", async () => {
-    renderWidget({ organizationSlug: "sigvitas" });
+    renderWidget({ organizationSlug: "zodiac-patent" });
     openPanel();
 
     type("What jobs are available?");
     pressEnter();
 
-    expect(await screen.findByText("Hello from Sigvi.")).toBeInTheDocument();
+    expect(await screen.findByText("Hello from Zodi.")).toBeInTheDocument();
     expect(screen.getByText("What jobs are available?")).toBeInTheDocument();
     expect(input()).toHaveValue("");
     expect(send).toHaveBeenCalledTimes(1);
@@ -131,7 +131,7 @@ describe("sending messages", () => {
       expect.objectContaining({
         message: "What jobs are available?",
         history: [],
-        organization_slug: "sigvitas",
+        organization_slug: "zodiac-patent",
       }),
     );
   });
@@ -143,7 +143,7 @@ describe("sending messages", () => {
     type("hello");
     fireEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
     expect(send).toHaveBeenCalledTimes(1);
   });
 
@@ -204,7 +204,7 @@ describe("sending messages", () => {
     await screen.findByText("We have two roles.");
     type("Which one requires React?");
     pressEnter();
-    await screen.findAllByText("Hello from Sigvi.");
+    await screen.findAllByText("Hello from Zodi.");
 
     expect(send).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -224,12 +224,12 @@ describe("sending messages", () => {
     for (let i = 1; i <= 7; i++) {
       type(`question ${i}`);
       pressEnter();
-      await waitFor(() => expect(screen.getAllByText("Hello from Sigvi.")).toHaveLength(i));
+      await waitFor(() => expect(screen.getAllByText("Hello from Zodi.")).toHaveLength(i));
     }
 
     const { history } = send.mock.calls[6][0];
     expect(history.length).toBeLessThanOrEqual(8);
-    expect(history.at(-1)).toEqual({ role: "assistant", content: "Hello from Sigvi." });
+    expect(history.at(-1)).toEqual({ role: "assistant", content: "Hello from Zodi." });
   });
 
   it("keeps the same conversation id across requests", async () => {
@@ -238,7 +238,7 @@ describe("sending messages", () => {
 
     type("one");
     pressEnter();
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
     type("two");
     pressEnter();
     await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
@@ -254,32 +254,32 @@ describe("suggested questions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "How do I apply?" }));
 
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ message: "How do I apply?" }));
     expect(screen.queryByRole("group", { name: /suggested questions/i })).not.toBeInTheDocument();
   });
 });
 
 describe("loading state", () => {
-  it("shows that Sigvi is thinking, blocks a second send, then shows the reply", async () => {
+  it("shows that Zodi is thinking, blocks a second send, then shows the reply", async () => {
     const pending = deferred<SigviChatResponse>();
     send.mockReturnValueOnce(pending.promise);
     renderWidget();
     openPanel();
 
-    type("Tell me about Sigvitas");
+    type("Tell me about Zodiac Patent");
     pressEnter();
 
     const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent(/sigvi is thinking/i);
+    expect(status).toHaveTextContent(/zodi is thinking/i);
     type("another question");
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
     pressEnter();
     expect(send).toHaveBeenCalledTimes(1);
 
-    await act(async () => pending.resolve(reply("Sigvitas is a recruitment platform.")));
+    await act(async () => pending.resolve(reply("Zodiac Patent works in U.S. patent services.")));
 
-    expect(await screen.findByText("Sigvitas is a recruitment platform.")).toBeInTheDocument();
+    expect(await screen.findByText("Zodiac Patent works in U.S. patent services.")).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
@@ -320,7 +320,7 @@ describe("rendering replies", () => {
     send.mockResolvedValueOnce(
       reply("Apply from a role page.", {
         sources: [
-          { id: "how-to-apply", title: "How to apply for a job", type: "knowledge", url: "/org/sigvitas" },
+          { id: "how-to-apply", title: "How to apply for a job", type: "knowledge", url: "/org/zodiac-patent" },
         ],
       }),
     );
@@ -329,7 +329,7 @@ describe("rendering replies", () => {
     type("how do I apply");
     pressEnter();
 
-    const chip = await screen.findByText(/based on sigvitas careers/i);
+    const chip = await screen.findByText(/based on zodiac patent careers information/i);
     expect(chip).toBeInTheDocument();
     // the specific topic is available on hover, but the chip names nothing internal
     expect(chip).toHaveAttribute("title", "How to apply for a job");
@@ -346,9 +346,9 @@ describe("rendering replies", () => {
             location: "Bengaluru",
             employment_type: "Full-time",
             summary: "Build interfaces in React.",
-            organization_slug: "sigvitas",
-            view_path: "/org/sigvitas/jobs/job-1",
-            apply_path: "/org/sigvitas/jobs/job-1#apply",
+            organization_slug: "zodiac-patent",
+            view_path: "/org/zodiac-patent/jobs/job-1",
+            apply_path: "/org/zodiac-patent/jobs/job-1#apply",
           },
         ],
       }),
@@ -365,11 +365,11 @@ describe("rendering replies", () => {
     expect(within(card).getByText("Build interfaces in React.")).toBeInTheDocument();
     expect(within(card).getByRole("link", { name: /view role/i })).toHaveAttribute(
       "href",
-      "/org/sigvitas/jobs/job-1",
+      "/org/zodiac-patent/jobs/job-1",
     );
     expect(within(card).getByRole("link", { name: /apply/i })).toHaveAttribute(
       "href",
-      "/org/sigvitas/jobs/job-1#apply",
+      "/org/zodiac-patent/jobs/job-1#apply",
     );
   });
 
@@ -384,9 +384,9 @@ describe("rendering replies", () => {
             location: null,
             employment_type: null,
             summary: null,
-            organization_slug: "sigvitas",
-            view_path: "/org/sigvitas/jobs/job-1",
-            apply_path: "/org/sigvitas/jobs/job-1#apply",
+            organization_slug: "zodiac-patent",
+            view_path: "/org/zodiac-patent/jobs/job-1",
+            apply_path: "/org/zodiac-patent/jobs/job-1#apply",
           },
         ],
       }),
@@ -405,11 +405,11 @@ describe("rendering replies", () => {
 describe("error state and retry", () => {
   it("shows the server's friendly message with a Retry that resends the same message once", async () => {
     send.mockRejectedValueOnce(
-      new ApiError("Sigvi is temporarily unavailable. Please try again in a little while.", 503, "ai_unavailable"),
+      new ApiError("Zodi is temporarily unavailable. Please try again in a little while.", 503, "ai_unavailable"),
     );
     renderWidget();
     openPanel();
-    type("What is Sigvitas?");
+    type("What does Zodiac Patent do?");
     pressEnter();
 
     const alert = await screen.findByRole("alert");
@@ -418,12 +418,12 @@ describe("error state and retry", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
 
-    expect(await screen.findByText("Hello from Sigvi.")).toBeInTheDocument();
+    expect(await screen.findByText("Hello from Zodi.")).toBeInTheDocument();
     expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls[1][0].message).toBe("What is Sigvitas?");
+    expect(send.mock.calls[1][0].message).toBe("What does Zodiac Patent do?");
     expect(send.mock.calls[1][0].history).toEqual([]);
     // The user's message is shown once — a retry does not duplicate it.
-    expect(screen.getAllByText("What is Sigvitas?")).toHaveLength(1);
+    expect(screen.getAllByText("What does Zodiac Patent do?")).toHaveLength(1);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -453,7 +453,7 @@ describe("error state and retry", () => {
     await screen.findByText("still busy");
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
 
-    expect(await screen.findByText("Hello from Sigvi.")).toBeInTheDocument();
+    expect(await screen.findByText("Hello from Zodi.")).toBeInTheDocument();
     expect(send).toHaveBeenCalledTimes(3);
   });
 });
@@ -464,12 +464,12 @@ describe("clearing the conversation", () => {
     openPanel();
     type("first question");
     pressEnter();
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
 
     fireEvent.click(screen.getByRole("button", { name: /clear conversation/i }));
 
     expect(screen.queryByText("first question")).not.toBeInTheDocument();
-    expect(screen.queryByText("Hello from Sigvi.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hello from Zodi.")).not.toBeInTheDocument();
     expect(screen.getByRole("group", { name: /suggested questions/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /clear conversation/i })).toBeDisabled();
 
@@ -536,7 +536,7 @@ describe("layout", () => {
     expect(screen.getByRole("dialog")).toHaveAttribute("data-layout", "sheet");
     expect(document.body.style.overflow).toBe("hidden");
 
-    fireEvent.click(screen.getByRole("button", { name: /close sigvi/i }));
+    fireEvent.click(screen.getByRole("button", { name: /close zodi/i }));
     expect(document.body.style.overflow).toBe("");
   });
 
@@ -549,7 +549,7 @@ describe("layout", () => {
       openPanel();
       type("hi");
       pressEnter();
-      await screen.findByText("Hello from Sigvi.");
+      await screen.findByText("Hello from Zodi.");
 
       expect(scrollTo).not.toHaveBeenCalled();
     } finally {
@@ -567,7 +567,7 @@ describe("layout", () => {
       openPanel();
       type("hi");
       pressEnter();
-      await screen.findByText("Hello from Sigvi.");
+      await screen.findByText("Hello from Zodi.");
 
       expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: "smooth" }));
     } finally {
@@ -580,17 +580,17 @@ describe("accessibility", () => {
   it("names the launcher, dialog, conversation log and controls", () => {
     renderWidget();
 
-    expect(launcher()).toHaveAccessibleName(/ask sigvi/i);
+    expect(launcher()).toHaveAccessibleName(/ask zodi/i);
     expect(launcher()).toHaveAttribute("aria-haspopup", "dialog");
     expect(launcher()).toHaveAttribute("aria-controls", "sigvi-panel");
 
     openPanel();
 
-    expect(screen.getByRole("dialog")).toHaveAccessibleName(/sigvi/i);
+    expect(screen.getByRole("dialog")).toHaveAccessibleName(/zodi/i);
     const log = screen.getByRole("log", { name: /conversation/i });
     expect(log).toHaveAttribute("aria-live", "polite");
-    expect(input()).toHaveAccessibleName(/message sigvi/i);
-    for (const name of [/send message/i, /clear conversation/i, /close sigvi/i]) {
+    expect(input()).toHaveAccessibleName(/message zodi/i);
+    for (const name of [/send message/i, /clear conversation/i, /close zodi/i]) {
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
   });
@@ -603,7 +603,7 @@ describe("accessibility", () => {
     await waitFor(() => expect(input()).toHaveFocus());
     type("hi");
     pressEnter();
-    await screen.findByText("Hello from Sigvi.");
+    await screen.findByText("Hello from Zodi.");
     fireEvent.keyDown(input(), { key: "Escape" });
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -638,6 +638,6 @@ describe("accessibility", () => {
     openPanel();
 
     expect(screen.getByText(/ai can make mistakes/i)).toBeInTheDocument();
-    expect(screen.getByText("AI assistant for SIGVITAS")).toBeInTheDocument();
+    expect(screen.getByText("AI assistant for Zodiac Patent careers")).toBeInTheDocument();
   });
 });

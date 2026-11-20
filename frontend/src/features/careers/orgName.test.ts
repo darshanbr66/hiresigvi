@@ -3,7 +3,7 @@ import { displayNameFromSlug } from "./orgName";
 
 describe("displayNameFromSlug", () => {
   it("capitalises a single word", () => {
-    expect(displayNameFromSlug("sigvitas")).toBe("Sigvitas");
+    expect(displayNameFromSlug("zodiac")).toBe("Zodiac");
   });
   it("splits on hyphens and underscores", () => {
     expect(displayNameFromSlug("acme-corp")).toBe("Acme Corp");

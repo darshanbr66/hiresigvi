@@ -27,7 +27,7 @@ from app.integrations.email import resend_provider as resend_module
 from app.services import notification_service
 
 _DUMMY_KEY = "re_dummy_test_key_not_real"
-_FROM = "SIGVITAS <hr@example.test>"
+_FROM = "Zodiac Patent Recruitment <hr@example.test>"
 _SECRET_BODY = "CONFIDENTIAL-BODY-TEXT"
 
 

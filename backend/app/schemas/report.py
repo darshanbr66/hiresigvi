@@ -59,7 +59,7 @@ class ReportOverview(BaseModel):
     open_jobs: int
     total_candidates: int
     total_applications: int
-    # Candidate-outcome metrics for the Overview dashboard (SIGVITAS
+    # Candidate-outcome metrics for the Overview dashboard (ZPHIREX
     # platform overhaul § 15) — each a direct count of
     # `ApplicationStatus.{SELECTED,REJECTED,HIRED}`, tenant-scoped and
     # excluding soft-deleted applications like every other field here.

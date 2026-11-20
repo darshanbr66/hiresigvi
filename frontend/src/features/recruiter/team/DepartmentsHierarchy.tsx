@@ -44,7 +44,7 @@ const EMPTY_EMPLOYEE_FORM = {
 type EmployeeFormState = typeof EMPTY_EMPLOYEE_FORM;
 
 /**
- * "<organization> → Departments → Employees" hierarchy view (SIGVITAS platform
+ * "<organization> → Departments → Employees" hierarchy view (ZPHIREX platform
  * overhaul § 9-12). Org Admin and HR (the RECRUITER role) get full CRUD;
  * Hiring Managers see the same tree read-only — the frontend hides manage
  * controls for UX only, the backend's `department.manage`/`employee.manage`

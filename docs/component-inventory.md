@@ -157,8 +157,8 @@ the page uses TanStack Query keys of the form `["recruiter", "<area>", …]`.
 
 | Path | Responsibility | Tests |
 |---|---|---|
-| `features/public/` | `PublicHomePage`, `HeroSection` (+ `hero/` 3D scene with static poster fallback), `LandingNav`, `PublicHeader` | PublicHomePage.test, HeroScene.test |
-| `features/careers/CareersPage`, `JobDetailPage` | organization careers site, open jobs, programs listing | JobDetailPage.test |
+| `features/public/` | `PublicHomePage` (ZPHIREX single-screen opportunity picker for Zodiac Patent: four cards → careers-page views), `HomeGraphics` (wordmark, opportunity glyphs), `homeContent.ts` (card copy, official logo path), `careersOrg.ts` (`careersViewPath`), `PublicHeader` | PublicHomePage.test |
+| `features/careers/CareersPage`, `JobDetailPage`, `careersView.ts`, `jobDescription.ts` | organization careers site: navy hero, All / Open Roles tabs, published roles and programs as cards; `?view=internships\|campus\|programs` (homepage links, no tab); job details: navy hero with facts (pay only here), structured description | CareersPage.test, JobDetailPage.test, jobDescription.test |
 | `features/careers/JobApplicationForm` | the shared apply form: email code, identity fields, resume and marks card, early "already applied" check; also used by drives and programs | JobApplicationForm.test |
 | `features/careers/CampusDriveApplyPage` | drive page from its link token | CampusDriveApplyPage.test |
 | `features/careers/ProgramApplyPage` | program disclosures (amounts only when finalized), education declaration, terms acceptance | ProgramApplyPage.test |

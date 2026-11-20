@@ -1,66 +1,130 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
 import { EmptyState } from "../../shared/components/EmptyState";
-import { Icon, type IconName } from "../../shared/components/Icon";
-import { Reveal } from "../../shared/components/Reveal";
+import { Icon } from "../../shared/components/Icon";
 import { Skeleton } from "../../shared/components/Skeleton";
+import type { PublicJobSummary } from "../../types/careers";
+import type { PublicProgramSummary } from "../../types/program";
 import { PublicHeader } from "../public/PublicHeader";
 import { getPublicOrganization, listOpenJobs, listPublicPrograms } from "./api";
-import { jobChips } from "./jobFacts";
+import { CAREERS_TABS, jobsForView, parseCareersView, showsProgramsInView, type CareersView } from "./careersView";
+import { jobCardChips } from "./jobFacts";
 import { displayNameFromSlug } from "./orgName";
 
-/** How applications are handled — the recruitment content that used to sit
- * on the company homepage (first HR meeting: recruitment lives on Careers). */
-const HOW_WE_REVIEW: { icon: IconName; title: string; text: string }[] = [
-  {
-    icon: "email",
-    title: "Verified, one application",
-    text: "You confirm your email with a one-time code and apply once. Our team considers your profile for other suitable roles too.",
+/** Hero copy per view; `all` is the page with no `view`. */
+const VIEW_HERO: Record<CareersView | "all", { title: string; text: string; empty: string }> = {
+  all: {
+    title: "Explore Career Opportunities",
+    text: "Discover opportunities to grow your career and make an impact.",
+    empty: "No open opportunities right now",
   },
-  {
-    icon: "sparkles",
-    title: "AI assists, people decide",
-    text: "AI helps our recruiters review each resume against the role's requirements. A person always makes the hiring decision.",
+  jobs: {
+    title: "Explore Career Opportunities",
+    text: "Discover opportunities to grow your career and make an impact.",
+    empty: "No open roles right now",
   },
-  {
-    icon: "lock",
-    title: "Your data stays with your application",
-    text: "Your profile and resume are used only for recruitment, and every review stays traceable to your application.",
+  internships: {
+    title: "Internship Opportunities",
+    text: "Explore current internships and start building your professional experience.",
+    empty: "No internships open right now",
   },
-  {
-    icon: "eye",
-    title: "Monitoring is disclosed upfront",
-    text: "If a role includes an assessment with monitoring, you're told exactly what is observed before you begin.",
+  campus: {
+    title: "Campus Hiring",
+    text: "Students and graduates can apply directly to any of the opportunities below.",
+    empty: "No open opportunities right now",
   },
-];
+  programs: {
+    title: "Training Programs",
+    text: "Training, trainee and scholarship programs currently published.",
+    empty: "No programs open right now",
+  },
+};
 
-const CAMPUS: { icon: IconName; title: string; text: string }[] = [
-  {
-    icon: "campus",
-    title: "Apply with a drive link",
-    text: "If your college is running a campus drive with us, you'll get a direct application link from your placement office.",
-  },
-  {
-    icon: "graph",
-    title: "Same review process",
-    text: "Campus applications go through the same review and assessment process as any other application.",
-  },
-  {
-    icon: "email",
-    title: "Clear updates",
-    text: "You'll hear from us by email — and if a drive has closed, the link tells you so.",
-  },
-];
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/** One open role. Department leads as a small label; the facts follow as
+ * pills (location, then type/mode/duration/hours). No pay on the card —
+ * compensation is shown on the job's own page only (jobCardChips). */
+function JobCard({ slug, job }: { slug: string; job: PublicJobSummary }) {
+  const facts = jobCardChips(job);
+  return (
+    <Link to={`/org/${slug}/jobs/${job.id}`} className="opening-card">
+      {job.department && <span className="opening-card-kicker">{job.department}</span>}
+      <span className="opening-card-title">{job.title}</span>
+      <span className="opening-card-meta">
+        {job.location && (
+          <span className="opening-pill">
+            <Icon name="pin" size={13} />
+            {job.location}
+          </span>
+        )}
+        {facts.map((fact) => (
+          <span key={fact} className="opening-pill">
+            {fact}
+          </span>
+        ))}
+      </span>
+      <span className="opening-card-cta">
+        View role <Icon name="arrow-right" size={16} />
+      </span>
+    </Link>
+  );
+}
+
+/** One published program, in the same card as a role. */
+function ProgramCard({ program }: { program: PublicProgramSummary }) {
+  return (
+    <Link to={`/programs/${program.id}`} className="opening-card">
+      <span className="opening-card-kicker">Program</span>
+      <span className="opening-card-title">{program.title}</span>
+      <span className="opening-card-meta">
+        {program.training_duration_options.length > 0 && (
+          <span className="opening-pill">
+            {program.training_duration_options.map((m) => `${m} months`).join(" / ")} training
+          </span>
+        )}
+        {!program.accepting_applications && <span className="opening-pill">Not accepting applications</span>}
+        {program.application_closes_at && program.accepting_applications && (
+          <span className="opening-pill">Apply by {new Date(program.application_closes_at).toLocaleDateString()}</span>
+        )}
+      </span>
+      <span className="opening-card-cta">
+        View program <Icon name="arrow-right" size={16} />
+      </span>
+    </Link>
+  );
+}
+
+function CardSkeletons({ label }: { label: string }) {
+  return (
+    <div className="opening-grid" role="status" aria-label={label}>
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="opening-card opening-card-skeleton" aria-hidden="true">
+          <Skeleton height="0.7rem" width="25%" />
+          <Skeleton height="1.15rem" width="60%" />
+          <Skeleton height="0.85rem" width="80%" />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * An organization's careers site (CLAUDE.md § 1: "public career site:
  * anonymous job browse/search/details, entry point into candidate apply
- * flow") — reached deliberately from the company homepage's Careers link.
+ * flow"). Header, a compact navy hero, the All / Open Roles tabs lifted over
+ * its edge, and the published opportunities as cards — nothing else. See
+ * careersView.ts for what each view lists.
  */
 export function CareersPage() {
   const { slug = "" } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const view = parseCareersView(searchParams.get("view"));
+  const hero = VIEW_HERO[view ?? "all"];
   const jobsQuery = useQuery({
     queryKey: ["public", "jobs", slug],
     queryFn: () => listOpenJobs(slug),
@@ -74,148 +138,99 @@ export function CareersPage() {
     queryFn: () => listPublicPrograms(slug),
   });
   const orgName = organizationQuery.data?.name ?? displayNameFromSlug(slug);
-  const contactEmail = organizationQuery.data?.careers_contact_email ?? null;
+
+  const visibleJobs = jobsQuery.isSuccess ? jobsForView(jobsQuery.data, view) : jobsForView([], view);
+  const showsJobs = visibleJobs !== null;
+  const showsPrograms = showsProgramsInView(view);
+  const programsOnly = view === "programs";
+
+  // Programs alongside roles are a bonus: if they fail to load, the roles
+  // still show. Only the programs-only view reports a programs failure.
+  const pending = (showsJobs && jobsQuery.isPending) || (programsOnly && programsQuery.isPending);
+  const jobsFailed = showsJobs && jobsQuery.isError;
+  const programsFailed = programsOnly && programsQuery.isError;
+  const programs = showsPrograms && programsQuery.isSuccess ? programsQuery.data : [];
+  const jobs = visibleJobs ?? [];
+  const total = jobs.length + programs.length;
+  const settled = !pending && !jobsFailed && !programsFailed;
+
+  let count: string | null = null;
+  if (settled && total > 0) {
+    count =
+      programs.length === 0
+        ? plural(total, "open position", "open positions")
+        : jobs.length === 0
+          ? plural(total, "program", "programs")
+          : plural(total, "opportunity", "opportunities");
+  }
 
   return (
-    <div className="public-page">
+    <div className="public-page careers-page">
       <PublicHeader title={orgName} />
-      <main className="public-shell">
-        <header className="public-hero">
-          <p className="section-eyebrow">{orgName} Careers</p>
-          <h1>Open roles</h1>
-          <p className="muted">
-            Browse current openings, read the full job description, and apply — no account required.
-          </p>
-          {jobsQuery.isSuccess && jobsQuery.data.length > 0 && (
-            <span className="chip public-hero-count">
-              <span className="live-dot" aria-hidden="true" />
-              {jobsQuery.data.length} open {jobsQuery.data.length === 1 ? "role" : "roles"}
-            </span>
+      <main className="careers">
+        <div className="careers-hero">
+          <div className="careers-container">
+            <p className="careers-eyebrow">{orgName} Careers</p>
+            <h1 className="careers-title">{hero.title}</h1>
+            <p className="careers-subtitle">{hero.text}</p>
+            {count && (
+              <span className="careers-count">
+                <span className="careers-count-dot" aria-hidden="true" />
+                {count}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="careers-container careers-body">
+          <nav className="careers-views" aria-label="Opportunity type">
+            {CAREERS_TABS.map((tab) => (
+              <Link
+                key={tab.label}
+                to={tab.id ? `/org/${slug}?view=${tab.id}` : `/org/${slug}`}
+                className="careers-view-link"
+                aria-current={view === tab.id ? "page" : undefined}
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </nav>
+
+          {pending && <CardSkeletons label={programsOnly ? "Loading programs" : "Loading open roles"} />}
+
+          {jobsFailed && (
+            <Alert>
+              {jobsQuery.error instanceof ApiError ? jobsQuery.error.message : "Could not load open roles."}
+            </Alert>
           )}
-        </header>
 
-        {jobsQuery.isPending && (
-          <div className="role-list" role="status" aria-label="Loading open roles">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="role-card role-card-skeleton" aria-hidden="true">
-                <Skeleton height="1.1rem" width="55%" />
-                <Skeleton height="0.8rem" width="35%" />
-              </div>
-            ))}
-          </div>
-        )}
+          {programsFailed && (
+            <Alert>
+              {programsQuery.error instanceof ApiError ? programsQuery.error.message : "Could not load programs."}
+            </Alert>
+          )}
 
-        {jobsQuery.isError && (
-          <Alert>
-            {jobsQuery.error instanceof ApiError
-              ? jobsQuery.error.message
-              : "Could not load open roles."}
-          </Alert>
-        )}
+          {settled && total === 0 && (
+            <EmptyState icon="jobs" title={hero.empty}>
+              Check back soon — new openings are posted regularly.
+            </EmptyState>
+          )}
 
-        {jobsQuery.isSuccess && jobsQuery.data.length === 0 && (
-          <EmptyState icon="jobs" title="No open roles right now">
-            Check back soon — new openings are posted regularly.
-          </EmptyState>
-        )}
-
-        {jobsQuery.isSuccess && jobsQuery.data.length > 0 && (
-          <div className="role-list">
-            {jobsQuery.data.map((job, index) => (
-              <Reveal key={job.id} delay={Math.min(index, 6) * 50}>
-                <Link to={`/org/${slug}/jobs/${job.id}`} className="role-card">
-                  <span className="role-card-title">{job.title}</span>
-                  <span className="role-card-meta">
-                    {job.department && <span className="chip">{job.department}</span>}
-                    {job.location && (
-                      <span className="chip">
-                        <Icon name="pin" size={13} />
-                        {job.location}
-                      </span>
-                    )}
-                    {jobChips(job).map((chip) => (
-                      <span key={chip} className="chip">
-                        {chip}
-                      </span>
-                    ))}
-                  </span>
-                  <span className="role-card-cta">
-                    View role <Icon name="arrow-right" size={16} />
-                  </span>
-                </Link>
-              </Reveal>
-            ))}
-          </div>
-        )}
-
-        {programsQuery.isSuccess && programsQuery.data.length > 0 && (
-          <section id="programs" className="careers-section" aria-labelledby="programs-title">
-            <p className="section-eyebrow">Programs</p>
-            <h2 id="programs-title">Scholarship &amp; training programs</h2>
-            <div className="role-list">
-              {programsQuery.data.map((program) => (
-                <Link key={program.id} to={`/programs/${program.id}`} className="role-card">
-                  <span className="role-card-title">{program.title}</span>
-                  <span className="role-card-meta">
-                    {program.training_duration_options.length > 0 && (
-                      <span className="chip">
-                        {program.training_duration_options.map((m) => `${m} months`).join(" / ")} training
-                      </span>
-                    )}
-                    {!program.accepting_applications && <span className="chip">Not accepting applications</span>}
-                    {program.application_closes_at && program.accepting_applications && (
-                      <span className="chip">
-                        Apply by {new Date(program.application_closes_at).toLocaleDateString()}
-                      </span>
-                    )}
-                  </span>
-                  <span className="role-card-cta">
-                    View program <Icon name="arrow-right" size={16} />
-                  </span>
-                </Link>
+          {settled && total > 0 && (
+            <ul className="opening-grid" aria-label="Open positions">
+              {jobs.map((job) => (
+                <li key={`job-${job.id}`}>
+                  <JobCard slug={slug} job={job} />
+                </li>
               ))}
-            </div>
-          </section>
-        )}
-
-        <section id="how-we-review" className="careers-section" aria-labelledby="how-we-review-title">
-          <p className="section-eyebrow">How we hire</p>
-          <h2 id="how-we-review-title">How applications are reviewed</h2>
-          <div className="principle-grid">
-            {HOW_WE_REVIEW.map((item) => (
-              <div key={item.title} className="principle-card">
-                <span className="principle-icon">
-                  <Icon name={item.icon} size={20} />
-                </span>
-                <h3>{item.title}</h3>
-                <p>{item.text}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section id="campus" className="careers-section" aria-labelledby="campus-title">
-          <p className="section-eyebrow">Campus</p>
-          <h2 id="campus-title">Campus hiring</h2>
-          <div className="principle-grid principle-grid-3">
-            {CAMPUS.map((item) => (
-              <div key={item.title} className="principle-card">
-                <span className="principle-icon">
-                  <Icon name={item.icon} size={20} />
-                </span>
-                <h3>{item.title}</h3>
-                <p>{item.text}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {contactEmail && (
-          <p className="muted careers-contact">
-            Questions about a role or your application? Contact our recruitment team at{" "}
-            <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.
-          </p>
-        )}
+              {programs.map((program) => (
+                <li key={`program-${program.id}`}>
+                  <ProgramCard program={program} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </main>
     </div>
   );

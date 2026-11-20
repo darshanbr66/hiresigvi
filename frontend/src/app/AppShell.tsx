@@ -65,7 +65,7 @@ export function AppShell({
   notificationBell,
 }: {
   /** Product name — the top-bar title when no nav item matches the route.
-   * The sidebar header shows the HireZ wordmark (its compact "Z" mark on the collapsed rail). */
+   * The sidebar header shows the ZPHIREX wordmark (its compact "Z" mark on the collapsed rail). */
   brandTitle: string;
   /** Small label above the page title in the top bar, e.g. "Recruiter Portal". */
   contextLabel: string;
@@ -147,10 +147,10 @@ export function AppShell({
     .sort((a, b) => b.to.length - a.to.length)
     .find((item) => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)));
 
-  // The browser tab names the page and the product ("Jobs · HireZ").
+  // The browser tab names the page and the product ("Jobs · ZPHIREX").
   const pageTitle = current?.label ?? brandTitle;
   useEffect(() => {
-    document.title = pageTitle === "HireZ" ? "HireZ" : `${pageTitle} · HireZ`;
+    document.title = pageTitle === "ZPHIREX" ? "ZPHIREX" : `${pageTitle} · ZPHIREX`;
   }, [pageTitle]);
 
   // Move the sliding indicator to whichever link React Router marked active.
@@ -205,7 +205,7 @@ export function AppShell({
         // the accessibility tree instead of leaving invisible focus stops.
         inert={drawerHidden}
       >
-        {/* One compact row: [collapse/expand] [HireZ]. On the 72px rail the
+        {/* One compact row: [collapse/expand] [ZPHIREX]. On the 72px rail the
             full wordmark doesn't fit, so the same row shows the toggle and
             the compact "Z" mark, centred together at the same row height.
             Keyed by form so the swap fades in (shell.css) rather than

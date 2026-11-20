@@ -200,7 +200,7 @@ async def test_candidate_can_start_and_submit_via_token_no_auth(
     assert submit.status_code == 200, submit.text
     result = submit.json()
     # Candidate-facing result carries no score — recruiters/admins see it
-    # separately via the recruiter endpoint below (SIGVITAS platform
+    # separately via the recruiter endpoint below (ZPHIREX platform
     # overhaul § 4: never expose the score to the candidate).
     assert set(result.keys()) == {"submitted_at"}
 

@@ -67,7 +67,7 @@ export function LoginPage() {
 
       <main className="signin-main">
         <div className="signin-card">
-          <Link to="/" className="signin-brand" aria-label="HireZ home">
+          <Link to="/" className="signin-brand" aria-label="ZPHIREX home">
             <Wordmark size="md" />
           </Link>
           <h1>Sign in</h1>

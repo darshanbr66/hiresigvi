@@ -4,7 +4,7 @@ Revision ID: d2b3c4e5f6a7
 Revises: c1a2f3b4d5e6
 Create Date: 2026-09-18 12:30:00.000000
 
-Adds `jobs.description_visible` (SIGVITAS platform overhaul § 2): hiding a
+Adds `jobs.description_visible` (ZPHIREX platform overhaul § 2): hiding a
 job description is a UI-visibility toggle only — the JD text itself is
 never deleted or truncated, this column just gates whether the public
 job-detail endpoint includes it (app/api/v1/public/jobs.py). Defaults to

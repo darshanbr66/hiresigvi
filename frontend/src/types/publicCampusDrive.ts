@@ -19,7 +19,7 @@ export interface PublicCampusDriveView {
 }
 
 /** Returned once a drive is CLOSED — deliberately carries no JD, drive
- * description, or assessment info (SIGVITAS platform overhaul § 16). */
+ * description, or assessment info (ZPHIREX platform overhaul § 16). */
 export interface PublicCampusDriveUnavailable {
   kind: "unavailable";
   message: string;

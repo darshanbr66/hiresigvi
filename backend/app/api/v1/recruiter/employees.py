@@ -1,4 +1,4 @@
-"""Employee directory management for the Team Hierarchy feature (SIGVITAS
+"""Employee directory management for the Team Hierarchy feature (ZPHIREX
 platform overhaul § 9-11). `organization_id` always comes from the
 authenticated caller, never the request. Deliberately separate from
 `app/api/v1/recruiter/users.py` (portal login + RBAC) — most employees

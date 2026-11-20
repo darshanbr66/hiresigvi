@@ -11,21 +11,79 @@
   background: var(--color-bg);
 }
 
+/* The candidate-facing top bar (PublicHeader): deep navy in both themes —
+   Zodiac Patent's official palette — so the organization's logo (white
+   wordmark) sits on it unaltered and the bar flows into the careers hero. */
 .public-nav {
   position: sticky;
   top: 0;
   z-index: 20;
-  padding: 0.7rem clamp(1rem, 4vw, 2rem);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.5rem;
+  padding: 0.5rem clamp(1rem, 4vw, 2.5rem);
+  background: #10263f;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  color: #ffffff;
 }
 
 .public-brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.75rem;
+  min-width: 0;
   color: inherit;
   text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.public-brand:focus-visible {
+  outline: 2px solid #0092d4;
+  outline-offset: 3px;
+}
+
+.public-brand-logo {
+  display: block;
+  width: auto;
+  height: 1.5rem;
+}
+
+.public-brand-divider {
+  width: 1px;
+  height: 1.25rem;
+  background: rgb(255 255 255 / 22%);
+  flex-shrink: 0;
+}
+
+.public-brand-label {
+  color: #b9c8d8;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .public-brand-logo {
+    height: 1.75rem;
+  }
+}
+
+.public-nav .theme-toggle {
+  border-color: rgb(255 255 255 / 18%);
+  background: transparent;
+  color: #ffffff;
+}
+
+.public-nav .theme-toggle:hover {
+  background: rgb(255 255 255 / 8%);
+}
+
+.public-nav .theme-toggle:focus-visible {
+  outline: 2px solid #0092d4;
+  outline-offset: 2px;
 }
 
 .public-shell {
@@ -742,22 +800,6 @@
 }
 
 /* Careers page sections moved from the company homepage (first HR meeting). */
-.careers-section {
-  margin-top: 3rem;
-}
-
-.careers-section h2 {
-  margin: 0.25rem 0 0;
-}
-
-.careers-section .principle-grid {
-  margin-top: 1.25rem;
-}
-
-.careers-contact {
-  margin-top: 2.5rem;
-}
-
 /* Recruiter: AI screen-out override (advisory decision, HR has final say). */
 .ai-override-card {
   border-color: var(--color-warn-text);

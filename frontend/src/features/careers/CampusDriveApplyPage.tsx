@@ -18,7 +18,7 @@ export function CampusDriveApplyPage() {
   });
 
   return (
-    <div>
+    <div className="public-page">
       <PublicHeader title={driveQuery.data?.kind === "drive" ? driveQuery.data.organization_name : "Careers"} />
       <div className="public-shell">
         {driveQuery.isPending && <p role="status">Loading drive details…</p>}

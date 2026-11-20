@@ -1,4 +1,4 @@
-# Render Blueprint for the SIGVITAS recruitment platform backend.
+# Render Blueprint for the ZPHIREX recruitment platform backend.
 #
 # This provisions the FastAPI web service only. The Postgres database is
 # created separately (Render's managed Postgres, with pgvector enabled) per

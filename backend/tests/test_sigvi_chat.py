@@ -30,7 +30,7 @@ from app.integrations.ai import (
     get_chat_provider,
 )
 from app.integrations.ai import gemini_provider as gemini_module
-from app.knowledge import SIGVITAS_PUBLIC_KNOWLEDGE, KeywordKnowledgeRetriever
+from app.knowledge import ZODIAC_PUBLIC_KNOWLEDGE, KeywordKnowledgeRetriever
 from app.main import app
 from app.models.user import User
 from app.schemas.sigvi import ChatHistoryMessage
@@ -99,7 +99,9 @@ def _strict_limits(per_client: int, global_limit: int = 1000) -> SigviRateLimite
     return limiters
 
 
-async def _chat(client: AsyncClient, message: str = "Tell me about Sigvitas", **extra: Any) -> Any:
+async def _chat(
+    client: AsyncClient, message: str = "Tell me about Zodiac Patent", **extra: Any
+) -> Any:
     return await client.post(CHAT_URL, json={"message": message, **extra})
 
 
@@ -148,7 +150,7 @@ async def _org_with_jobs(client: AsyncClient, slug: str, jobs: list[dict[str, An
 
 
 @pytest.fixture
-def sigvitas_settings(monkeypatch: pytest.MonkeyPatch, super_admin: User) -> None:
+def careers_site_settings(monkeypatch: pytest.MonkeyPatch, super_admin: User) -> None:
     """Point the assistant's default site at a slug the test controls."""
     base = get_settings()
     patched = base.model_copy(update={"sigvi_organization_slug": "sigvi-test-org"})
@@ -181,17 +183,17 @@ _JOBS = [
 async def test_successful_response_is_structured(
     client: AsyncClient, provider: FakeChatProvider
 ) -> None:
-    provider.reply = "Sigvitas is a recruitment platform."
+    provider.reply = "Zodiac Patent works in U.S. patent services."
 
-    response = await _chat(client, "What is Sigvitas?")
+    response = await _chat(client, "What is Zodiac Patent?")
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["message"] == "Sigvitas is a recruitment platform."
+    assert body["message"] == "Zodiac Patent works in U.S. patent services."
     uuid.UUID(body["conversation_id"])  # generated when the client sent none
     assert body["jobs"] == []
     assert {"id", "title", "type", "url"} == set(body["sources"][0])
-    assert any(source["id"] == "about-sigvitas" for source in body["sources"])
+    assert any(source["id"] == "about-zodiac-patent" for source in body["sources"])
     assert len(provider.calls) == 1
     assert provider.calls[0]["max_output_tokens"] == get_settings().sigvi_max_output_tokens
 
@@ -210,7 +212,7 @@ async def test_endpoint_is_public_no_credentials_needed(
     assert response.status_code == 200
 
 
-async def test_general_question_is_answered_without_sigvitas_context(
+async def test_general_question_is_answered_without_company_context(
     client: AsyncClient, provider: FakeChatProvider
 ) -> None:
     """General/career questions go to the model as-is: no refusal, and no
@@ -223,7 +225,7 @@ async def test_general_question_is_answered_without_sigvitas_context(
     assert response.json()["message"] == provider.reply
     prompt = provider.calls[0]["system_prompt"]
     assert "<open_jobs count=" not in prompt
-    assert "No SIGVITAS-specific reference material matched" in prompt
+    assert "No Zodiac Patent reference material matched" in prompt
 
 
 # --- endpoint: input validation -------------------------------------------------
@@ -289,7 +291,7 @@ async def test_provider_not_configured_reports_unavailable_no_fake_answer(
 ) -> None:
     """No provider override and no GEMINI_API_KEY (conftest blanks it): the
     assistant says it is unavailable — it must not answer."""
-    response = await _chat(client, "What is Sigvitas?")
+    response = await _chat(client, "What does Zodiac Patent do?")
 
     assert response.status_code == 503
     error = response.json()["error"]
@@ -401,7 +403,7 @@ def test_build_conversation_strips_control_characters() -> None:
 
 
 async def test_jobs_are_looked_up_only_when_asked_about(
-    client: AsyncClient, provider: FakeChatProvider, sigvitas_settings: None
+    client: AsyncClient, provider: FakeChatProvider, careers_site_settings: None
 ) -> None:
     await _org_with_jobs(client, "sigvi-test-org", _JOBS)
 
@@ -413,7 +415,7 @@ async def test_jobs_are_looked_up_only_when_asked_about(
 
 
 async def test_followup_question_keeps_job_context_from_history(
-    client: AsyncClient, provider: FakeChatProvider, sigvitas_settings: None
+    client: AsyncClient, provider: FakeChatProvider, careers_site_settings: None
 ) -> None:
     await _org_with_jobs(client, "sigvi-test-org", _JOBS)
     history = [
@@ -429,7 +431,7 @@ async def test_followup_question_keeps_job_context_from_history(
 
 
 async def test_job_context_contains_only_public_open_job_facts(
-    client: AsyncClient, provider: FakeChatProvider, sigvitas_settings: None
+    client: AsyncClient, provider: FakeChatProvider, careers_site_settings: None
 ) -> None:
     await _org_with_jobs(client, "sigvi-test-org", _JOBS)
     await _org_with_jobs(
@@ -455,7 +457,7 @@ async def test_job_context_contains_only_public_open_job_facts(
 
 
 async def test_no_open_jobs_is_stated_plainly(
-    client: AsyncClient, provider: FakeChatProvider, sigvitas_settings: None
+    client: AsyncClient, provider: FakeChatProvider, careers_site_settings: None
 ) -> None:
     await _org_with_jobs(client, "sigvi-test-org", [{"title": "Draft Only", "publish": False}])
 
@@ -475,7 +477,7 @@ async def test_unknown_organization_slug_yields_no_jobs_not_an_error(
 
 
 async def test_job_cards_are_built_only_from_real_open_jobs_named_in_the_reply(
-    client: AsyncClient, provider: FakeChatProvider, sigvitas_settings: None
+    client: AsyncClient, provider: FakeChatProvider, careers_site_settings: None
 ) -> None:
     await _org_with_jobs(client, "sigvi-test-org", _JOBS)
     provider.reply = (
@@ -508,7 +510,7 @@ async def test_job_cards_are_built_only_from_real_open_jobs_named_in_the_reply(
 
 
 async def test_no_card_when_reply_names_no_job(
-    client: AsyncClient, provider: FakeChatProvider, sigvitas_settings: None
+    client: AsyncClient, provider: FakeChatProvider, careers_site_settings: None
 ) -> None:
     await _org_with_jobs(client, "sigvi-test-org", _JOBS)
     provider.reply = "None of the current roles mention that."
@@ -867,7 +869,8 @@ def test_configuration_defaults() -> None:
     assert settings.gemini_model
     assert 0 < settings.sigvi_max_output_tokens <= 2048
     assert settings.sigvi_request_timeout_seconds > 0
-    assert settings.sigvi_organization_slug == "sigvitas"
+    assert settings.sigvi_organization_slug == "zodiac-patent"
+    assert settings.organization_slug_aliases == {"sigvitas": "zodiac-patent"}
 
 
 # --- knowledge layer ------------------------------------------------------------
@@ -876,18 +879,29 @@ def test_configuration_defaults() -> None:
 @pytest.mark.parametrize(
     ("question", "expected_id"),
     [
-        ("What is Sigvitas?", "about-sigvitas"),
+        ("What is Zodiac Patent?", "about-zodiac-patent"),
+        ("What kind of work does Zodiac Patent do?", "work-areas"),
+        ("Do you do patent quality control?", "work-areas"),
+        ("What opportunities are available?", "opportunities"),
+        ("Are there full time jobs?", "full-time-jobs"),
+        ("Do you offer internships?", "internships"),
+        ("What is Zodiac Training Academy?", "training-academy"),
+        ("Are scholarships available?", "scholarships"),
+        ("Tell me about trainee programs", "trainee-programs"),
         ("How can I apply for a job?", "how-to-apply"),
         ("What information is required when applying?", "application-requirements"),
         ("What happens after I apply?", "after-you-apply"),
+        ("How does the hiring process work?", "after-you-apply"),
         ("How does the assessment work?", "assessments"),
-        ("What is a Campus Drive?", "campus-drives"),
-        ("How does the recruitment process work?", "hiring-process"),
+        ("What is a Campus Drive?", "campus-recruitment"),
+        ("What is the salary for freshers?", "not-published"),
+        ("Is work from home allowed?", "not-published"),
         ("How can I contact the recruitment team?", "contact"),
+        ("Are you a chatbot?", "about-zodi"),
     ],
 )
 def test_knowledge_retrieval_finds_the_right_entry(question: str, expected_id: str) -> None:
-    retriever = KeywordKnowledgeRetriever(SIGVITAS_PUBLIC_KNOWLEDGE)
+    retriever = KeywordKnowledgeRetriever(ZODIAC_PUBLIC_KNOWLEDGE)
     ids = [entry.id for entry in retriever.retrieve(question, limit=3)]
     assert expected_id in ids
 
@@ -898,7 +912,7 @@ def test_knowledge_retrieval_finds_the_right_entry(question: str, expected_id: s
         "What is the capital of France?",
         "",
         # Career/recruitment questions are answered from general knowledge —
-        # they must not drag SIGVITAS entries (and misleading "sources") along.
+        # they must not drag company entries (and misleading "sources") along.
         "What skills are needed for a React developer?",
         "How should I prepare for a technical interview?",
         "What is the difference between frontend and backend development?",
@@ -906,12 +920,12 @@ def test_knowledge_retrieval_finds_the_right_entry(question: str, expected_id: s
     ],
 )
 def test_knowledge_retrieval_returns_nothing_for_unrelated_questions(question: str) -> None:
-    retriever = KeywordKnowledgeRetriever(SIGVITAS_PUBLIC_KNOWLEDGE)
+    retriever = KeywordKnowledgeRetriever(ZODIAC_PUBLIC_KNOWLEDGE)
     assert retriever.retrieve(question, limit=3) == []
 
 
 def test_knowledge_is_public_safe_and_does_not_invent_contact_details() -> None:
-    corpus = " ".join(e.content + e.title for e in SIGVITAS_PUBLIC_KNOWLEDGE)
+    corpus = " ".join(e.content + e.title for e in ZODIAC_PUBLIC_KNOWLEDGE)
     for forbidden in (
         "SUPER_ADMIN",
         "ORG_ADMIN",
@@ -927,10 +941,10 @@ def test_knowledge_is_public_safe_and_does_not_invent_contact_details() -> None:
         "organization_id",
     ):
         assert forbidden.lower() not in corpus.lower(), forbidden
-    contact = next(e for e in SIGVITAS_PUBLIC_KNOWLEDGE if e.id == "contact")
+    contact = next(e for e in ZODIAC_PUBLIC_KNOWLEDGE if e.id == "contact")
     assert "@" not in contact.content
-    assert "No public contact details" in contact.content
-    assert len({e.id for e in SIGVITAS_PUBLIC_KNOWLEDGE}) == len(SIGVITAS_PUBLIC_KNOWLEDGE)
+    assert "none may be guessed" in contact.content
+    assert len({e.id for e in ZODIAC_PUBLIC_KNOWLEDGE}) == len(ZODIAC_PUBLIC_KNOWLEDGE)
 
 
 async def test_knowledge_used_is_reported_as_sources(
@@ -986,7 +1000,7 @@ def test_job_cards_match_whole_titles_only() -> None:
     jobs = [_job("Patent Engineer"), _job("Data Analyst")]
 
     cards = find_mentioned_jobs(
-        "We hire across data, design and patent engineering, not astronauts.", jobs, "sigvitas"
+        "We hire across data, design and patent engineering, not astronauts.", jobs, "zodiac-patent"
     )
 
     assert cards == []
@@ -1021,7 +1035,7 @@ def test_job_title_matching_is_case_insensitive_and_handles_punctuation() -> Non
 
 
 def test_hr_department_questions_do_not_cite_the_contact_entry() -> None:
-    retriever = KeywordKnowledgeRetriever(SIGVITAS_PUBLIC_KNOWLEDGE)
+    retriever = KeywordKnowledgeRetriever(ZODIAC_PUBLIC_KNOWLEDGE)
 
     assert retriever.retrieve("Which of those is in the HR department?", limit=3) == []
     # ...while a genuine contact question still finds it.
@@ -1041,10 +1055,115 @@ async def test_prompt_forbids_unstated_job_requirements_and_flags_partial_lists(
 def test_a_contact_question_cites_only_the_contact_entry() -> None:
     """ "phone" is also an optional application field, but must not drag the
     application-requirements entry into a question about contacting the team."""
-    retriever = KeywordKnowledgeRetriever(SIGVITAS_PUBLIC_KNOWLEDGE)
+    retriever = KeywordKnowledgeRetriever(ZODIAC_PUBLIC_KNOWLEDGE)
 
     ids = [
         e.id for e in retriever.retrieve("What is the HR email address and phone number?", limit=3)
     ]
 
     assert ids == ["contact"]
+
+
+
+# --- Zodi branding and grounding -----------------------------------------------
+
+
+def test_public_assistant_carries_no_former_branding() -> None:
+    """The assistant is Zodi for Zodiac Patent: neither the knowledge base nor
+    the prompt or any visitor-facing message names the former brands."""
+    from app.services import sigvi_prompts
+
+    corpus = " ".join(e.id + e.title + e.content + (e.url or "") for e in ZODIAC_PUBLIC_KNOWLEDGE)
+    prompt = sigvi_prompts.build_system_prompt(knowledge=list(ZODIAC_PUBLIC_KNOWLEDGE), jobs_block=None)
+    visible = [
+        prompt.replace(sigvi_prompts.PROMPT_CANARY, ""),  # internal marker, never output
+        corpus,
+        sigvi_prompts.DECLINED_REPLY,
+        sigvi_prompts.CANNOT_SHARE_REPLY,
+        sigvi_service.UNAVAILABLE_MESSAGE,
+        sigvi_service.BUSY_MESSAGE,
+        sigvi_service.TIMEOUT_MESSAGE,
+        sigvi_service.EMPTY_MESSAGE,
+    ]
+    for text in visible:
+        assert "sigvitas" not in text.lower()
+        assert "sigvi" not in text.lower()
+        assert "hirez" not in text.lower()
+    assert prompt.startswith("You are Zodi,")
+    assert "Zodiac Patent" in prompt
+
+
+def test_prompt_forbids_inventing_unpublished_details() -> None:
+    from app.services.sigvi_prompts import build_system_prompt
+
+    prompt = build_system_prompt(knowledge=[], jobs_block=None)
+    for topic in ("salaries", "eligibility", "scholarship amounts", "durations", "benefits"):
+        assert topic in prompt
+    assert "say clearly that you don't have that information" in prompt
+
+
+def test_contact_block_only_when_an_email_is_published() -> None:
+    from app.services.sigvi_prompts import build_system_prompt
+
+    without = build_system_prompt(knowledge=[], jobs_block=None, contact_email=None)
+    assert "<contact>Recruitment" not in without
+    with_email = build_system_prompt(
+        knowledge=[], jobs_block=None, contact_email="careers@example.test"
+    )
+    assert "<contact>Recruitment team's published careers email: careers@example.test</contact>" in (
+        with_email
+    )
+
+
+def test_programs_block_states_only_published_facts() -> None:
+    from app.services.sigvi_job_context import PublicProgram, format_programs_block
+
+    block = format_programs_block(
+        [
+            PublicProgram(
+                id=uuid.uuid4(),
+                title="Patent Analyst Training",
+                accepting_applications=True,
+                application_closes_at="2026-12-31",
+                training_duration_options=(6, 12),
+            ),
+            PublicProgram(
+                id=uuid.uuid4(),
+                title="Closed <b>Program</b>",
+                accepting_applications=False,
+                application_closes_at=None,
+                training_duration_options=(),
+            ),
+        ]
+    )
+    assert block.startswith('<open_programs count="2" shown="2">')
+    assert "Title: Patent Analyst Training | Accepting applications | Closes: 2026-12-31" in block
+    assert "Training duration options: 6 or 12 months" in block
+    assert "Title: Closed (b)Program(/b) | Not accepting applications" in block
+    assert "<b>" not in block
+    assert format_programs_block([]).startswith('<open_programs count="0">')
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Are scholarships available?", True),
+        ("Tell me about Zodiac Training Academy", True),
+        ("What trainee programs do you have?", True),
+        ("How do I apply?", False),
+        ("What does Zodiac Patent do?", False),
+    ],
+)
+def test_program_intent_detection(message: str, expected: bool) -> None:
+    from app.services.sigvi_job_context import needs_program_context
+
+    assert needs_program_context(message, []) is expected
+
+
+async def test_program_questions_put_open_programs_in_the_prompt(
+    client: AsyncClient, provider: FakeChatProvider
+) -> None:
+    response = await _chat(client, "Are any scholarships open?")
+
+    assert response.status_code == 200
+    assert "<open_programs count=" in provider.calls[0]["system_prompt"]

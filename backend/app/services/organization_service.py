@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.security import hash_password
 from app.db.rls import rls_bypass
@@ -71,9 +72,30 @@ async def get_organization_by_slug(db: AsyncSession, slug: str) -> Organization 
     app/db/rls.py). Used by the anonymous public career site before any
     Candidate/Job/Application query, which get properly tenant-scoped via
     `set_tenant_context()` immediately afterward — this bypass only covers
-    the one lookup needed to find the org id in the first place."""
+    the one lookup needed to find the org id in the first place.
+
+    A slug the organization used before it was renamed
+    (`settings.organization_slug_aliases`) resolves to the organization's
+    current record, so old public links keep working. The reverse also holds
+    until the rename has been applied (deploy order: a frontend already using
+    the new slug may reach a database not yet migrated). An exact match always
+    wins: aliases are only consulted when no organization has the slug."""
     async with rls_bypass(db):
-        return await db.scalar(select(Organization).where(Organization.slug == slug))
+        organization = await db.scalar(select(Organization).where(Organization.slug == slug))
+        if organization is not None:
+            return organization
+        aliases = get_settings().organization_slug_aliases
+        fallbacks = [aliases[slug]] if slug in aliases else []
+        fallbacks += [old for old, current in aliases.items() if current == slug]
+        for candidate in fallbacks:
+            if candidate == slug:
+                continue
+            organization = await db.scalar(
+                select(Organization).where(Organization.slug == candidate)
+            )
+            if organization is not None:
+                return organization
+        return None
 
 
 async def update_organization_settings(

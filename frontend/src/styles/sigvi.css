@@ -1,5 +1,5 @@
 /*
- * Sigvi — SIGVITAS' AI assistant.
+ * Zodi — the public AI assistant (the `sigvi` feature in code).
  *
  * Sigvi is part of the site, not a demo floating over it: it uses the design
  * system's own tokens (tokens.css) for colour, depth, type, radii and motion,
@@ -734,6 +734,12 @@
   .sigvi {
     --sv-gap: 1rem;
     bottom: calc(var(--sv-gap) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* the one-time "Hi, I'm Zodi" bubble would sit over the homepage's last
+     opportunity card on a phone; the launcher alone is enough there */
+  .sigvi-teaser {
+    display: none;
   }
 
   /* just the head: a compact round button that covers as little as possible */

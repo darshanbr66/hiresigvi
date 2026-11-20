@@ -311,7 +311,7 @@ class AssessmentResult(UUIDPrimaryKeyMixin, Base):
 
 
 class MonitoringEventType(StrEnum):
-    """Transparent, browser-observable assessment-monitoring events (SIGVITAS
+    """Transparent, browser-observable assessment-monitoring events (ZPHIREX
     platform overhaul § 6) — an event is an *observed* browser condition,
     never an automatic accusation. Only events genuinely reliable to detect
     in a standard browser are listed; do not add one that can't actually be

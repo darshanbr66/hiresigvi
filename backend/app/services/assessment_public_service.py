@@ -210,7 +210,7 @@ async def record_monitoring_events(
     db: AsyncSession, token: str, events: list[MonitoringEventCreate]
 ) -> None:
     """Persists observed browser-monitoring events for the candidate's
-    current attempt (SIGVITAS platform overhaul § 6-7) — only accepted
+    current attempt (ZPHIREX platform overhaul § 6-7) — only accepted
     while the attempt is actually in progress (STARTED), so the event
     stream stays meaningful (no events before consent/start, none after
     submission)."""

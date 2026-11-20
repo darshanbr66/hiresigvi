@@ -130,7 +130,7 @@ describe("startup screen markup (index.html)", () => {
     document.body.innerHTML = new DOMParser().parseFromString(indexHtml, "text/html").body.innerHTML;
     const splash = document.getElementById(BRAND_LOADING_ID);
     expect(splash).toHaveAttribute("role", "status");
-    expect(splash).toHaveAttribute("aria-label", "Loading HireZ");
+    expect(splash).toHaveAttribute("aria-label", "Loading");
 
     const mark = splash?.querySelector(":scope > .brand-loading-mark");
     expect(mark).toHaveAttribute("aria-hidden", "true");

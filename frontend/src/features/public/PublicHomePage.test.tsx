@@ -1,96 +1,129 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as careersApi from "../careers/api";
+import { CareersPage } from "../careers/CareersPage";
 import { ThemeProvider } from "../theme/ThemeContext";
+import { careersPath } from "./careersOrg";
 import { PublicHomePage } from "./PublicHomePage";
 
-function renderWithProviders(ui: React.ReactElement) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderHome() {
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <MemoryRouter>{ui}</MemoryRouter>
-      </ThemeProvider>
-    </QueryClientProvider>,
+    <ThemeProvider>
+      <MemoryRouter>
+        <PublicHomePage />
+      </MemoryRouter>
+    </ThemeProvider>,
   );
 }
 
 describe("PublicHomePage", () => {
-  it("presents HireZ with a text-only wordmark, never the old product name", () => {
-    const { container } = renderWithProviders(<PublicHomePage />);
+  it("is branded ZPHIREX with Zodiac Patent's official logo — never Sigvitas or HireZ", () => {
+    const { container } = renderHome();
 
-    const nav = container.querySelector(".landing-nav") as HTMLElement;
-    expect(within(nav).getByRole("img", { name: "HireZ" })).toHaveTextContent("HireZ");
-    expect(container.querySelector("img")).toBeNull();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Hiring, organized end to end.");
-    expect(screen.queryByText(/ai recruitment platform/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "ZPHIREX" })).toBeInTheDocument();
+    const logo = screen.getByRole("img", { name: "Zodiac Patent" });
+    expect(logo).toHaveAttribute("src", "/brand/zodiac-patent-logo.png");
+    expect(logo.closest("a")).toHaveAttribute("href", "https://zodiacpatent.com/");
+    expect(container.textContent).not.toMatch(/sigvitas|hirez/i);
+    for (const el of container.querySelectorAll("[aria-label], [alt]")) {
+      expect(`${el.getAttribute("aria-label")} ${el.getAttribute("alt")}`).not.toMatch(/sigvitas|hirez/i);
+    }
+    expect(document.title).toBe("Careers at Zodiac Patent | ZPHIREX");
   });
 
-  it("is a short product page: capabilities, how it works, campus, and a closing call to action", () => {
-    renderWithProviders(<PublicHomePage />);
+  it("shows one heading and exactly four opportunity cards, in order", () => {
+    renderHome();
 
-    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual([
-      "Everything your hiring team needs, in one place",
-      "From application to offer",
-      "Built for hiring from campus",
-      "Hire with clarity.",
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Explore Opportunities");
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    const cards = within(screen.getByRole("list", { name: "Opportunity categories" })).getAllByRole("link");
+    expect(cards.map((card) => card.querySelector(".zx-card-title")?.textContent)).toEqual([
+      "Open Roles",
+      "Internships",
+      "Campus Hiring",
+      "Training Programs",
     ]);
-    for (const capability of ["Recruitment management", "Candidate screening", "Assessments", "Interviews", "Campus hiring"]) {
-      expect(screen.getByRole("heading", { name: capability })).toBeInTheDocument();
-    }
   });
 
-  it("keeps internal operating rules off the public page", () => {
-    renderWithProviders(<PublicHomePage />);
+  it("links each card to its exact careers destination", () => {
+    renderHome();
 
-    for (const internal of [
-      /approver/i,
-      /approve their own/i,
-      /audit/i,
-      /organization boundaries/i,
-      /pass mark/i,
-      /funding/i,
-      /separate approvals/i,
-      /recorded decision/i,
-    ]) {
-      expect(screen.queryByText(internal)).not.toBeInTheDocument();
-    }
+    const hrefFor = (title: RegExp) => screen.getByRole("link", { name: title }).getAttribute("href");
+    expect(careersPath).toBe("/org/zodiac-patent");
+    expect(hrefFor(/^Open Roles/)).toBe("/org/zodiac-patent?view=all");
+    expect(hrefFor(/^Internships/)).toBe("/org/zodiac-patent?view=jobs");
+    expect(hrefFor(/^Campus Hiring/)).toBe("/org/zodiac-patent?view=jobs");
+    expect(hrefFor(/^Training Programs/)).toBe("/org/zodiac-patent?view=jobs");
+    const openRoles = screen.getByRole("link", { name: /^Open Roles/ });
+    expect(openRoles).toHaveTextContent("Explore current job opportunities.");
+    expect(openRoles).toHaveTextContent("View Open Roles");
+    expect(screen.getByRole("link", { name: /^Training Programs/ })).toHaveTextContent("Explore Programs");
   });
 
-  it("makes no unsupported claims: no testimonials, customer logos or statistics", () => {
-    const { container } = renderWithProviders(<PublicHomePage />);
+  it("keeps the card decoration out of the accessibility tree", () => {
+    const { container } = renderHome();
 
-    expect(screen.queryByText(/testimonial|trusted by|customers|\d+%/i)).not.toBeInTheDocument();
-    expect(container.querySelector("blockquote")).toBeNull();
+    const decos = container.querySelectorAll(".zx-card-deco");
+    expect(decos).toHaveLength(4);
+    for (const deco of decos) expect(deco).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("sends every call to action to a real destination and doesn't fetch jobs", () => {
-    const listOpenJobs = vi.spyOn(careersApi, "listOpenJobs");
-    renderWithProviders(<PublicHomePage />);
+  it("has no long-form sections, footer or marketing calls to action", () => {
+    const { container } = renderHome();
 
-    const signIn = screen.getAllByRole("link", { name: /staff sign in/i });
-    expect(signIn.length).toBeGreaterThan(0);
-    for (const link of signIn) expect(link).toHaveAttribute("href", "/recruiter/login");
-    const roles = screen.getAllByRole("link", { name: /open roles/i });
-    expect(roles.length).toBeGreaterThan(0);
-    for (const link of roles) expect(link).toHaveAttribute("href", "/org/sigvitas");
-    expect(listOpenJobs).not.toHaveBeenCalled();
+    expect(container.querySelector("footer")).toBeNull();
+    expect(container.querySelectorAll("section")).toHaveLength(0);
+    expect(container.textContent).not.toMatch(/FAQ|Work Areas|Scholarship|Training Academy|About Zodiac/i);
   });
 
-  it("previews the product as one described image with real stages and no invented data", () => {
-    const { container } = renderWithProviders(<PublicHomePage />);
+  it("keeps the staff sign-in as a quiet header link", () => {
+    renderHome();
 
-    const preview = screen.getByRole("img", { name: /preview of a hirez application/i });
-    expect(container.querySelector("canvas")).toBeNull();
-    // the parts are presentation only for assistive tech
-    for (const part of preview.children) expect(part).toHaveAttribute("aria-hidden", "true");
-    for (const stage of ["Applied", "Screening", "Assessment", "Interview", "Selected", "Hired"]) {
-      expect(within(preview).getAllByText(stage).length).toBeGreaterThan(0);
-    }
-    // no scores, counts or rates — and no personal names (placeholder lines instead)
-    expect(preview.textContent).not.toMatch(/\d/);
+    const staff = screen.getByRole("link", { name: "Staff sign in" });
+    expect(staff).toHaveAttribute("href", "/recruiter/login");
+    expect(staff).not.toHaveClass("btn");
+  });
+});
+
+describe("homepage card -> careers tab", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["Open Roles", "All"],
+    ["Internships", "Open Roles"],
+    ["Campus Hiring", "Open Roles"],
+    ["Training Programs", "Open Roles"],
+  ])("%s opens the careers page on the %s tab", async (card, tab) => {
+    vi.spyOn(careersApi, "listOpenJobs").mockResolvedValue([]);
+    vi.spyOn(careersApi, "listPublicPrograms").mockResolvedValue([]);
+    vi.spyOn(careersApi, "getPublicOrganization").mockResolvedValue({
+      name: "Zodiac Patent",
+      slug: "zodiac-patent",
+      careers_contact_email: null,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/"]}>
+            <Routes>
+              <Route path="/" element={<PublicHomePage />} />
+              <Route path="/org/:slug" element={<CareersPage />} />
+            </Routes>
+          </MemoryRouter>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: new RegExp(`^${card}`) }));
+
+    const tabs = await screen.findByRole("navigation", { name: "Opportunity type" });
+    expect(within(tabs).getByRole("link", { name: tab })).toHaveAttribute("aria-current", "page");
+    const other = tab === "All" ? "Open Roles" : "All";
+    expect(within(tabs).getByRole("link", { name: other })).not.toHaveAttribute("aria-current");
   });
 });

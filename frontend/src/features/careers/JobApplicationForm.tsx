@@ -47,7 +47,7 @@ type Step = "details" | "verify" | "resume" | "review";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "details", label: "Your details" },
-  { key: "verify", label: "Verify email" },
+  { key: "verify", label: "Verify" },
   { key: "resume", label: "Resume" },
   { key: "review", label: "Review & submit" },
 ];

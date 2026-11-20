@@ -294,7 +294,7 @@ async def list_application_assessment_events(
 ) -> list[MonitoringEventResponse]:
     """Observed browser-monitoring events for this application's current
     (latest) attempt — "Assessment Activity" on the application detail
-    page (SIGVITAS platform overhaul § 7). Permission-gated exactly like
+    page (ZPHIREX platform overhaul § 7). Permission-gated exactly like
     the assessment/result data above; never exposed to the candidate."""
     invitation = await assessment_service.get_invitation_for_application(db, application_id)
     if invitation is None:

@@ -99,7 +99,7 @@ Notes:
 - `REJECTED`/`HIRED` are terminal — no code path transitions out of them. A
   mis-rejection is corrected by recruiter override (explicit, audited,
   permission-gated), not by "un-terminal-izing" a state silently.
-- **`WITHDRAWN` was removed (SIGVITAS platform overhaul):** the platform no
+- **`WITHDRAWN` was removed (ZPHIREX platform overhaul):** the platform no
   longer distinguishes a candidate-initiated withdrawal from a recruiter
   rejection — every prior `WITHDRAWN` application became `REJECTED`, and the
   value no longer exists in the enum (application code or database). `HIRED`

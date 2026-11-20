@@ -1,22 +1,22 @@
 """One-off, organization-scoped removal of demo/test recruitment data before
-a production launch (e.g. the SIGVITAS tenant). Never run it without a fresh
+a production launch (e.g. the Zodiac Patent tenant). Never run it without a fresh
 PostgreSQL backup and a MongoDB/GridFS backup.
 
 Modes (run from backend/, against whatever DATABASE_URL / MONGODB_URI the
 environment holds — the target host and database are printed first):
 
-    python scripts/cleanup_org_demo_data.py inventory --org-slug sigvitas
+    python scripts/cleanup_org_demo_data.py inventory --org-slug zodiac-patent
         Read-only. Users (and which would be kept), departments/employees
         (always kept), jobs, and per-table counts.
 
-    python scripts/cleanup_org_demo_data.py dry-run --org-slug sigvitas [--delete-user EMAIL ...]
+    python scripts/cleanup_org_demo_data.py dry-run --org-slug zodiac-patent [--delete-user EMAIL ...]
         Runs every DELETE inside one transaction, prints exact per-table
         counts (cascaded child rows included) and the files that would be
         removed, verifies that nothing outside the organization and nothing
         kept changed — then ROLLS BACK. Nothing is changed.
 
-    python scripts/cleanup_org_demo_data.py execute --org-slug sigvitas \
-        --confirm-org sigvitas [--files-backup-dir <empty dir>] [--delete-user EMAIL ...]
+    python scripts/cleanup_org_demo_data.py execute --org-slug zodiac-patent \
+        --confirm-org zodiac-patent [--files-backup-dir <empty dir>] [--delete-user EMAIL ...]
         With --files-backup-dir, first downloads every stored resume file
         that will be removed. Then the same transaction as dry-run —
         committed only if every check passes — and only after the commit

@@ -25,7 +25,7 @@ class PublicCampusDriveView(BaseModel):
 
 class PublicCampusDriveUnavailable(BaseModel):
     """Returned instead of `PublicCampusDriveView` once a drive is CLOSED
-    (SIGVITAS platform overhaul § 16) — deliberately carries no JD, drive
+    (ZPHIREX platform overhaul § 16) — deliberately carries no JD, drive
     description, or assessment info, so an old shared link never leaks
     recruitment content after the drive stops accepting applications. A
     DRAFT/deleted/unknown token stays a 404 (see

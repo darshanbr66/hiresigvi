@@ -103,7 +103,7 @@ describe("DepartmentsHierarchy", () => {
     renderComponent();
 
     expect(await screen.findByText(/Acme Corp\s*→\s*Departments/)).toBeInTheDocument();
-    expect(screen.queryByText(/SIGVITAS/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Zodiac Patent/)).not.toBeInTheDocument();
   });
 
   it("falls back to a neutral label when the organization name is unavailable", async () => {
@@ -188,7 +188,7 @@ describe("Organization chart", () => {
     expect(chart.getByText("Dee Designer")).toBeInTheDocument();
   });
 
-  it("shows only the signed-in organization: Acme never shows SIGVITAS and vice versa", async () => {
+  it("shows only the signed-in organization: Acme never shows Zodiac Patent and vice versa", async () => {
     vi.spyOn(teamApi, "listDepartments").mockResolvedValue(departments);
     vi.spyOn(teamApi, "listEmployees").mockResolvedValue(employees);
 
@@ -196,17 +196,17 @@ describe("Organization chart", () => {
     const acme = renderComponent();
     const acmeChart = await findChart();
     expect(acmeChart.getByLabelText("Organization: Acme Corp")).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/sigvitas/i);
+    expect(document.body.textContent).not.toMatch(/zodiac patent/i);
     acme.unmount();
 
-    mockOrganizationName = "SIGVITAS";
+    mockOrganizationName = "Zodiac Patent";
     vi.spyOn(teamApi, "listDepartments").mockResolvedValue([makeDepartment("dept-9", "Patent Engineering")]);
     vi.spyOn(teamApi, "listEmployees").mockResolvedValue([]);
     renderComponent();
-    const sigvitasChart = await findChart();
-    expect(sigvitasChart.getByLabelText("Organization: SIGVITAS")).toBeInTheDocument();
+    const zodiacChart = await findChart();
+    expect(zodiacChart.getByLabelText("Organization: Zodiac Patent")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/acme/i);
-    expect(sigvitasChart.getByText("Patent Engineering")).toBeInTheDocument();
+    expect(zodiacChart.getByText("Patent Engineering")).toBeInTheDocument();
   });
 
   it("counts and lists only active employees, and shows only name and title", async () => {

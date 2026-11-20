@@ -32,6 +32,18 @@ export function jobChips(job: PublicJobSummary): string[] {
   return chips;
 }
 
+/** The facts a careers-list card shows: jobChips without any compensation
+ * (no pay range, no "Unpaid"). Pay is shown only on the job's own page —
+ * a display rule; the data is untouched. */
+export function jobCardChips(job: PublicJobSummary): string[] {
+  const chips: string[] = [];
+  if (job.employment_type) chips.push(EMPLOYMENT_TYPE_LABELS[job.employment_type]);
+  if (job.work_mode) chips.push(WORK_MODE_LABELS[job.work_mode]);
+  if (job.duration_months) chips.push(`${job.duration_months} month(s)`);
+  if (job.hours_per_week) chips.push(`${job.hours_per_week} hrs/week`);
+  return chips;
+}
+
 /** Labelled details for the job page; only what the recruiter filled in. */
 export function jobDetailFacts(job: PublicJobDetail): { label: string; value: string }[] {
   const facts: { label: string; value: string }[] = [];

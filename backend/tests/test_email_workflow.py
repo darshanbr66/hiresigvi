@@ -295,6 +295,52 @@ async def test_admin_can_compose_preview_and_send_application_received(
     )
 
 
+async def test_published_recruitment_contact_is_the_reply_to_and_footer_contact(
+    client: AsyncClient, super_admin: User, recording_email: RecordingEmailProvider
+) -> None:
+    """With a published careers contact, candidates are pointed at the
+    recruitment team's address — never the sending staff member's login."""
+    from tests.test_candidate_intake import _set_contact
+
+    ctx = await _bootstrap_org_with_open_job(client, "wf-org-contact")
+    await _set_contact(client, ctx["slug"], "hr@wf-org-contact.dev")
+    application_id = await _public_apply(client, ctx)
+    headers = ctx["admin_headers"]
+
+    composed = (await _compose(client, headers, application_id, "APPLICATION_RECEIVED")).json()
+    preview = (
+        await client.post(
+            _email_url(application_id, "preview"), json=_draft(composed), headers=headers
+        )
+    ).json()
+    assert preview["reply_to"] == "hr@wf-org-contact.dev"
+
+    sent = await client.post(
+        _email_url(application_id, "send"), json=_draft(composed), headers=headers
+    )
+    assert sent.status_code == 200, sent.text
+    (email,) = recording_email.sent
+    assert email.reply_to == "hr@wf-org-contact.dev"
+    assert "hr@wf-org-contact.dev" in email.text and "hr@wf-org-contact.dev" in email.html
+    assert "admin@wf-org-contact.dev" not in email.text + email.html
+
+    general = await client.post(
+        "/api/v1/recruiter/email/send",
+        json={
+            "template_key": "GENERAL",
+            "subject": "Hello",
+            "body": "Dear {{candidate_name}}, a short note.",
+            "variables": {},
+            "to": ["someone@example.com"],
+            "cc": [],
+            "bcc": [],
+        },
+        headers=headers,
+    )
+    assert general.status_code == 200, general.text
+    assert recording_email.sent[-1].reply_to == "hr@wf-org-contact.dev"
+
+
 async def test_recruiter_role_can_send_and_edits_apply_only_to_that_email(
     client: AsyncClient, super_admin: User, recording_email: RecordingEmailProvider
 ) -> None:

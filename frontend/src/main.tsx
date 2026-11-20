@@ -11,6 +11,7 @@ import "./styles/filters.css";
 import "./styles/dashboard.css";
 import "./styles/landing.css";
 import "./styles/home.css";
+import "./styles/careers.css";
 import "./styles/loading.css";
 import { initBrandLoading } from "./shared/lib/brandLoading";
 

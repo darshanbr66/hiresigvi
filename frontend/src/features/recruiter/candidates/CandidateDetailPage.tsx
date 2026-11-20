@@ -94,7 +94,7 @@ export function CandidateDetailPage() {
   const candidate = candidateQuery.data;
   // Distinct roles this candidate has applied for — separate from
   // `current_title` (their professional title today), one row per unique
-  // job, each linking to that application (SIGVITAS platform overhaul § 14).
+  // job, each linking to that application (ZPHIREX platform overhaul § 14).
   const appliedRoles: [string, string][] = applicationsQuery.data
     ? [...new Map(applicationsQuery.data.map((a) => [a.job_title, a.id])).entries()]
     : [];

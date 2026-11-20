@@ -36,10 +36,21 @@
   --zx-body: #586678;
   --zx-stage: #f5f7f9;
   --zx-stage-end: #edf1f5;
+  --zx-cyan: #38bdf8;
   --zx-card: #ffffff;
-  --zx-card-border: #e5e9ee;
+  --zx-card-end: #f2f7fc;
+  --zx-card-border: #a8c3d9;
+  --zx-card-border-hover: #1fa2df;
+  --zx-card-tint: rgb(56 189 248 / 16%);
+  --zx-card-wash: rgb(0 146 212 / 6%);
+  --zx-card-ring-soft: rgb(0 146 212 / 14%);
+  --zx-card-dots: rgb(0 146 212 / 30%);
+  --zx-card-glow: 0 0 0 4px rgb(0 146 212 / 10%);
+  --zx-card-ring: rgb(0 146 212 / 26%);
+  --zx-card-highlight: inset 0 1px 0 rgb(255 255 255 / 90%);
   --zx-card-shadow: 0 1px 2px rgb(24 51 79 / 6%), 0 12px 32px -14px rgb(24 51 79 / 22%);
-  --zx-card-shadow-hover: 0 1px 2px rgb(24 51 79 / 8%), 0 18px 40px -16px rgb(24 51 79 / 30%);
+  --zx-card-shadow-hover: 0 2px 4px rgb(24 51 79 / 8%), 0 24px 48px -18px rgb(0 92 150 / 35%);
+  --zx-icon-glow: 0 6px 16px -6px rgb(0 146 212 / 55%);
   --zx-on-band: #ffffff;
   --zx-on-band-muted: #b9c8d8;
   --zx-gutter: 1rem;
@@ -82,8 +93,19 @@
     --zx-body: #9fb0c2;
     --zx-stage: #0d141c;
     --zx-stage-end: #0b1118;
-    --zx-card: #141e29;
-    --zx-card-border: #22303f;
+    --zx-cyan: #5cc8f2;
+    --zx-card: #172331;
+    --zx-card-end: #121b26;
+    --zx-card-border: #3a5c7c;
+    --zx-card-border-hover: #3eb1e8;
+    --zx-card-tint: rgb(56 189 248 / 14%);
+    --zx-card-wash: rgb(0 146 212 / 8%);
+    --zx-card-ring-soft: rgb(92 200 242 / 12%);
+    --zx-card-dots: rgb(92 200 242 / 26%);
+    --zx-card-glow: 0 0 0 4px rgb(56 189 248 / 12%);
+    --zx-card-ring: rgb(92 200 242 / 24%);
+    --zx-card-highlight: inset 0 1px 0 rgb(255 255 255 / 4%);
+    --zx-icon-glow: 0 6px 18px -6px rgb(0 146 212 / 60%);
     --zx-card-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 14px 34px -16px rgb(0 0 0 / 70%);
     --zx-card-shadow-hover: 0 1px 2px rgb(0 0 0 / 45%), 0 20px 42px -16px rgb(0 0 0 / 80%);
   }
@@ -97,8 +119,19 @@
   --zx-body: #9fb0c2;
   --zx-stage: #0d141c;
   --zx-stage-end: #0b1118;
-  --zx-card: #141e29;
-  --zx-card-border: #22303f;
+  --zx-cyan: #5cc8f2;
+  --zx-card: #172331;
+  --zx-card-end: #121b26;
+  --zx-card-border: #3a5c7c;
+  --zx-card-border-hover: #3eb1e8;
+  --zx-card-tint: rgb(56 189 248 / 14%);
+  --zx-card-wash: rgb(0 146 212 / 8%);
+  --zx-card-ring-soft: rgb(92 200 242 / 12%);
+  --zx-card-dots: rgb(92 200 242 / 26%);
+  --zx-card-glow: 0 0 0 4px rgb(56 189 248 / 12%);
+  --zx-card-ring: rgb(92 200 242 / 24%);
+  --zx-card-highlight: inset 0 1px 0 rgb(255 255 255 / 4%);
+  --zx-icon-glow: 0 6px 18px -6px rgb(0 146 212 / 60%);
   --zx-card-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 14px 34px -16px rgb(0 0 0 / 70%);
   --zx-card-shadow-hover: 0 1px 2px rgb(0 0 0 / 45%), 0 20px 42px -16px rgb(0 0 0 / 80%);
 }
@@ -324,6 +357,7 @@
 
 .zx-card {
   position: relative;
+  isolation: isolate;
   display: flex;
   align-items: flex-start;
   gap: 0.875rem;
@@ -331,32 +365,104 @@
   padding: 1rem;
   border: 1px solid var(--zx-card-border);
   border-radius: var(--radius-lg);
-  background: var(--zx-card);
+  /* a cyan glow in the top-right corner, a faint blue wash bottom-left, over
+     a surface fading from white to a whisper of blue */
+  background:
+    radial-gradient(15rem 10rem at 100% 0%, var(--zx-card-tint), transparent 70%),
+    radial-gradient(14rem 8rem at 0% 100%, var(--zx-card-wash), transparent 70%),
+    linear-gradient(180deg, var(--zx-card) 0%, var(--zx-card-end) 100%);
   color: inherit;
   text-decoration: none;
-  box-shadow: var(--zx-card-shadow);
+  /* a 0.5px inner ring in the border colour thickens the 1px edge to read as
+     ~1.5px without changing the card's size */
+  box-shadow: inset 0 0 0 0.5px var(--zx-card-border), var(--zx-card-highlight), var(--zx-card-shadow);
   overflow: hidden;
   transition:
-    border-color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
 }
 
-/* brand-blue top edge on hover/focus — the same rule, at card scale */
+/* content above every decoration */
+.zx-card-icon,
+.zx-card-body {
+  position: relative;
+  z-index: 1;
+}
+
+/* Brand-blue → cyan accent along the top edge: a short bar at the left in
+   the resting state, drawn across the full width on hover/focus. */
 .zx-card::before {
   content: "";
   position: absolute;
   inset: 0 0 auto;
+  z-index: 2;
   height: 3px;
-  background: var(--zx-brand);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform var(--dur-base) var(--ease-out);
+  background: linear-gradient(90deg, var(--zx-brand), var(--zx-cyan));
+  clip-path: inset(0 calc(100% - 3.25rem) 0 0);
+  transition: clip-path var(--dur-slow) var(--ease-out);
 }
 
 .zx-card:hover::before,
 .zx-card:focus-visible::before {
-  transform: scaleX(1);
+  clip-path: inset(0 0 0 0);
+}
+
+/* Corner decoration 1: two concentric rings, the inner disc filled with a
+   faint dot grid (the hero's texture, at card scale). Clipped by the card. */
+.zx-card::after {
+  content: "";
+  position: absolute;
+  top: -2.1rem;
+  right: -2.1rem;
+  z-index: 0;
+  width: 5.25rem;
+  height: 5.25rem;
+  border: 1px solid var(--zx-card-ring);
+  border-radius: 50%;
+  outline: 1px solid var(--zx-card-ring-soft);
+  outline-offset: 0.8rem;
+  background-image: radial-gradient(var(--zx-card-dots) 1px, transparent 1.3px);
+  background-size: 9px 9px;
+  pointer-events: none;
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+/* Corner decoration 2: a wider arc with a small cyan node on it — it turns
+   on hover, so the node travels along the arc. */
+.zx-card-deco {
+  position: absolute;
+  top: -3.6rem;
+  right: -3.6rem;
+  z-index: 0;
+  width: 8.5rem;
+  height: 8.5rem;
+  border: 1px dashed var(--zx-card-ring-soft);
+  border-radius: 50%;
+  pointer-events: none;
+  transform: rotate(0deg);
+  transition: transform 600ms var(--ease-out);
+}
+
+.zx-card-deco::before {
+  content: "";
+  position: absolute;
+  bottom: 14.6%;
+  left: 14.6%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: var(--zx-cyan);
+  box-shadow: 0 0 0 3px var(--zx-card-tint);
+}
+
+/* phones: card text runs into the corner, so the outer arc and its node —
+   which would sit beside the words — are left out; rings and dots remain */
+@media (max-width: 639px) {
+  .zx-card-deco {
+    display: none;
+  }
 }
 
 @media (min-width: 640px) {
@@ -365,11 +471,30 @@
     gap: 1rem;
     padding: clamp(1.25rem, 2.6vh, 1.75rem);
   }
+
+  .zx-card::after {
+    top: -2.6rem;
+    right: -2.6rem;
+    width: 7.25rem;
+    height: 7.25rem;
+    outline-offset: 1.05rem;
+  }
+
+  .zx-card-deco {
+    top: -4.6rem;
+    right: -4.6rem;
+    width: 11.5rem;
+    height: 11.5rem;
+  }
 }
 
 .zx-card:hover {
-  border-color: color-mix(in srgb, var(--zx-brand) 45%, var(--zx-card-border));
-  box-shadow: var(--zx-card-shadow-hover);
+  border-color: var(--zx-card-border-hover);
+  box-shadow:
+    inset 0 0 0 0.5px var(--zx-card-border-hover),
+    var(--zx-card-highlight),
+    var(--zx-card-glow),
+    var(--zx-card-shadow-hover);
 }
 
 .zx-card:focus-visible {
@@ -379,27 +504,55 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .zx-card:hover {
-    transform: translateY(-2px);
+    transform: translateY(-4px);
+  }
+
+  .zx-card:hover::after {
+    transform: scale(1.08);
+  }
+
+  .zx-card:hover .zx-card-deco {
+    transform: rotate(28deg);
+  }
+
+  .zx-card:hover .zx-card-icon {
+    transform: translateY(-2px) scale(1.04);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .zx-card::before {
+  .zx-card,
+  .zx-card::before,
+  .zx-card::after,
+  .zx-card-deco,
+  .zx-card-icon {
     transition: none;
   }
 }
 
-/* solid brand-blue square with a white glyph — the square mark of the
-   Zodiac Patent logo */
+/* The icon tile — the square mark of the Zodiac Patent logo — in a
+   blue → cyan gradient with a fine light border, an inner highlight and a
+   soft blue glow that strengthens on hover. */
 .zx-card-icon {
   display: grid;
   place-items: center;
   flex-shrink: 0;
   width: 2.5rem;
   height: 2.5rem;
+  border: 1px solid rgb(255 255 255 / 22%);
   border-radius: var(--radius-sm);
-  background: var(--zx-brand);
+  background: linear-gradient(135deg, var(--zx-cyan) 0%, var(--zx-brand) 55%, #0a6aa8 100%);
   color: #ffffff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 35%), var(--zx-icon-glow);
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.zx-card:hover .zx-card-icon {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 35%),
+    0 8px 22px -6px rgb(0 146 212 / 70%);
 }
 
 .zx-card-body {

@@ -215,6 +215,40 @@ rows deliberately first.
 `id, application_id, from_status NULL, to_status, changed_by_user_id NULL,
 changed_by_candidate_id NULL, reason NULL, created_at`
 
+**Progressive apply flow** (migration `9c0d1e2f3a4b`, additive only; every
+table tenant-owned with the standard RLS policy):
+
+- `applications.education_verification_status` NULL — `VERIFIED` /
+  `MANUAL_REVIEW` for an application submitted through the Education step;
+  NULL for every other (and every older) application.
+- `applications.eligibility_review_required` BOOLEAN NOT NULL DEFAULT false
+  (migration `0d1e2f3a4b5c`) — the job's qualification requirements were
+  ambiguous at submission, so HR checks eligibility.
+- `candidates.qualification_year` NULL — year the highest qualification was
+  (or will be) completed.
+- **application_drafts** `id, organization_id, job_id, campus_drive_id NULL,
+  email, status (OPEN/SUBMITTED), full_name, phone, background JSONB NULL,
+  education JSONB NULL, education_status (NOT_STARTED/VERIFIED/MISMATCH/
+  UNCLEAR/FAILED/MANUAL_REVIEW), qualification_source_hash NULL,
+  academic_document_id NULL, verification_attempts, submitted_application_id
+  NULL, expires_at` — a self-service application in progress, never an
+  Application. Partial unique index: one OPEN draft per
+  `(organization_id, email, job_id)`.
+- **academic_documents** `id, organization_id, draft_id NULL, candidate_id
+  NULL, application_id NULL, qualification_key, storage_provider,
+  storage_path, original_filename, content_type, size_bytes, sha256` —
+  metadata of the uploaded marks card/certificate (bytes in the storage
+  abstraction). Linked to the candidate and application at submission.
+- **education_verification_runs** `id, organization_id, draft_id NULL,
+  application_id NULL, academic_document_id NULL, qualification_key, outcome
+  (MATCH/MISMATCH/UNCLEAR/FAILED), reason_code, confidence NULL,
+  candidate_message, analysis JSONB NULL, provider, model, error_message,
+  qualification_source_hash` — every AI consistency check, kept as history.
+- **job_qualification_profiles** `id, organization_id, job_id UNIQUE,
+  source_hash, status (READY/UNAVAILABLE), requirements JSONB NULL,
+  provider, model, error_message, analyzed_at` — a cache of the job's
+  AI-derived qualification requirements per JD version.
+
 ### 3.6 Screening / AI
 
 **screening_runs**

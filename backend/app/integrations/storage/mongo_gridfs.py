@@ -55,7 +55,7 @@ class MongoGridFSResumeStorage(ResumeStorage):
         self,
         *,
         organization_id: uuid.UUID,
-        candidate_id: uuid.UUID,
+        candidate_id: uuid.UUID | None,
         application_id: uuid.UUID | None,
         original_filename: str,
         content_type: str,
@@ -66,7 +66,7 @@ class MongoGridFSResumeStorage(ResumeStorage):
         suffix = Path(original_filename).suffix.lower()
         stored_filename = f"{uuid.uuid4()}{suffix}"
         metadata = {
-            "candidate_id": str(candidate_id),
+            "candidate_id": str(candidate_id) if candidate_id else None,
             "application_id": str(application_id) if application_id else None,
             "document_kind": document_kind,
             "organization_id": str(organization_id),

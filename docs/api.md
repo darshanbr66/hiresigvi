@@ -37,13 +37,44 @@ POST /api/v1/public/organizations/{org_slug}/email-verification/request     -- {
 POST /api/v1/public/organizations/{org_slug}/email-verification/verify      -- {email, code, job_id?} -> {verification_token, existing_profile, ...}
 GET  /api/v1/public/organizations/{org_slug}/jobs
 GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}
-POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply             (multipart)
+GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}/qualification-options  -- the JD-derived qualification list
+POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft       -- {email, email_verification_token, full_name, phone} -> DraftView
+POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft/view  -- {email, email_verification_token} -> DraftView
+PUT  /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft/background  -- {..., background}
+PUT  /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft/education   -- {..., education}
+POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft/education/document       (multipart: email, email_verification_token, document)
+POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft/education/recheck        -- re-run the AI check
+POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft/education/manual-review  -- only when allowed
+POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply             (multipart: email, email_verification_token, resume, tenth_marks_card?)
 GET  /api/v1/public/organizations/{org_slug}/programs                       -- published recruitment programs
 GET  /api/v1/public/programs/{program_id}                                   -- approved disclosures, eligibility, terms
 POST /api/v1/public/programs/{program_id}/applicant-status | email-verification/request | email-verification/verify
 POST /api/v1/public/programs/{program_id}/apply/precheck | apply             (multipart: careers form + education declaration + terms)
 ```
 Programs: `docs/programs.md` § 3.
+
+**Careers-site jobs and campus drive links use the progressive, draft-based
+flow** (`app/api/v1/public/apply_flow.py`, `docs/recruitment-workflow.md`
+§ 6). Every draft call carries `email` + `email_verification_token`; the
+draft is looked up by the verified email, never by an id the client sends.
+`DraftView` returns the saved `background`, `education`, the academic
+`document` (name/type/size only) and `education_check` (`status`
+`NOT_STARTED|VERIFIED|MISMATCH|UNCLEAR|FAILED|MANUAL_REVIEW`, a
+plain-language `message`, `can_continue`, `can_retry`,
+`can_request_manual_review`, `attempts_remaining`) — never the AI's raw
+output, provider or the document's extracted contents. `background` takes
+the fields below except name/phone/qualification/10th marks; `education`
+takes `qualification_key` (one of the job's `qualification-options`, 422
+`qualification_not_eligible` otherwise), `degree_name` (catch-all options),
+`branch` (required for engineering/science/doctorate options and when the
+JD makes the field mandatory), `institution`, `completion_year`, optional
+`tenth_marks_percentage`. The final `apply` builds the application from
+the draft and refuses (422) a missing step (`background_required`,
+`education_required`, `academic_document_required`,
+`education_not_verified`) or (409 `education_recheck_required`) a
+selection the job's changed JD no longer allows.
+
+The full-form `apply` below is a recruitment program's.
 `apply` needs `email_verification_token` (from `verify`), `full_name`,
 `email`, `phone`, `date_of_birth`, `place_of_birth`, `languages` (1–15),
 `candidate_type` (`FRESHER`|`EXPERIENCED`), `current_location`,
@@ -153,6 +184,10 @@ GET/PATCH     /api/v1/recruiter/applications/{application_id}
 POST          /api/v1/recruiter/applications/{application_id}/status
 POST          /api/v1/recruiter/applications/{application_id}/ai-override  (application.status.change; {reason} required;
                                                                              AI_SCREENED_OUT -> UNDER_REVIEW, else 409)
+GET           /api/v1/recruiter/applications/{application_id}/education  (screening.read; the academic document's metadata,
+                                                                 the candidate's education, `eligibility_review_required`
+                                                                 and every AI consistency check)
+GET           /api/v1/recruiter/applications/{application_id}/education/document  (application.read; download)
 POST          /api/v1/recruiter/applications/{application_id}/screening-runs
 GET           /api/v1/recruiter/applications/{application_id}/screening-runs
 POST          /api/v1/recruiter/applications/{application_id}/notes

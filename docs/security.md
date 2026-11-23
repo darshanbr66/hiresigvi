@@ -154,9 +154,27 @@ properties, all implemented in `app/services/email_verification_service.py`:
   endpoints (code request, code verify, apply) have per-IP budgets
   (`PUBLIC_*_LIMIT_PER_WINDOW`) on top of the database-backed per-email
   limits in § 5a.
+- Apply-flow drafts: every draft request carries the email verification
+  token and is checked with `require_verified_token` (organization + email
+  bound, unexpired, unspent). The draft is looked up by that verified email,
+  never by an id the client supplies. The education outcome is computed and
+  stored server-side only, and the client can't set it. Submission
+  re-validates every step from the draft. An academic document (PDF/PNG/
+  JPG, extension *and* magic bytes, size-capped) is stored through the
+  storage abstraction. Its path is never returned, and only staff with
+  `application.read` can download it. The AI check sends that document to
+  the configured AI provider (Gemini; Groq receives only a PDF's text
+  layer), the same data-handling boundary as resumes. The candidate is
+  shown a message composed from structured fields, never the model's
+  output, prompt, provider or the document's extracted text. Per-IP budgets
+  cover draft calls (`PUBLIC_DRAFT_LIMIT_PER_WINDOW`) and uploads/checks
+  (`PUBLIC_DOCUMENT_CHECK_LIMIT_PER_WINDOW`); checks per draft are capped
+  (`MAX_EDUCATION_CHECKS_PER_DRAFT`). Expired drafts and their documents
+  are purged (`purge-expired-drafts`).
 - Candidate identity fields: mobile numbers are parsed and normalized to
   E.164 with `phonenumbers` (`app/core/phone.py`), not with hand-written
-  rules. Date of birth must be in the past and give an age from 16 to 100.
+  rules. A self-service full name must contain letters and no digits or
+  markup characters. Date of birth must be in the past and give an age from 16 to 100.
   Languages must be real names (1–15 of them), and URLs are validated.
 
 ## 7. Data exposure boundaries

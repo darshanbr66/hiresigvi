@@ -36,8 +36,10 @@ class ResumeStorage(ABC):
     """One file per save; the caller owns the metadata row
     (app/models/resume.py for a resume; the `tenth_marks_card_*` columns of
     app/models/candidate.py for a 10th marks card). `document_kind` says
-    which ("resume" | "tenth_marks_card"); a candidate-level document has no
-    `application_id`. `storage_path` is opaque to callers — only the
+    which ("resume" | "tenth_marks_card" | "academic_document"); a
+    candidate-level document has no `application_id`, and an apply-flow
+    draft's academic document has no `candidate_id` yet (the candidate is
+    created at submission). `storage_path` is opaque to callers — only the
     implementation that produced it knows how to resolve or read it back
     (a local relative path for `LocalResumeStorage`, a GridFS file id for
     `MongoGridFSResumeStorage` — see app/integrations/storage/__init__.py).
@@ -55,7 +57,7 @@ class ResumeStorage(ABC):
         self,
         *,
         organization_id: uuid.UUID,
-        candidate_id: uuid.UUID,
+        candidate_id: uuid.UUID | None,
         application_id: uuid.UUID | None,
         original_filename: str,
         content_type: str,

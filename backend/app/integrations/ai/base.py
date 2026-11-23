@@ -134,6 +134,15 @@ class AIProviderBlockedError(AIProviderError):
 
 
 @dataclass(frozen=True)
+class InlineFile:
+    """A file sent to a multimodal model alongside the prompt text (Gemini
+    `inline_data`). Only ever bytes the server itself validated."""
+
+    mime_type: str
+    data: bytes
+
+
+@dataclass(frozen=True)
 class ChatMessage:
     role: Literal["user", "assistant"]
     content: str

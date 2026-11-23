@@ -61,26 +61,43 @@ class StoredFileRef:
 
 
 def validate_marks_card(*, filename: str, content: bytes) -> MarksCardUpload:
-    settings = get_settings()
+    return validate_document(
+        filename=filename,
+        content=content,
+        label="10th marks card",
+        max_mb=get_settings().max_marks_card_size_mb,
+    )
+
+
+def validate_academic_document(*, filename: str, content: bytes) -> MarksCardUpload:
+    """The apply flow's mandatory academic document (marks card or
+    certificate) — the same formats and signature checks as the marks card."""
+    return validate_document(
+        filename=filename,
+        content=content,
+        label="academic document",
+        max_mb=get_settings().max_academic_document_size_mb,
+    )
+
+
+def validate_document(
+    *, filename: str, content: bytes, label: str, max_mb: int
+) -> MarksCardUpload:
+    """Extension in the allow-list *and* matching magic bytes; the stored
+    content type comes from the table, never from the client."""
     suffix = Path(filename).suffix.lower()
     fmt = _FORMATS.get(suffix)
     if fmt is None:
-        raise AppError(
-            "The 10th marks card must be a PDF, PNG or JPG file.", code="invalid_file_type"
-        )
+        raise AppError(f"The {label} must be a PDF, PNG or JPG file.", code="invalid_file_type")
     if len(content) == 0:
-        raise AppError("The uploaded 10th marks card is empty.", code="invalid_file")
-    max_bytes = settings.max_marks_card_size_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise AppError(
-            f"The 10th marks card must be smaller than {settings.max_marks_card_size_mb}MB.",
-            code="file_too_large",
-        )
+        raise AppError(f"The uploaded {label} is empty.", code="invalid_file")
+    if len(content) > max_mb * 1024 * 1024:
+        raise AppError(f"The {label} must be smaller than {max_mb}MB.", code="file_too_large")
     signatures, content_type = fmt
     head = content.lstrip()[:16] if suffix == ".pdf" else content[:16]
     if not any(head.startswith(signature) for signature in signatures):
         raise AppError(
-            f"The uploaded 10th marks card is not a valid {suffix.lstrip('.').upper()} file.",
+            f"The uploaded {label} is not a valid {suffix.lstrip('.').upper()} file.",
             code="invalid_file_type",
         )
     return MarksCardUpload(filename=filename, content_type=content_type, content=content)

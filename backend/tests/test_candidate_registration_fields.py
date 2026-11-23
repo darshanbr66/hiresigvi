@@ -278,7 +278,11 @@ async def test_invalid_marks_card_files_are_rejected_and_nothing_is_stored(
         )
         assert response.status_code in (400, 422), (bad[0], response.text)
 
-    assert mongodb_gridfs_provider.files == {}
+    # No marks card (nor resume) was stored — only the Education step's
+    # academic document, which belongs to the still-open draft.
+    assert {
+        record["metadata"]["document_kind"] for record in mongodb_gridfs_provider.files.values()
+    } <= {"academic_document"}
     assert await _candidates(client, ctx) == []
     # A rejected file never spent the verification token.
     ok = await apply_publicly(

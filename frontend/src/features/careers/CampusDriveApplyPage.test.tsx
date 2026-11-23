@@ -43,13 +43,16 @@ describe("CampusDriveApplyPage lifecycle states", () => {
 
     expect(await screen.findByRole("heading", { name: "Fall Drive" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Apply for this drive" })).toBeInTheDocument();
-    // Same mandatory, email-verified form as the careers site.
-    for (const label of [/^Email/, /Mobile number/, /Date of birth/, /Place of birth/, /Highest qualification/]) {
+    // Same progressive, email-verified flow as the careers site: the first
+    // step asks only for name, email and mobile number.
+    for (const label of [/Full name/, /Email address/, /Mobile number/]) {
       expect(screen.getByLabelText(label)).toBeRequired();
     }
+    expect(screen.queryByLabelText(/Date of birth/)).not.toBeInTheDocument();
     expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Your details");
-    // the stepper's second step (its label is just "Verify")
-    expect(screen.getByRole("list", { name: "Application steps" })).toHaveTextContent("Verify");
+    const progress = screen.getByRole("navigation", { name: "Application progress" });
+    expect(progress).toHaveTextContent("Verify");
+    expect(progress).toHaveTextContent("Education");
   });
 
   it("shows the unavailable panel and no recruitment content for a closed drive", async () => {

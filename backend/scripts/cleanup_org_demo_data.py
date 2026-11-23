@@ -95,6 +95,18 @@ SCOPED_COUNTS: dict[str, str] = {
         "SELECT count(*) FROM candidate_resume_profiles WHERE organization_id = :org"
     ),
     "match_results": "SELECT count(*) FROM match_results WHERE organization_id = :org",
+    "application_drafts": (
+        "SELECT count(*) FROM application_drafts WHERE organization_id = :org"
+    ),
+    "academic_documents": (
+        "SELECT count(*) FROM academic_documents WHERE organization_id = :org"
+    ),
+    "education_verification_runs": (
+        "SELECT count(*) FROM education_verification_runs WHERE organization_id = :org"
+    ),
+    "job_qualification_profiles": (
+        "SELECT count(*) FROM job_qualification_profiles WHERE organization_id = :org"
+    ),
     "candidate_reapply_grants": (
         "SELECT count(*) FROM candidate_reapply_grants WHERE organization_id = :org"
     ),
@@ -180,6 +192,22 @@ DELETE_STEPS: list[tuple[str, str]] = [
     ),
     ("resumes", "DELETE FROM resumes WHERE organization_id = :org"),
     (
+        "education_verification_runs",
+        "DELETE FROM education_verification_runs WHERE organization_id = :org",
+    ),
+    (
+        "application_drafts",
+        "DELETE FROM application_drafts WHERE organization_id = :org",
+    ),
+    (
+        "academic_documents",
+        "DELETE FROM academic_documents WHERE organization_id = :org",
+    ),
+    (
+        "job_qualification_profiles",
+        "DELETE FROM job_qualification_profiles WHERE organization_id = :org",
+    ),
+    (
         "applications (+status history, screening runs)",
         "DELETE FROM applications WHERE organization_id = :org",
     ),
@@ -205,6 +233,8 @@ MUST_BE_EMPTY = (
     "assessment_invitations", "candidate_answers", "assessment_results",
     "assessment_monitoring_events", "campus_drives", "calendar_events",
     "calendar_event_attendees", "notifications", "email_verifications",
+    "application_drafts", "academic_documents", "education_verification_runs",
+    "job_qualification_profiles",
 )
 
 
@@ -385,8 +415,8 @@ async def _resolve_users_to_delete(
 
 
 async def _files_for_org(db: AsyncSession, org_id: uuid.UUID) -> list[tuple[str, str]]:
-    """Every stored file of the organization: those its resume rows and its
-    candidates' 10th marks cards point to, plus (GridFS) any file whose
+    """Every stored file of the organization: those its resume rows, its
+    candidates' 10th marks cards and its academic documents point to, plus (GridFS) any file whose
     metadata names the organization — which also catches files whose rows
     are already gone."""
     rows = await db.execute(
@@ -395,7 +425,9 @@ async def _files_for_org(db: AsyncSession, org_id: uuid.UUID) -> list[tuple[str,
             "WHERE organization_id = :org "
             "UNION SELECT tenth_marks_card_storage_provider, tenth_marks_card_storage_path "
             "FROM candidates WHERE organization_id = :org "
-            "AND tenth_marks_card_storage_path IS NOT NULL"
+            "AND tenth_marks_card_storage_path IS NOT NULL "
+            "UNION SELECT storage_provider, storage_path FROM academic_documents "
+            "WHERE organization_id = :org"
         ),
         {"org": org_id},
     )
@@ -423,7 +455,9 @@ async def _still_referenced(db: AsyncSession, files: list[tuple[str, str]]) -> s
                     "SELECT 1 FROM resumes WHERE storage_provider = :p AND storage_path = :s "
                     "UNION ALL SELECT 1 FROM candidates "
                     "WHERE tenth_marks_card_storage_provider = :p "
-                    "AND tenth_marks_card_storage_path = :s LIMIT 1"
+                    "AND tenth_marks_card_storage_path = :s "
+                    "UNION ALL SELECT 1 FROM academic_documents "
+                    "WHERE storage_provider = :p AND storage_path = :s LIMIT 1"
                 ),
                 {"p": provider, "s": path},
             )

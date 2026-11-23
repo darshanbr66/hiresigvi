@@ -12,7 +12,6 @@ AI screening against the drive's job, automatic welcome email — because it
 only campus-specific step is the default-assessment fast-track below.
 """
 
-from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,18 +20,15 @@ from sqlalchemy.orm import joinedload
 from app.core.exceptions import AppError, NotFoundError
 from app.core.security import hash_opaque_token
 from app.db.rls import rls_bypass, set_tenant_context
-from app.integrations.storage import ResumeStorage
 from app.models.application import ApplicationStatus
 from app.models.campus_drive import CampusDrive, CampusDriveStatus
 from app.models.organization import Organization
-from app.schemas.candidate import PublicApplicantProfile
 from app.schemas.public import PublicApplicationOutcome
 from app.services import (
     application_service,
     assessment_service,
     public_application_service,
 )
-from app.services.candidate_document_service import MarksCardUpload
 from app.services.email_verification_service import CodeSent
 
 _INVALID_MESSAGE = "This campus drive link is no longer valid."
@@ -140,44 +136,23 @@ async def precheck_applicant(
     )
 
 
-@dataclass(frozen=True)
-class DriveSubmissionResult:
-    submission: public_application_service.SubmissionResult
-    organization: Organization
-    assessment_invitation_link: str | None
-
-
-async def apply_to_drive(
-    db: AsyncSession,
-    storage: ResumeStorage,
-    *,
-    token: str,
-    email: str,
-    verification_token: str | None,
-    profile: PublicApplicantProfile,
-    resume_filename: str,
-    resume_bytes: bytes,
-    marks_card: MarksCardUpload | None = None,
-) -> DriveSubmissionResult:
+async def resolve_active_drive(db: AsyncSession, token: str) -> tuple[CampusDrive, Organization]:
+    """The drive a link token opens, required to be accepting applications,
+    with its organization (RLS tenant context set)."""
     drive = await get_drive_by_token(db, token)
     _require_active(drive)
-    organization = await get_organization(db, drive)
+    return drive, await get_organization(db, drive)
 
-    submission = await public_application_service.submit_application(
-        db,
-        storage,
-        organization=organization,
-        job_id=drive.job_id,
-        email=email,
-        verification_token=verification_token,
-        profile=profile,
-        resume_filename=resume_filename,
-        resume_content_type="application/pdf",
-        resume_bytes=resume_bytes,
-        marks_card=marks_card,
-        campus_drive=drive,
-    )
 
+async def fast_track_to_default_assessment(
+    db: AsyncSession,
+    drive: CampusDrive,
+    submission: public_application_service.SubmissionResult,
+) -> str | None:
+    """A drive with a default assessment invites a candidate whose
+    application entered the pipeline straight away; returns the invitation
+    link (None when not fast-tracked). Shared by every drive submission
+    path (the full form and the progressive apply flow)."""
     invitation_link: str | None = None
     # Only an application that entered the pipeline is fast-tracked into
     # the drive's assessment. An AI-screened-out one waits for HR, who can
@@ -207,8 +182,4 @@ async def apply_to_drive(
         )
         invitation_link = f"/assessment/{raw_token}"
 
-    return DriveSubmissionResult(
-        submission=submission,
-        organization=organization,
-        assessment_invitation_link=invitation_link,
-    )
+    return invitation_link

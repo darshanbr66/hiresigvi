@@ -175,6 +175,7 @@ const PATHS = {
     </>
   ),
   "arrow-right": <path d="M5 12h14M13 6l6 6-6 6" />,
+  "arrow-left": <path d="M19 12H5M11 6l-6 6 6 6" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   sun: (
     <>

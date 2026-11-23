@@ -105,9 +105,14 @@ async def test_apply_stores_resume_in_gridfs_and_is_downloadable(
     application = applications.json()[0]
     assert application["resume_filename"] == "resume.pdf"
 
-    # Exactly one GridFS file exists, and it's the one the Postgres
-    # `resumes` row (app/models/resume.py) references by ObjectId.
-    stored_files = mongodb_gridfs_provider.files
+    # Exactly one GridFS resume file exists, and it's the one the Postgres
+    # `resumes` row (app/models/resume.py) references by ObjectId. (The
+    # Education step's academic document is stored there too.)
+    stored_files = {
+        file_id: record
+        for file_id, record in mongodb_gridfs_provider.files.items()
+        if record["metadata"]["document_kind"] == "resume"
+    }
     assert len(stored_files) == 1
     record = next(iter(stored_files.values()))
     assert record["metadata"]["organization_id"]

@@ -19,12 +19,15 @@ from app.models.application import Application, ApplicationSource, ApplicationSt
 from app.models.candidate import CandidateType
 from app.models.user import User
 from app.schemas.application import (
+    AcademicDocumentSummary,
     AIScreeningOverrideRequest,
     ApplicationCreateRequest,
     ApplicationDeleteRequest,
+    ApplicationEducationResponse,
     ApplicationResponse,
     ApplicationSortField,
     ApplicationStatusChangeRequest,
+    EducationCheckEntry,
     SortDirection,
 )
 from app.schemas.assessment import AssessmentInvitationResponse, AssessmentResultResponse
@@ -37,6 +40,7 @@ from app.schemas.email import (
 )
 from app.schemas.public_assessment import MonitoringEventResponse
 from app.services import (
+    application_draft_service,
     application_service,
     assessment_service,
     email_composer,
@@ -60,6 +64,8 @@ def to_response(application: Application) -> ApplicationResponse:
         status=application.status,
         source=application.source,
         is_self_service=application.is_self_service,
+        education_verification_status=application.education_verification_status,
+        eligibility_review_required=application.eligibility_review_required,
         applied_at=application.applied_at,
         created_at=application.created_at,
         updated_at=application.updated_at,
@@ -232,6 +238,91 @@ async def download_resume(
         headers={
             "Content-Disposition": f'attachment; filename="{safe_name}"',
             "Content-Length": str(resume.size_bytes),
+        },
+    )
+
+
+@router.get("/{application_id}/education", response_model=ApplicationEducationResponse)
+async def get_application_education(
+    application_id: uuid.UUID,
+    _: User = Depends(require_permission("screening.read")),
+    db: AsyncSession = Depends(get_db),
+) -> ApplicationEducationResponse:
+    """The academic document a self-service applicant uploaded and every AI
+    consistency check of it — the reviewer's view for a MANUAL_REVIEW
+    application. Needs `screening.read`: it carries AI observations."""
+    application = await application_service.get_application(db, application_id)
+    if application is None:
+        raise NotFoundError("Application not found.")
+    document, runs = await application_draft_service.application_documents(db, application.id)
+    candidate = application.candidate
+    return ApplicationEducationResponse(
+        education_verification_status=application.education_verification_status,
+        eligibility_review_required=application.eligibility_review_required,
+        qualification=candidate.qualification,
+        institution=candidate.institution_name,
+        qualification_year=candidate.qualification_year,
+        document=(
+            AcademicDocumentSummary(
+                filename=document.original_filename,
+                content_type=document.content_type,
+                size_bytes=document.size_bytes,
+                uploaded_at=document.created_at,
+            )
+            if document is not None
+            else None
+        ),
+        checks=[
+            EducationCheckEntry(
+                outcome=run.outcome,
+                reason_code=run.reason_code,
+                confidence=run.confidence,
+                candidate_message=run.candidate_message,
+                provider=run.provider,
+                model=run.model,
+                created_at=run.created_at,
+                **{
+                    key: (run.analysis or {}).get(key)
+                    for key in (
+                        "document_type",
+                        "detected_level",
+                        "degree_text",
+                        "branch_text",
+                        "institution_text",
+                        "name_on_document",
+                        "notes",
+                    )
+                },
+            )
+            for run in runs
+        ],
+    )
+
+
+@router.get("/{application_id}/education/document")
+async def download_academic_document(
+    application_id: uuid.UUID,
+    _: User = Depends(require_permission("application.read")),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    application = await application_service.get_application(db, application_id)
+    if application is None:
+        raise NotFoundError("Application not found.")
+    document, _runs = await application_draft_service.application_documents(db, application.id)
+    if document is None:
+        raise NotFoundError("No academic document found for this application.")
+    try:
+        storage = get_resume_storage_for_provider(document.storage_provider)
+        chunks = await storage.open_stream(document.storage_path)
+    except StorageError as exc:
+        raise NotFoundError("The academic document could not be found in storage.") from exc
+    safe_name = document.original_filename.replace('"', "")
+    return StreamingResponse(
+        chunks,
+        media_type=document.content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Content-Length": str(document.size_bytes),
         },
     )
 

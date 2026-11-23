@@ -4,30 +4,56 @@ import { ApiError } from "../../lib/apiClient";
 import { Alert } from "../../shared/components/Alert";
 import { Icon } from "../../shared/components/Icon";
 import { Spinner } from "../../shared/components/Spinner";
+import type { ApplicantBackground, DraftAuth, DraftView } from "../../types/applyFlow";
 import type { ApplicantProfilePrefill, JobApplicationFormValues } from "../../types/careers";
 import type { ProgramDeclaration } from "../../types/program";
 import type { CandidateType } from "../../types/recruitment";
 import {
-  applyToCampusDrive,
-  applyToJob,
+  applyFlowBase,
   applyToProgram,
   checkApplicantStatus,
   checkCampusApplicantStatus,
   checkProgramApplicantStatus,
+  getQualificationOptions,
   requestCampusEmailCode,
   requestEmailCode,
   requestProgramEmailCode,
+  saveDraftBackground,
+  startApplicationDraft,
+  submitApplicationDraft,
   verifyCampusEmailCode,
   verifyEmailCode,
   verifyProgramEmailCode,
 } from "./api";
 import {
   AlreadyRegistered,
-  ReapplyRestricted,
   ApplicationOutcome,
   type ApplicationOutcomeResult,
+  ReapplyRestricted,
   UpdateInfoNote,
 } from "./ApplicationOutcome";
+import { ApplyStepper, type StepDefinition } from "./apply/ApplyStepper";
+import { EducationStep } from "./apply/EducationStep";
+import { educationFromDraft, EMPTY_EDUCATION, type EducationValues } from "./apply/educationValues";
+import { fieldAria } from "./apply/fieldAria";
+import { FormField } from "./apply/formFields";
+import { PhoneInput } from "./apply/PhoneInput";
+import {
+  emailError,
+  formatFileSize,
+  fullNameError,
+  latestAllowedBirthDate,
+  looksLikeEmail,
+  MAX_MARKS_CARD_MB,
+  MAX_RESUME_MB,
+  phoneError,
+  profileUrlError,
+  resumeFileError,
+  splitPhone,
+  tenthMarksError,
+  documentFileError,
+  DOCUMENT_ACCEPT,
+} from "./apply/validation";
 import { LanguagesInput } from "./LanguagesInput";
 
 const CANDIDATE_TYPE_LABELS: Record<CandidateType, string> = {
@@ -35,26 +61,31 @@ const CANDIDATE_TYPE_LABELS: Record<CandidateType, string> = {
   EXPERIENCED: "Experienced professional",
 };
 
-const MAX_RESUME_MB = 10;
-const MIN_AGE_YEARS = 16;
-/** The optional 10th marks card — the backend enforces the same rules
- * (app/services/candidate_document_service.py). */
-const MAX_MARKS_CARD_MB = 5;
-const MARKS_CARD_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg"];
-const MARKS_CARD_ACCEPT = ".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg";
+type StepKey = "details" | "verify" | "background" | "education" | "resume" | "review";
 
-type Step = "details" | "verify" | "resume" | "review";
-
-const STEPS: { key: Step; label: string }[] = [
+const ALL_STEPS: StepDefinition<StepKey>[] = [
   { key: "details", label: "Your details" },
   { key: "verify", label: "Verify" },
+  { key: "background", label: "Professional background" },
+  { key: "education", label: "Education" },
   { key: "resume", label: "Resume" },
   { key: "review", label: "Review & submit" },
 ];
 
-const EMPTY_VALUES: Omit<JobApplicationFormValues, "candidate_type"> & {
+const STEP_HEADINGS: Record<StepKey, string> = {
+  details: "Your details",
+  verify: "Verify your email",
+  background: "Professional background",
+  education: "Education",
+  resume: "Resume",
+  review: "Review & submit",
+};
+
+type Values = Omit<JobApplicationFormValues, "candidate_type"> & {
   candidate_type: CandidateType | "";
-} = {
+};
+
+const EMPTY_VALUES: Values = {
   full_name: "",
   email: "",
   phone: "",
@@ -75,23 +106,16 @@ const EMPTY_VALUES: Omit<JobApplicationFormValues, "candidate_type"> & {
   tenth_marks_percentage: "",
 };
 
-type Values = typeof EMPTY_VALUES;
+type FieldErrors = Partial<Record<keyof Values, string>>;
 
 /** Shown — and Continue disabled — when the early check (or the server, at
  * any later step) says this email or mobile number has already applied. */
 const ALREADY_APPLIED_MESSAGE = "You have already applied.";
+const VERIFICATION_EXPIRED_MESSAGE =
+  "Your email verification has expired. Please verify your email again — your progress is saved.";
 /** The early check waits for typing to pause rather than calling the API on
  * every keystroke. */
 const STATUS_CHECK_DEBOUNCE_MS = 400;
-
-function looksLikeEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function looksLikeMobile(value: string): boolean {
-  const digits = value.replace(/\D/g, "").length;
-  return digits >= 10 && digits <= 15;
-}
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -102,11 +126,16 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
+/** "+91 098765 43210" -> "+919876543210": what the server is sent. */
+function normalizedPhone(value: string): string {
+  const { code, number } = splitPhone(value);
+  return `${code}${number.replace(/\D/g, "").replace(/^0+/, "")}`;
+}
+
 /** A returning candidate's stored profile (received only after their code
- * was verified) fills in what they haven't typed — never overwrites it: what
- * they entered now is their current information. */
+ * was verified) fills in what they haven't typed — never overwrites it. */
 function prefillEmptyFields(current: Values, stored: ApplicantProfilePrefill): Values {
-  const text = (value: string, fallback: string | null) => (value.trim() ? value : fallback ?? "");
+  const text = (value: string, fallback: string | null) => (value.trim() ? value : (fallback ?? ""));
   const number = (value: string, fallback: number | null) =>
     value.trim() ? value : fallback === null ? "" : String(fallback);
   return {
@@ -130,147 +159,74 @@ function prefillEmptyFields(current: Values, stored: ApplicantProfilePrefill): V
   };
 }
 
-/** A percentage between 0 and 100 with at most two decimals, or blank. */
-function tenthMarksError(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (!/^\d{1,3}(\.\d{1,2})?$/.test(trimmed) || Number(trimmed) > 100) {
-    return "Enter a percentage between 0 and 100 (up to two decimals).";
-  }
-  return null;
+/** The server's saved background (a resumed draft) fills empty fields. */
+function prefillFromBackground(current: Values, saved: ApplicantBackground): Values {
+  return prefillEmptyFields(current, {
+    full_name: null,
+    phone: null,
+    date_of_birth: saved.date_of_birth,
+    place_of_birth: saved.place_of_birth,
+    languages: saved.languages,
+    candidate_type: saved.candidate_type,
+    years_experience: saved.years_experience,
+    notice_period_days: saved.notice_period_days,
+    immediate_joiner: saved.immediate_joiner,
+    current_title: saved.current_title,
+    current_company: saved.current_company,
+    location: saved.location,
+    preferred_location: saved.preferred_location,
+    qualification: null,
+    linkedin_url: saved.linkedin_url,
+    github_url: saved.github_url,
+    tenth_marks_percentage: null,
+  });
 }
 
-function marksCardError(file: File): string | null {
-  const name = file.name.toLowerCase();
-  if (!MARKS_CARD_EXTENSIONS.some((extension) => name.endsWith(extension))) {
-    return "The marks card must be a PDF, PNG or JPG file.";
-  }
-  if (file.size === 0) return "The selected file is empty.";
-  if (file.size > MAX_MARKS_CARD_MB * 1024 * 1024) {
-    return `The marks card must be smaller than ${MAX_MARKS_CARD_MB} MB.`;
-  }
-  return null;
-}
-
-function formatFileSize(bytes: number): string {
-  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function latestAllowedBirthDate(): string {
-  const date = new Date();
-  date.setFullYear(date.getFullYear() - MIN_AGE_YEARS);
-  return date.toISOString().slice(0, 10);
+function toBackground(values: Values): ApplicantBackground {
+  const optional = (value: string) => (value.trim() ? value.trim() : null);
+  const experienced = values.candidate_type === "EXPERIENCED";
+  return {
+    date_of_birth: values.date_of_birth,
+    place_of_birth: values.place_of_birth.trim(),
+    languages: values.languages,
+    candidate_type: values.candidate_type as CandidateType,
+    location: values.current_location.trim(),
+    preferred_location: values.preferred_location.trim(),
+    linkedin_url: optional(values.linkedin_url),
+    github_url: optional(values.github_url),
+    years_experience: experienced ? Number(values.years_experience) : null,
+    current_title: experienced ? optional(values.current_title) : null,
+    current_company: experienced ? optional(values.current_company) : null,
+    notice_period_days:
+      experienced && !values.immediate_joiner && values.notice_period_days.trim()
+        ? Number(values.notice_period_days)
+        : null,
+    immediate_joiner: experienced ? values.immediate_joiner : null,
+  };
 }
 
 function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
-    const detail = err.details[0];
-    return err.code === "validation_error" && detail ? `${detail.field}: ${detail.message}` : err.message;
+    const issue = err.fieldIssues[0];
+    return err.code === "validation_error" && issue ? `${issue.field}: ${issue.message}` : err.message;
   }
   return fallback;
 }
 
-function RequiredMark({ optional }: { optional?: boolean }) {
-  return optional ? (
-    <span className="optional-mark">(Optional)</span>
-  ) : (
-    <span className="required-mark" aria-hidden="true">*</span>
-  );
-}
-
-/** One labelled input, marked required (*) unless `optional`. */
-function Field({
-  label,
-  children,
-  hint,
-  optional,
-}: {
-  label: string;
-  children: ReactNode;
-  hint?: string;
-  optional?: boolean;
-}) {
-  return (
-    <label className="field">
-      <span className="field-label">
-        {label} <RequiredMark optional={optional} />
-      </span>
-      {children}
-      {hint && <span className="field-hint">{hint}</span>}
-    </label>
-  );
-}
-
-/** A field whose inline message sits directly below its control — outside
- * the <label>, so the message never becomes part of the input's name; it is
- * linked with aria-describedby instead. The control gets `id`. */
-function FieldWithMessage({
-  id,
-  label,
-  optional,
-  hint,
-  message,
-  messageId,
-  children,
-}: {
-  id: string;
-  label: string;
-  optional?: boolean;
-  hint?: string;
-  message: string | null;
-  messageId: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="field">
-      <label htmlFor={id} className="field-label">
-        {label} <RequiredMark optional={optional} />
-      </label>
-      {children}
-      {message && (
-        <p id={messageId} className="field-message" role="alert">
-          {message}
-        </p>
-      )}
-      {hint && <span className="field-hint">{hint}</span>}
-    </div>
-  );
-}
-
-function Stepper({ current }: { current: Step }) {
-  const currentIndex = STEPS.findIndex((step) => step.key === current);
-  return (
-    <ol className="apply-stepper" aria-label="Application steps">
-      {STEPS.map((step, index) => {
-        const state = index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
-        return (
-          <li
-            key={step.key}
-            className={`apply-step apply-step-${state}`}
-            aria-current={state === "current" ? "step" : undefined}
-          >
-            <span className="apply-step-node" aria-hidden="true">
-              {state === "done" ? <Icon name="check" size={13} /> : index + 1}
-            </span>
-            <span className="apply-step-label">{step.label}</span>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
 /**
- * The self-service application, as a guided flow: details -> email
- * verification (one-time code) -> PDF resume -> review & submit. Every field
- * is mandatory except LinkedIn, GitHub and the 10th marks / marks card. The backend is authoritative for all of it (validation, the
- * verified email, duplicates, the AI screening) — the checks here only spare
- * the candidate a round trip. A candidate can apply once.
+ * The self-service application as a progressive, step-by-step flow:
  *
- * Used for a careers-site job (`slug` + `jobId`), for a campus drive's
- * public link (`campusToken`) and for a recruitment program (`program`, whose
- * education declaration and terms acceptance the program page collects):
- * all follow the same candidate identity rules.
+ *   Your details (name, email, mobile) -> Verify (email one-time code) ->
+ *   Professional background -> Education (JD-specific qualification + AI
+ *   check of the academic document) -> Resume -> Review & submit
+ *
+ * For a careers-site job (`slug` + `jobId`) and a campus drive link
+ * (`campusToken`), every step after verification is saved on the server
+ * (a draft the verified email unlocks), and the submission is built from
+ * that server-side draft. A recruitment program (`program`) has no
+ * Education step — its page collects the education declaration — and
+ * submits the complete form in one request. The backend is authoritative
+ * for everything; the checks here only spare the candidate a round trip.
  */
 export function JobApplicationForm(
   props: { contactEmail?: string | null; title?: string } & (
@@ -285,23 +241,28 @@ export function JobApplicationForm(
   ),
 ) {
   const { contactEmail = null, title = "Apply for this role" } = props;
-  const [step, setStep] = useState<Step>("details");
+  const base = props.program
+    ? null
+    : applyFlowBase(
+        props.campusToken !== undefined
+          ? { campusToken: props.campusToken }
+          : { slug: props.slug, jobId: props.jobId },
+      );
+  const steps = base ? ALL_STEPS : ALL_STEPS.filter((step) => step.key !== "education");
+
+  const [step, setStep] = useState<StepKey>("details");
   const [values, setValues] = useState<Values>(EMPTY_VALUES);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [education, setEducation] = useState<EducationValues>(EMPTY_EDUCATION);
   const [resume, setResume] = useState<File | null>(null);
+  const [resumeProblem, setResumeProblem] = useState<string | null>(null);
   const [marksCard, setMarksCard] = useState<File | null>(null);
   const [marksCardProblem, setMarksCardProblem] = useState<string | null>(null);
-  const marksCardInput = useRef<HTMLInputElement>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const fieldIds = {
-    email: useId(),
-    emailMessage: useId(),
-    phone: useId(),
-    phoneMessage: useId(),
-    marks: useId(),
-    marksMessage: useId(),
-    marksCard: useId(),
-    marksCardMessage: useId(),
-  };
+  const [notice, setNotice] = useState<string | null>(null);
+  const [phoneConflict, setPhoneConflict] = useState<string | null>(null);
+  const [draft, setDraft] = useState<DraftView | null>(null);
+  const [submitProgress, setSubmitProgress] = useState<number | null>(null);
 
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -314,9 +275,37 @@ export function JobApplicationForm(
   } | null>(null);
   const [result, setResult] = useState<ApplicationOutcomeResult | null>(null);
 
-  const isExperienced = values.candidate_type === "EXPERIENCED";
+  const ids = {
+    name: useId(),
+    email: useId(),
+    phone: useId(),
+    code: useId(),
+    dob: useId(),
+    pob: useId(),
+    type: useId(),
+    years: useId(),
+    notice: useId(),
+    jobTitle: useId(),
+    company: useId(),
+    current: useId(),
+    preferred: useId(),
+    qualification: useId(),
+    linkedin: useId(),
+    github: useId(),
+    marks: useId(),
+    marksCard: useId(),
+    resume: useId(),
+  };
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const firstRender = useRef(true);
+
+  const normalizedEmail = values.email.trim().toLowerCase();
   const verifiedEmail = verification?.email ?? null;
-  const emailIsVerified = verifiedEmail !== null && verifiedEmail === values.email.trim().toLowerCase();
+  const emailIsVerified = verifiedEmail !== null && verifiedEmail === normalizedEmail;
+  const auth: DraftAuth | null = verification
+    ? { email: verification.email, email_verification_token: verification.token }
+    : null;
+  const isExperienced = values.candidate_type === "EXPERIENCED";
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -324,20 +313,25 @@ export function JobApplicationForm(
     return () => window.clearTimeout(timer);
   }, [resendIn]);
 
-  // The early "already applied?" check: once a plausible email or mobile
-  // number has been typed (and typing has paused), ask the server — a plain
-  // yes/no, nothing about the profile. The server enforces the same rule at
-  // every later step on its own; this only stops the candidate up front.
-  // The email and the mobile number are checked separately (same endpoint,
-  // one identifier each), so the message can sit under the field that
-  // actually caused the block.
-  const normalizedEmail = values.email.trim().toLowerCase();
+  // Move focus to the new step's heading, so keyboard and screen-reader
+  // users land at the start of the step (not on the initial render).
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    headingRef.current?.focus();
+  }, [step]);
+
+  // The early "already applied?" check — a plain yes/no once a plausible
+  // email or mobile number has been typed. The server enforces the same rule
+  // at every later step on its own; this only stops the candidate up front.
   const checkEmail = useDebouncedValue(
     looksLikeEmail(normalizedEmail) ? normalizedEmail : "",
     STATUS_CHECK_DEBOUNCE_MS,
   );
   const checkPhone = useDebouncedValue(
-    looksLikeMobile(values.phone) ? values.phone.trim() : "",
+    phoneError(values.phone) === null ? normalizedPhone(values.phone) : "",
     STATUS_CHECK_DEBOUNCE_MS,
   );
   const statusScope = props.program
@@ -363,26 +357,27 @@ export function JobApplicationForm(
     retry: false,
     staleTime: 30_000,
   });
-  // The server's own "already applied" answer at a later step (a code
-  // request, verification or submission), for the email it was given.
   const [blockedEmail, setBlockedEmail] = useState<string | null>(null);
   const emailBlocked =
     (checkEmail !== "" && emailStatusQuery.data?.already_applied === true) ||
     (blockedEmail !== null && blockedEmail === normalizedEmail);
   const phoneBlocked = checkPhone !== "" && phoneStatusQuery.data?.already_applied === true;
   const alreadyApplied = emailBlocked || phoneBlocked;
-  // One message, under the field that caused the block — under Email when
-  // both did (both inputs then point at it), never twice.
-  const emailMessageShown = emailBlocked;
-  const phoneMessageShown = phoneBlocked && !emailBlocked;
-  const blockMessageId = emailMessageShown ? fieldIds.emailMessage : fieldIds.phoneMessage;
 
   function set<K extends keyof Values>(key: K, value: Values[K]) {
+    setErrors((current) => ({ ...current, [key]: undefined }));
+    if (key === "phone") setPhoneConflict(null);
     setValues((current) => ({ ...current, [key]: value }));
   }
 
-  /** "You have already applied." from the server: back to the details step,
-   * where the message shows and Continue stays disabled. */
+  function goTo(next: StepKey) {
+    setFormError(null);
+    setNotice(null);
+    setStep(next);
+  }
+
+  /** "You have already applied." from the server: back to the details
+   * step, where the message shows and Continue stays disabled. */
   function handleAlreadyApplied(err: unknown): boolean {
     if (
       !(err instanceof ApiError) ||
@@ -394,8 +389,9 @@ export function JobApplicationForm(
     setBlockedEmail(normalizedEmail);
     setVerification(null);
     setCodeSentTo(null);
-    setFormError(null);
-    setStep("details");
+    setDraft(null);
+    goTo("details");
+    if (err.code === "already_applied_to_job") setFormError(err.message);
     return true;
   }
 
@@ -405,16 +401,77 @@ export function JobApplicationForm(
       setAlreadyRegistered(err.message);
       return true;
     }
-    // Applied before and still inside the reapply window — a different
-    // situation from "we already have your profile", and shown as such.
     if (err.code === "reapply_locked") {
-      const eligibleFrom =
-        typeof err.data?.eligible_from === "string" ? err.data.eligible_from : null;
+      const eligibleFrom = typeof err.data?.eligible_from === "string" ? err.data.eligible_from : null;
       setReapplyLocked({ message: err.message, eligibleFrom });
+      return true;
+    }
+    if (err.code === "phone_already_registered") {
+      // The server spent the verification on this attempt.
+      setVerification(null);
+      setCodeSentTo(null);
+      setDraft(null);
+      goTo("details");
+      setPhoneConflict(err.message);
       return true;
     }
     return false;
   }
+
+  /** Errors any step's server call can return; true = handled here. */
+  function handleRequestError(err: unknown): boolean {
+    if (handleAlreadyApplied(err) || handleConflict(err)) return true;
+    if (err instanceof ApiError && err.code === "email_not_verified") {
+      setVerification(null);
+      setCodeSentTo(null);
+      setCode("");
+      goTo("verify");
+      setNotice(VERIFICATION_EXPIRED_MESSAGE);
+      return true;
+    }
+    if (err instanceof ApiError && err.code === "draft_not_found") {
+      setDraft(null);
+      setVerification(null);
+      setCodeSentTo(null);
+      goTo("details");
+      setFormError(err.message);
+      return true;
+    }
+    return false;
+  }
+
+  function applyDraft(next: DraftView) {
+    setDraft(next);
+    if (next.background) {
+      const saved = next.background;
+      setValues((current) => prefillFromBackground(current, saved));
+    }
+    const savedEducation = educationFromDraft(next.education);
+    if (savedEducation) {
+      setEducation((current) => (current.qualification_key ? current : savedEducation));
+    }
+  }
+
+  const startDraftMutation = useMutation({
+    mutationFn: (verified: { email: string; token: string }) => {
+      if (!base) throw new Error("No draft for this application.");
+      return startApplicationDraft(
+        base,
+        { email: verified.email, email_verification_token: verified.token },
+        values.full_name.trim(),
+        normalizedPhone(values.phone),
+      );
+    },
+    onSuccess: (next) => {
+      applyDraft(next);
+      goTo("background");
+    },
+    onError: (err) => {
+      if (!handleRequestError(err)) {
+        setFormError(errorMessage(err, "We couldn't save your details. Please try again."));
+      }
+    },
+  });
 
   const sendCodeMutation = useMutation({
     mutationFn: () =>
@@ -424,15 +481,21 @@ export function JobApplicationForm(
           ? requestCampusEmailCode(props.campusToken, values.email.trim())
           : requestEmailCode(props.slug, values.email.trim(), props.jobId),
     onSuccess: (data) => {
-      setCodeSentTo(values.email.trim().toLowerCase());
+      setCodeSentTo(normalizedEmail);
       setCode("");
       setResendIn(data.resend_available_in_seconds);
       setFormError(null);
+      if (step !== "verify") goTo("verify");
     },
     onError: (err) => {
-      if (!handleAlreadyApplied(err)) {
-        setFormError(errorMessage(err, "We couldn't send the code. Please try again."));
+      if (handleAlreadyApplied(err)) return;
+      // A cooldown still running from an earlier send: the code already sent
+      // is still valid, so the candidate can go on and enter it.
+      if (err instanceof ApiError && err.code === "otp_resend_throttled" && codeSentTo === normalizedEmail) {
+        if (step !== "verify") goTo("verify");
+        return;
       }
+      setFormError(errorMessage(err, "We couldn't send the code. Please try again."));
     },
   });
 
@@ -443,16 +506,14 @@ export function JobApplicationForm(
         : props.campusToken !== undefined
           ? verifyCampusEmailCode(props.campusToken, values.email.trim(), code.trim())
           : verifyEmailCode(props.slug, values.email.trim(), code.trim(), props.jobId),
-    // A valid code moves straight on to the resume — there is no separate
-    // "verified" screen to click through. An invalid/expired code stays on
-    // this step with the backend's message.
     onSuccess: (data) => {
-      setVerification({ email: values.email.trim().toLowerCase(), token: data.verification_token });
-      // Only now — with the email proven theirs — does a returning
-      // candidate's stored profile come back, to fill in anything left blank.
+      const verified = { email: normalizedEmail, token: data.verification_token };
+      setVerification(verified);
+      setCode("");
       const stored = data.existing_profile;
       if (stored) setValues((current) => prefillEmptyFields(current, stored));
-      goTo("resume");
+      if (base) startDraftMutation.mutate(verified);
+      else goTo("background");
     },
     onError: (err) => {
       if (handleAlreadyApplied(err) || handleConflict(err)) return;
@@ -460,362 +521,291 @@ export function JobApplicationForm(
     },
   });
 
-  const submitMutation = useMutation({
+  const backgroundMutation = useMutation({
     mutationFn: () => {
-      if (!resume || !verification || values.candidate_type === "") {
+      if (!base || !auth) throw new Error("Verify your email first.");
+      return saveDraftBackground(base, auth, toBackground(values));
+    },
+    onSuccess: (next) => {
+      setDraft(next);
+      goTo("education");
+    },
+    onError: (err) => {
+      if (!handleRequestError(err)) {
+        setFormError(errorMessage(err, "We couldn't save your details. Please try again."));
+      }
+    },
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: async (): Promise<ApplicationOutcomeResult> => {
+      if (!resume || !verification) throw new Error("The application is incomplete.");
+      if (base && auth) {
+        setSubmitProgress(0);
+        return submitApplicationDraft(base, auth, resume, marksCard, setSubmitProgress);
+      }
+      if (!props.program || values.candidate_type === "") {
         throw new Error("The application is incomplete.");
       }
-      const complete = { ...values, candidate_type: values.candidate_type };
-      if (props.program) {
-        if (!props.program.ready) throw new Error("Complete the program details and accept the terms.");
-        return applyToProgram(
-          props.program.id,
-          complete,
-          resume,
-          verification.token,
-          marksCard,
-          props.program.declaration,
-        );
-      }
-      return props.campusToken !== undefined
-        ? applyToCampusDrive(props.campusToken, complete, resume, verification.token, marksCard)
-        : applyToJob(props.slug, props.jobId, complete, resume, verification.token, marksCard);
+      if (!props.program.ready) throw new Error("Complete the program details and accept the terms.");
+      return applyToProgram(
+        props.program.id,
+        { ...values, candidate_type: values.candidate_type, phone: normalizedPhone(values.phone) },
+        resume,
+        verification.token,
+        marksCard,
+        props.program.declaration,
+      );
     },
-    onSuccess: (data: ApplicationOutcomeResult) => setResult(data),
+    onSuccess: (data) => setResult(data),
     onError: (err) => {
-      if (handleAlreadyApplied(err) || handleConflict(err)) return;
-      if (err instanceof ApiError && err.code === "email_not_verified") {
-        setVerification(null);
-        setCodeSentTo(null);
-        setStep("verify");
+      setSubmitProgress(null);
+      if (handleRequestError(err)) return;
+      if (err instanceof ApiError) {
+        if (
+          ["education_recheck_required", "education_not_verified", "academic_document_required", "education_required"].includes(
+            err.code,
+          )
+        ) {
+          goTo("education");
+          setFormError(err.message);
+          return;
+        }
+        if (err.code === "background_required") {
+          goTo("background");
+          setFormError(err.message);
+          return;
+        }
       }
       setFormError(errorMessage(err, "Unable to submit your application. Please try again."));
     },
   });
 
-  if (result)
+  if (result) {
     return (
       <ApplicationOutcome
         result={result}
         careersHref={props.slug !== undefined ? `/org/${props.slug}` : "/"}
       />
     );
-  if (reapplyLocked)
-    return (
-      <ReapplyRestricted
-        message={reapplyLocked.message}
-        eligibleFrom={reapplyLocked.eligibleFrom}
-      />
-    );
+  }
+  if (reapplyLocked) {
+    return <ReapplyRestricted message={reapplyLocked.message} eligibleFrom={reapplyLocked.eligibleFrom} />;
+  }
   if (alreadyRegistered) return <AlreadyRegistered message={alreadyRegistered} />;
 
-  function goTo(next: Step) {
-    setFormError(null);
-    setStep(next);
-  }
+  const busy =
+    sendCodeMutation.isPending ||
+    verifyMutation.isPending ||
+    startDraftMutation.isPending ||
+    backgroundMutation.isPending ||
+    submitMutation.isPending;
+
+  // --- Step handlers ---------------------------------------------------------
 
   function handleDetailsSubmit(event: FormEvent) {
     event.preventDefault();
-    if (alreadyApplied) return;
-    if (values.candidate_type === "") {
-      setFormError("Please tell us whether you are a fresher or an experienced professional.");
+    if (alreadyApplied || busy) return;
+    const next: FieldErrors = {};
+    const nameProblem = fullNameError(values.full_name);
+    const emailProblem = emailError(values.email);
+    const phoneProblem = phoneError(values.phone);
+    if (nameProblem) next.full_name = nameProblem;
+    if (emailProblem) next.email = emailProblem;
+    if (phoneProblem) next.phone = phoneProblem;
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
+    if (emailIsVerified && verification) {
+      // Back here to fix a typo: the email is still verified — refresh the
+      // draft with the corrected name/mobile and carry on.
+      if (base) startDraftMutation.mutate(verification);
+      else goTo("background");
       return;
     }
-    if (values.languages.length === 0) {
-      setFormError("Please add at least one language you know.");
+    if (codeSentTo === normalizedEmail && resendIn > 0) {
+      goTo("verify");
       return;
     }
-    if (tenthMarksError(values.tenth_marks_percentage) || marksCardProblem) {
-      setFormError("Please correct the 10th marks details, or leave them blank.");
-      return;
+    sendCodeMutation.mutate();
+  }
+
+  function validateBackground(): boolean {
+    const next: FieldErrors = {};
+    if (!values.date_of_birth) next.date_of_birth = "Enter your date of birth.";
+    else if (values.date_of_birth > latestAllowedBirthDate()) {
+      next.date_of_birth = "Applicants must be at least 16 years old.";
     }
-    // Already verified this exact address (they came back to edit details):
-    // no need to verify it again.
-    goTo(emailIsVerified ? "resume" : "verify");
+    if (!values.place_of_birth.trim()) next.place_of_birth = "Enter your place of birth.";
+    if (values.languages.length === 0) next.languages = "Add at least one language you know.";
+    if (!values.candidate_type) next.candidate_type = "Tell us whether you are a fresher or experienced.";
+    if (isExperienced) {
+      if (!values.years_experience.trim()) next.years_experience = "Enter your total experience.";
+      if (!values.immediate_joiner && !values.notice_period_days.trim()) {
+        next.notice_period_days = "Enter your notice period, or tick “I can join immediately”.";
+      }
+      if (!values.current_title.trim()) next.current_title = "Enter your current job title.";
+      if (!values.current_company.trim()) next.current_company = "Enter your current company.";
+    }
+    if (!values.current_location.trim()) next.current_location = "Enter your current location.";
+    if (!values.preferred_location.trim()) next.preferred_location = "Enter your preferred location.";
+    const linkedin = profileUrlError(values.linkedin_url, "linkedin.com");
+    if (linkedin) next.linkedin_url = linkedin;
+    const github = profileUrlError(values.github_url, "github.com");
+    if (github) next.github_url = github;
+    if (!base) {
+      if (!values.qualification.trim()) next.qualification = "Enter your highest qualification.";
+      const marks = tenthMarksError(values.tenth_marks_percentage);
+      if (marks) next.tenth_marks_percentage = marks;
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0 && !(!base && marksCardProblem);
+  }
+
+  function handleBackgroundSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !validateBackground()) return;
+    if (base) backgroundMutation.mutate();
+    else goTo("resume");
+  }
+
+  function selectResume(file: File | null) {
+    setFormError(null);
+    const problem = file ? resumeFileError(file) : null;
+    setResumeProblem(problem);
+    setResume(file && !problem ? file : null);
+  }
+
+  function selectMarksCard(file: File | null) {
+    const problem = file ? documentFileError(file, MAX_MARKS_CARD_MB, "10th marks card") : null;
+    setMarksCardProblem(problem);
+    setMarksCard(file && !problem ? file : null);
   }
 
   function handleResumeSubmit(event: FormEvent) {
     event.preventDefault();
     if (!resume) {
-      setFormError("Please attach your resume as a PDF.");
+      setResumeProblem(resumeProblem ?? "Please attach your resume as a PDF.");
       return;
     }
     goTo("review");
   }
 
-  function selectResume(file: File | null) {
-    setFormError(null);
-    if (file && !file.name.toLowerCase().endsWith(".pdf")) {
-      setResume(null);
-      setFormError("Please upload your resume as a PDF file.");
-      return;
-    }
-    if (file && file.size > MAX_RESUME_MB * 1024 * 1024) {
-      setResume(null);
-      setFormError(`Your resume must be smaller than ${MAX_RESUME_MB} MB.`);
-      return;
-    }
-    setResume(file);
-  }
-
-  function selectMarksCard(file: File | null) {
-    const problem = file ? marksCardError(file) : null;
-    setMarksCardProblem(problem);
-    setMarksCard(file && !problem ? file : null);
-    if (problem && marksCardInput.current) marksCardInput.current.value = "";
-  }
-
-  function clearMarksCard() {
-    setMarksCard(null);
-    setMarksCardProblem(null);
-    if (marksCardInput.current) marksCardInput.current.value = "";
-  }
-
-  const marksProblem = tenthMarksError(values.tenth_marks_percentage);
-  const busy = sendCodeMutation.isPending || verifyMutation.isPending || submitMutation.isPending;
+  const stepIndex = steps.findIndex((s) => s.key === step);
+  const heading = STEP_HEADINGS[step];
 
   return (
     <section className="card apply-card" aria-labelledby="apply-title">
       <h2 id="apply-title">{title}</h2>
       <p className="muted apply-intro">
-        Fields marked <span className="required-mark">*</span> are required. You can apply once — our
-        recruitment team will also consider your profile for other suitable roles.
+        Fields marked <span className="required-mark">*</span> are required. Your progress is saved as
+        you go.
       </p>
-      <Stepper current={step} />
+      <ApplyStepper steps={steps} current={step} />
+
+      <h3 className="apply-step-heading" ref={headingRef} tabIndex={-1}>
+        <span className="sr-only">{`Step ${stepIndex + 1} of ${steps.length}:`}</span> {heading}
+      </h3>
+      {notice && (
+        <p className="apply-notice" role="status">
+          {notice}
+        </p>
+      )}
 
       {step === "details" && (
-        <form className="apply-details" onSubmit={handleDetailsSubmit}>
-          <fieldset className="apply-fieldset">
-            <legend>Personal information</legend>
-            <Field label="Full name">
-              <input required value={values.full_name} onChange={(e) => set("full_name", e.target.value)} autoComplete="name" />
-            </Field>
-            <div className="field-row">
-              <FieldWithMessage
-                id={fieldIds.email}
-                label="Email"
-                message={emailMessageShown ? ALREADY_APPLIED_MESSAGE : null}
-                messageId={fieldIds.emailMessage}
-              >
-                <input
-                  id={fieldIds.email}
-                  type="email"
-                  required
-                  maxLength={320}
-                  value={values.email}
-                  onChange={(e) => set("email", e.target.value)}
-                  autoComplete="email"
-                  aria-invalid={emailBlocked || undefined}
-                  aria-describedby={emailBlocked ? blockMessageId : undefined}
-                />
-              </FieldWithMessage>
-              <FieldWithMessage
-                id={fieldIds.phone}
-                label="Mobile number"
-                hint="Include the country code, e.g. +91 98765 43210."
-                message={phoneMessageShown ? ALREADY_APPLIED_MESSAGE : null}
-                messageId={fieldIds.phoneMessage}
-              >
-                <input
-                  id={fieldIds.phone}
-                  type="tel"
-                  required
-                  maxLength={32}
-                  value={values.phone}
-                  onChange={(e) => set("phone", e.target.value)}
-                  autoComplete="tel"
-                  placeholder="+91 98765 43210"
-                  aria-invalid={phoneBlocked || undefined}
-                  aria-describedby={phoneBlocked ? blockMessageId : undefined}
-                />
-              </FieldWithMessage>
-            </div>
-            <div className="field-row">
-              <Field label="Date of birth">
-                <input type="date" required max={latestAllowedBirthDate()} value={values.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} autoComplete="bday" />
-              </Field>
-              <Field label="Place of birth">
-                <input required maxLength={255} value={values.place_of_birth} onChange={(e) => set("place_of_birth", e.target.value)} placeholder="City, Country" />
-              </Field>
-            </div>
-            <LanguagesInput value={values.languages} onChange={(next) => set("languages", next)} />
-          </fieldset>
-
-          <fieldset className="apply-fieldset">
-            <legend>Professional background</legend>
-            <Field label="I am a…">
-              <select required value={values.candidate_type} onChange={(e) => set("candidate_type", e.target.value as CandidateType | "")}>
-                <option value="">Select…</option>
-                {(Object.keys(CANDIDATE_TYPE_LABELS) as CandidateType[]).map((type) => (
-                  <option key={type} value={type}>
-                    {CANDIDATE_TYPE_LABELS[type]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            {isExperienced && (
-              <>
-                <div className="field-row">
-                  <Field label="Total experience (years)">
-                    <input type="number" required min={0} max={80} step={1} value={values.years_experience} onChange={(e) => set("years_experience", e.target.value)} />
-                  </Field>
-                  <Field label="Notice period (days)">
-                    <input
-                      type="number"
-                      required={!values.immediate_joiner}
-                      min={0}
-                      max={365}
-                      step={1}
-                      value={values.immediate_joiner ? "0" : values.notice_period_days}
-                      onChange={(e) => set("notice_period_days", e.target.value)}
-                      disabled={values.immediate_joiner}
-                    />
-                  </Field>
-                </div>
-                <label className="field field-inline">
-                  <input type="checkbox" checked={values.immediate_joiner} onChange={(e) => set("immediate_joiner", e.target.checked)} />
-                  <span>I can join immediately</span>
-                </label>
-                <div className="field-row">
-                  <Field label="Current job title">
-                    <input required maxLength={255} value={values.current_title} onChange={(e) => set("current_title", e.target.value)} />
-                  </Field>
-                  <Field label="Current company">
-                    <input required maxLength={255} value={values.current_company} onChange={(e) => set("current_company", e.target.value)} />
-                  </Field>
-                </div>
-              </>
-            )}
-
-            <div className="field-row">
-              <Field label="Current location">
-                <input required maxLength={255} value={values.current_location} onChange={(e) => set("current_location", e.target.value)} />
-              </Field>
-              <Field label="Preferred location">
-                <input required maxLength={255} value={values.preferred_location} onChange={(e) => set("preferred_location", e.target.value)} />
-              </Field>
-            </div>
-            <Field label="Highest qualification">
-              <input required maxLength={255} value={values.qualification} onChange={(e) => set("qualification", e.target.value)} placeholder="e.g. B.Tech in Computer Science" />
-            </Field>
-            <div className="field-row">
-              <Field label="LinkedIn profile" optional>
-                <input type="url" maxLength={500} value={values.linkedin_url} onChange={(e) => set("linkedin_url", e.target.value)} placeholder="https://www.linkedin.com/in/…" />
-              </Field>
-              <Field label="GitHub profile" optional>
-                <input type="url" maxLength={500} value={values.github_url} onChange={(e) => set("github_url", e.target.value)} placeholder="https://github.com/…" />
-              </Field>
-            </div>
-          </fieldset>
-
-          <fieldset className="apply-fieldset">
-            <legend>Education</legend>
-            <div className="field-row">
-              <FieldWithMessage
-                id={fieldIds.marks}
-                label="10th Marks"
-                optional
-                hint="Percentage, 0–100."
-                message={marksProblem}
-                messageId={fieldIds.marksMessage}
-              >
-                <input
-                  id={fieldIds.marks}
-                  inputMode="decimal"
-                  value={values.tenth_marks_percentage}
-                  onChange={(e) => set("tenth_marks_percentage", e.target.value)}
-                  placeholder="e.g. 87.5"
-                  aria-invalid={marksProblem !== null || undefined}
-                  aria-describedby={marksProblem ? fieldIds.marksMessage : undefined}
-                />
-              </FieldWithMessage>
-              <FieldWithMessage
-                id={fieldIds.marksCard}
-                label="10th Marks Card"
-                optional
-                hint={`PDF, PNG or JPG, up to ${MAX_MARKS_CARD_MB} MB.`}
-                message={marksCardProblem}
-                messageId={fieldIds.marksCardMessage}
-              >
-                {marksCard ? (
-                  <div className="file-selected">
-                    <span className="file-selected-name" title={marksCard.name}>
-                      {marksCard.name}
-                    </span>
-                    <span className="file-selected-size">{formatFileSize(marksCard.size)}</span>
-                    <button
-                      type="button"
-                      className="chip-remove"
-                      onClick={clearMarksCard}
-                      aria-label={`Remove ${marksCard.name}`}
-                    >
-                      <Icon name="x" size={12} />
-                    </button>
-                  </div>
-                ) : (
-                  <input
-                    ref={marksCardInput}
-                    id={fieldIds.marksCard}
-                    type="file"
-                    accept={MARKS_CARD_ACCEPT}
-                    onChange={(e) => selectMarksCard(e.target.files?.[0] ?? null)}
-                    aria-invalid={marksCardProblem !== null || undefined}
-                    aria-describedby={marksCardProblem ? fieldIds.marksCardMessage : undefined}
-                  />
-                )}
-              </FieldWithMessage>
-            </div>
-          </fieldset>
-
+        <form className="apply-step-body" onSubmit={handleDetailsSubmit} noValidate>
+          <p className="muted apply-step-lead">
+            Start with your contact details. We'll send a verification code to your email.
+          </p>
+          <FormField id={ids.name} label="Full name" message={errors.full_name}>
+            <input
+              {...fieldAria(ids.name, errors.full_name)}
+              required
+              value={values.full_name}
+              onChange={(e) => set("full_name", e.target.value)}
+              autoComplete="name"
+            />
+          </FormField>
+          <FormField
+            id={ids.email}
+            label="Email address"
+            message={errors.email ?? (emailBlocked ? ALREADY_APPLIED_MESSAGE : null)}
+          >
+            <input
+              {...fieldAria(ids.email, errors.email ?? (emailBlocked ? ALREADY_APPLIED_MESSAGE : null))}
+              type="email"
+              required
+              maxLength={320}
+              value={values.email}
+              onChange={(e) => set("email", e.target.value)}
+              autoComplete="email"
+            />
+          </FormField>
+          <FormField
+            id={ids.phone}
+            label="Mobile number"
+            hint="Select your country code and enter your mobile number."
+            message={
+              errors.phone ??
+              phoneConflict ??
+              (phoneBlocked && !emailBlocked ? ALREADY_APPLIED_MESSAGE : null)
+            }
+          >
+            <PhoneInput
+              id={ids.phone}
+              value={values.phone}
+              onChange={(next) => set("phone", next)}
+              invalid={Boolean(errors.phone || phoneConflict || phoneBlocked)}
+              describedBy={
+                errors.phone || phoneConflict || phoneBlocked
+                  ? `${ids.phone}-message ${ids.phone}-hint`
+                  : `${ids.phone}-hint`
+              }
+            />
+          </FormField>
+          {emailIsVerified && (
+            <p className="verify-status verify-status-ok">
+              <Icon name="check" size={15} /> {values.email.trim()} is verified.
+            </p>
+          )}
           {formError && <Alert>{formError}</Alert>}
           <div className="apply-actions apply-actions-end">
-            <button type="submit" className="btn btn-primary" disabled={alreadyApplied}>
-              Continue <Icon name="arrow-right" size={16} />
+            <button type="submit" className="btn btn-primary" disabled={alreadyApplied || busy}>
+              {busy ? (
+                <Spinner label="Please wait…" />
+              ) : emailIsVerified ? (
+                "Continue"
+              ) : (
+                "Continue & verify email"
+              )}
+              {!busy && <Icon name="arrow-right" size={16} />}
             </button>
           </div>
         </form>
       )}
 
       {step === "verify" && (
-        <div className="apply-verify">
-          <p>
-            We'll send a 6-digit verification code to <strong>{values.email.trim()}</strong> to confirm
-            it's your email address.
-          </p>
-
-          <p className="verify-status" role="status">
-            <Icon name="email" size={16} />
-            {codeSentTo === values.email.trim().toLowerCase()
-              ? "Code sent — check your inbox (and spam folder)."
-              : "Not verified yet"}
-          </p>
-          <div className="apply-actions apply-actions-start">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => sendCodeMutation.mutate()}
-              disabled={busy || resendIn > 0}
-            >
-              {sendCodeMutation.isPending ? (
-                <Spinner label="Sending…" />
-              ) : codeSentTo ? (
-                resendIn > 0 ? `Resend code in ${resendIn}s` : "Resend code"
-              ) : (
-                "Send verification code"
-              )}
-            </button>
-          </div>
-          {codeSentTo && (
+        <div className="apply-step-body apply-verify">
+          {codeSentTo === normalizedEmail ? (
+            <p>
+              We sent a 6-digit code to <strong>{values.email.trim()}</strong>. Enter it below to
+              verify your email address. Check your spam folder if it doesn't arrive.
+            </p>
+          ) : (
+            <p>
+              We'll send a 6-digit verification code to <strong>{values.email.trim()}</strong>.
+            </p>
+          )}
+          {codeSentTo === normalizedEmail ? (
             <form
               className="verify-code-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                verifyMutation.mutate();
+                if (code.length === 6 && !busy) verifyMutation.mutate();
               }}
             >
-              <Field label="Verification code">
+              <FormField id={ids.code} label="Verification code">
                 <input
+                  {...fieldAria(ids.code)}
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   pattern="[0-9]{6}"
@@ -825,29 +815,343 @@ export function JobApplicationForm(
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
                   className="verify-code-input"
                 />
-              </Field>
+              </FormField>
               <button type="submit" className="btn btn-primary" disabled={busy || code.length !== 6}>
-                {verifyMutation.isPending ? <Spinner label="Verifying…" /> : "Verify email"}
+                {verifyMutation.isPending || startDraftMutation.isPending ? (
+                  <Spinner label="Verifying…" />
+                ) : (
+                  "Verify email"
+                )}
               </button>
             </form>
-          )}
+          ) : null}
+          <div className="apply-verify-links">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => sendCodeMutation.mutate()}
+              disabled={busy || resendIn > 0}
+            >
+              {sendCodeMutation.isPending ? (
+                <Spinner label="Sending…" />
+              ) : codeSentTo === normalizedEmail ? (
+                resendIn > 0 ? (
+                  `Resend code in ${resendIn}s`
+                ) : (
+                  "Resend code"
+                )
+              ) : (
+                "Send verification code"
+              )}
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => goTo("details")} disabled={busy}>
+              Change email
+            </button>
+          </div>
           {formError && <Alert>{formError}</Alert>}
           <div className="apply-actions">
             <button type="button" className="btn btn-ghost" onClick={() => goTo("details")} disabled={busy}>
-              Back
+              <Icon name="arrow-left" size={16} /> Back
             </button>
           </div>
         </div>
       )}
 
+      {step === "background" && (
+        <form className="apply-step-body" onSubmit={handleBackgroundSubmit} noValidate>
+          <p className="verify-status verify-status-ok">
+            <Icon name="check" size={15} /> Email verified: {verification?.email}
+          </p>
+          <fieldset className="apply-fieldset">
+            <legend>About you</legend>
+            <div className="field-row">
+              <FormField id={ids.dob} label="Date of birth" message={errors.date_of_birth}>
+                <input
+                  {...fieldAria(ids.dob, errors.date_of_birth)}
+                  type="date"
+                  required
+                  max={latestAllowedBirthDate()}
+                  value={values.date_of_birth}
+                  onChange={(e) => set("date_of_birth", e.target.value)}
+                  autoComplete="bday"
+                />
+              </FormField>
+              <FormField id={ids.pob} label="Place of birth" message={errors.place_of_birth}>
+                <input
+                  {...fieldAria(ids.pob, errors.place_of_birth)}
+                  required
+                  maxLength={255}
+                  value={values.place_of_birth}
+                  onChange={(e) => set("place_of_birth", e.target.value)}
+                  placeholder="City, Country"
+                />
+              </FormField>
+            </div>
+            <LanguagesInput value={values.languages} onChange={(next) => set("languages", next)} />
+            {errors.languages && (
+              <p className="field-message" role="alert">
+                {errors.languages}
+              </p>
+            )}
+          </fieldset>
+
+          <fieldset className="apply-fieldset">
+            <legend>Experience</legend>
+            <FormField id={ids.type} label="I am a…" message={errors.candidate_type}>
+              <select
+                {...fieldAria(ids.type, errors.candidate_type)}
+                required
+                value={values.candidate_type}
+                onChange={(e) => set("candidate_type", e.target.value as CandidateType | "")}
+              >
+                <option value="">Select…</option>
+                {(Object.keys(CANDIDATE_TYPE_LABELS) as CandidateType[]).map((type) => (
+                  <option key={type} value={type}>
+                    {CANDIDATE_TYPE_LABELS[type]}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            {isExperienced && (
+              <>
+                <div className="field-row">
+                  <FormField id={ids.years} label="Total experience (years)" message={errors.years_experience}>
+                    <input
+                      {...fieldAria(ids.years, errors.years_experience)}
+                      type="number"
+                      required
+                      min={0}
+                      max={80}
+                      step={1}
+                      value={values.years_experience}
+                      onChange={(e) => set("years_experience", e.target.value)}
+                    />
+                  </FormField>
+                  <FormField id={ids.notice} label="Notice period (days)" message={errors.notice_period_days}>
+                    <input
+                      {...fieldAria(ids.notice, errors.notice_period_days)}
+                      type="number"
+                      required={!values.immediate_joiner}
+                      min={0}
+                      max={365}
+                      step={1}
+                      value={values.immediate_joiner ? "0" : values.notice_period_days}
+                      onChange={(e) => set("notice_period_days", e.target.value)}
+                      disabled={values.immediate_joiner}
+                    />
+                  </FormField>
+                </div>
+                <label className="field field-inline">
+                  <input
+                    type="checkbox"
+                    checked={values.immediate_joiner}
+                    onChange={(e) => set("immediate_joiner", e.target.checked)}
+                  />
+                  <span>I can join immediately</span>
+                </label>
+                <div className="field-row">
+                  <FormField id={ids.jobTitle} label="Current job title" message={errors.current_title}>
+                    <input
+                      {...fieldAria(ids.jobTitle, errors.current_title)}
+                      required
+                      maxLength={255}
+                      value={values.current_title}
+                      onChange={(e) => set("current_title", e.target.value)}
+                    />
+                  </FormField>
+                  <FormField id={ids.company} label="Current company" message={errors.current_company}>
+                    <input
+                      {...fieldAria(ids.company, errors.current_company)}
+                      required
+                      maxLength={255}
+                      value={values.current_company}
+                      onChange={(e) => set("current_company", e.target.value)}
+                    />
+                  </FormField>
+                </div>
+              </>
+            )}
+            <div className="field-row">
+              <FormField id={ids.current} label="Current location" message={errors.current_location}>
+                <input
+                  {...fieldAria(ids.current, errors.current_location)}
+                  required
+                  maxLength={255}
+                  value={values.current_location}
+                  onChange={(e) => set("current_location", e.target.value)}
+                  placeholder="City"
+                />
+              </FormField>
+              <FormField id={ids.preferred} label="Preferred location" message={errors.preferred_location}>
+                <input
+                  {...fieldAria(ids.preferred, errors.preferred_location)}
+                  required
+                  maxLength={255}
+                  value={values.preferred_location}
+                  onChange={(e) => set("preferred_location", e.target.value)}
+                  placeholder="City"
+                />
+              </FormField>
+            </div>
+          </fieldset>
+
+          <fieldset className="apply-fieldset">
+            <legend>Online profiles</legend>
+            <div className="field-row">
+              <FormField id={ids.linkedin} label="LinkedIn profile" optional message={errors.linkedin_url}>
+                <input
+                  {...fieldAria(ids.linkedin, errors.linkedin_url)}
+                  type="url"
+                  maxLength={500}
+                  value={values.linkedin_url}
+                  onChange={(e) => set("linkedin_url", e.target.value)}
+                  placeholder="https://www.linkedin.com/in/…"
+                />
+              </FormField>
+              <FormField id={ids.github} label="GitHub profile" optional message={errors.github_url}>
+                <input
+                  {...fieldAria(ids.github, errors.github_url)}
+                  type="url"
+                  maxLength={500}
+                  value={values.github_url}
+                  onChange={(e) => set("github_url", e.target.value)}
+                  placeholder="https://github.com/…"
+                />
+              </FormField>
+            </div>
+          </fieldset>
+
+          {!base && (
+            <fieldset className="apply-fieldset">
+              <legend>Education</legend>
+              <FormField id={ids.qualification} label="Highest qualification" message={errors.qualification}>
+                <input
+                  {...fieldAria(ids.qualification, errors.qualification)}
+                  required
+                  maxLength={255}
+                  value={values.qualification}
+                  onChange={(e) => set("qualification", e.target.value)}
+                  placeholder="e.g. B.Tech in Computer Science"
+                />
+              </FormField>
+              <div className="field-row">
+                <FormField
+                  id={ids.marks}
+                  label="10th marks"
+                  optional
+                  hint="Percentage, 0–100."
+                  message={errors.tenth_marks_percentage}
+                >
+                  <input
+                    {...fieldAria(ids.marks, errors.tenth_marks_percentage, "Percentage, 0–100.")}
+                    inputMode="decimal"
+                    value={values.tenth_marks_percentage}
+                    onChange={(e) => set("tenth_marks_percentage", e.target.value)}
+                    placeholder="e.g. 87.5"
+                  />
+                </FormField>
+                <FormField
+                  id={ids.marksCard}
+                  label="10th marks card"
+                  optional
+                  hint={`PDF, PNG or JPG, up to ${MAX_MARKS_CARD_MB} MB.`}
+                  message={marksCardProblem}
+                >
+                  {marksCard ? (
+                    <div className="file-selected">
+                      <span className="file-selected-name" title={marksCard.name}>
+                        {marksCard.name}
+                      </span>
+                      <span className="file-selected-size">{formatFileSize(marksCard.size)}</span>
+                      <button
+                        type="button"
+                        className="chip-remove"
+                        onClick={() => selectMarksCard(null)}
+                        aria-label={`Remove ${marksCard.name}`}
+                      >
+                        <Icon name="x" size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      {...fieldAria(ids.marksCard, marksCardProblem)}
+                      type="file"
+                      accept={DOCUMENT_ACCEPT}
+                      onChange={(e) => selectMarksCard(e.target.files?.[0] ?? null)}
+                    />
+                  )}
+                </FormField>
+              </div>
+            </fieldset>
+          )}
+
+          {formError && <Alert>{formError}</Alert>}
+          <div className="apply-actions">
+            <button type="button" className="btn btn-ghost" onClick={() => goTo("details")} disabled={busy}>
+              <Icon name="arrow-left" size={16} /> Back
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {backgroundMutation.isPending ? <Spinner label="Saving…" /> : "Continue"}
+              {!backgroundMutation.isPending && <Icon name="arrow-right" size={16} />}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {step === "education" && formError && <Alert>{formError}</Alert>}
+      {step === "education" && base && auth && draft && (
+        <EducationStep
+          base={base}
+          auth={auth}
+          draft={draft}
+          onDraft={setDraft}
+          values={education}
+          onChange={setEducation}
+          marksCard={marksCard}
+          onMarksCard={setMarksCard}
+          onBack={() => goTo("background")}
+          onContinue={() => goTo("resume")}
+          onRequestError={handleRequestError}
+        />
+      )}
+
       {step === "resume" && (
-        <form onSubmit={handleResumeSubmit}>
-          <Field label="Resume (PDF only)" hint={`PDF, up to ${MAX_RESUME_MB} MB.`}>
-            <input type="file" required accept=".pdf,application/pdf" onChange={(e) => selectResume(e.target.files?.[0] ?? null)} />
-          </Field>
+        <form className="apply-step-body" onSubmit={handleResumeSubmit} noValidate>
+          <FormField
+            id={ids.resume}
+            label="Resume"
+            hint={`PDF only, up to ${MAX_RESUME_MB} MB.`}
+            message={resumeProblem}
+          >
+            {resume ? (
+              <div className="file-selected">
+                <Icon name="notes" size={14} />
+                <span className="file-selected-name" title={resume.name}>
+                  {resume.name}
+                </span>
+                <span className="file-selected-size">{formatFileSize(resume.size)}</span>
+                <button
+                  type="button"
+                  className="chip-remove"
+                  onClick={() => selectResume(null)}
+                  aria-label={`Remove ${resume.name}`}
+                >
+                  <Icon name="x" size={12} />
+                </button>
+              </div>
+            ) : (
+              <input
+                {...fieldAria(ids.resume, resumeProblem, `PDF only, up to ${MAX_RESUME_MB} MB.`)}
+                type="file"
+                required
+                accept=".pdf,application/pdf"
+                onChange={(e) => selectResume(e.target.files?.[0] ?? null)}
+              />
+            )}
+          </FormField>
           {resume && (
-            <p className="muted">
-              Selected: <strong>{resume.name}</strong>
+            <p className="muted apply-step-lead">
+              Ready — your resume is uploaded when you submit your application.
             </p>
           )}
           {formError && <Alert>{formError}</Alert>}
@@ -855,9 +1159,9 @@ export function JobApplicationForm(
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => goTo(emailIsVerified ? "details" : "verify")}
+              onClick={() => goTo(base ? "education" : "background")}
             >
-              Back
+              <Icon name="arrow-left" size={16} /> Back
             </button>
             <button type="submit" className="btn btn-primary">
               Continue <Icon name="arrow-right" size={16} />
@@ -867,59 +1171,28 @@ export function JobApplicationForm(
       )}
 
       {step === "review" && (
-        <div className="apply-review">
-          <dl className="apply-summary">
-            <dt>Name</dt>
-            <dd>{values.full_name}</dd>
-            <dt>Email</dt>
-            <dd>
-              {values.email} {emailIsVerified && <span className="chip chip-verified">Verified</span>}
-            </dd>
-            <dt>Mobile</dt>
-            <dd>{values.phone}</dd>
-            <dt>Date of birth</dt>
-            <dd>{values.date_of_birth}</dd>
-            <dt>Place of birth</dt>
-            <dd>{values.place_of_birth}</dd>
-            <dt>Languages</dt>
-            <dd>{values.languages.join(", ")}</dd>
-            <dt>Profile</dt>
-            <dd>
-              {values.candidate_type === "" ? "" : CANDIDATE_TYPE_LABELS[values.candidate_type]}
-              {isExperienced && ` · ${values.years_experience} yrs · ${values.current_title} at ${values.current_company}`}
-            </dd>
-            <dt>Location</dt>
-            <dd>
-              {values.current_location} (prefers {values.preferred_location})
-            </dd>
-            <dt>Qualification</dt>
-            <dd>{values.qualification}</dd>
-            {values.tenth_marks_percentage.trim() && (
-              <>
-                <dt>10th Marks</dt>
-                <dd>{values.tenth_marks_percentage.trim()}%</dd>
-              </>
-            )}
-            {marksCard && (
-              <>
-                <dt>10th Marks Card</dt>
-                <dd>{marksCard.name}</dd>
-              </>
-            )}
-            <dt>Resume</dt>
-            <dd>{resume?.name}</dd>
-          </dl>
-          <p className="muted">
-            Please check your details — once submitted, an application can't be edited online.
-          </p>
-          <UpdateInfoNote contactEmail={contactEmail} />
-
+        <ReviewStep
+          base={base}
+          values={values}
+          isExperienced={isExperienced}
+          emailIsVerified={emailIsVerified}
+          draft={base ? draft : null}
+          educationLabel={draft?.education ? undefined : values.qualification}
+          resume={resume}
+          marksCard={marksCard}
+          contactEmail={contactEmail}
+          onEdit={goTo}
+          hasEducationStep={Boolean(base)}
+        >
           {submitMutation.isPending && (
-            <p className="apply-processing" role="status" aria-live="polite">
+            <div className="apply-processing" role="status" aria-live="polite">
               <span className="spinner" aria-hidden="true" />
-              Submitting your application and reviewing your resume against the role requirements.
-              This can take up to a minute — please keep this page open.
-            </p>
+              <span>
+                {submitProgress !== null && submitProgress < 1
+                  ? `Uploading your resume… ${Math.round(submitProgress * 100)}%`
+                  : "Submitting your application and reviewing your resume against the role requirements. This can take up to a minute — please keep this page open."}
+              </span>
+            </div>
           )}
           {formError && <Alert>{formError}</Alert>}
           {props.program && !props.program.ready && (
@@ -927,22 +1200,203 @@ export function JobApplicationForm(
           )}
           <div className="apply-actions">
             <button type="button" className="btn btn-ghost" onClick={() => goTo("resume")} disabled={busy}>
-              Back
+              <Icon name="arrow-left" size={16} /> Back
             </button>
             <button
               type="button"
               className="btn btn-primary"
               onClick={() => {
+                if (busy) return;
                 setFormError(null);
                 submitMutation.mutate();
               }}
-              disabled={busy || !emailIsVerified || !resume || (props.program !== undefined && !props.program.ready)}
+              disabled={
+                busy ||
+                !emailIsVerified ||
+                !resume ||
+                (base !== null && !draft?.education_check.can_continue) ||
+                (props.program !== undefined && !props.program.ready)
+              }
             >
               {submitMutation.isPending ? <Spinner label="Submitting…" /> : "Submit application"}
             </button>
           </div>
-        </div>
+        </ReviewStep>
       )}
     </section>
+  );
+}
+
+const EDUCATION_STATUS_LABEL: Record<string, string> = {
+  VERIFIED: "Document checked",
+  MANUAL_REVIEW: "Pending manual review",
+};
+
+function ReviewSection({
+  title,
+  onEdit,
+  children,
+}: {
+  title: string;
+  onEdit: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="apply-review-section" aria-label={title}>
+      <header className="apply-review-header">
+        <h4>{title}</h4>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onEdit}>
+          Edit <span className="sr-only">{title.toLowerCase()}</span>
+        </button>
+      </header>
+      <dl className="apply-summary">{children}</dl>
+    </section>
+  );
+}
+
+function ReviewStep({
+  base,
+  values,
+  isExperienced,
+  emailIsVerified,
+  draft,
+  educationLabel,
+  resume,
+  marksCard,
+  contactEmail,
+  onEdit,
+  hasEducationStep,
+  children,
+}: {
+  values: Values;
+  isExperienced: boolean;
+  emailIsVerified: boolean;
+  draft: DraftView | null;
+  educationLabel?: string;
+  resume: File | null;
+  marksCard: File | null;
+  contactEmail: string | null;
+  onEdit: (step: StepKey) => void;
+  hasEducationStep: boolean;
+  base: string | null;
+  children: ReactNode;
+}) {
+  // Same query (and cache) as the Education step's options.
+  const options = useQuery({
+    queryKey: ["qualification-options", base],
+    queryFn: () => getQualificationOptions(base ?? ""),
+    enabled: base !== null,
+    staleTime: 5 * 60_000,
+  });
+  const education = draft?.education ?? null;
+  const qualificationLabel =
+    education &&
+    (education.degree_name ||
+      options.data?.options.find((option) => option.key === education.qualification_key)?.label ||
+      education.qualification_key);
+  return (
+    <div className="apply-step-body apply-review">
+      <ReviewSection title="Basic information" onEdit={() => onEdit("details")}>
+        <dt>Name</dt>
+        <dd>{values.full_name}</dd>
+        <dt>Email</dt>
+        <dd>
+          {values.email} {emailIsVerified && <span className="chip chip-verified">Verified</span>}
+        </dd>
+        <dt>Mobile</dt>
+        <dd>{values.phone}</dd>
+      </ReviewSection>
+      <ReviewSection title="Professional background" onEdit={() => onEdit("background")}>
+        <dt>Date of birth</dt>
+        <dd>{values.date_of_birth}</dd>
+        <dt>Place of birth</dt>
+        <dd>{values.place_of_birth}</dd>
+        <dt>Languages</dt>
+        <dd>{values.languages.join(", ")}</dd>
+        <dt>Profile</dt>
+        <dd>
+          {values.candidate_type === "" ? "" : CANDIDATE_TYPE_LABELS[values.candidate_type]}
+          {isExperienced &&
+            ` · ${values.years_experience} yrs · ${values.current_title} at ${values.current_company}`}
+        </dd>
+        <dt>Location</dt>
+        <dd>
+          {values.current_location} (prefers {values.preferred_location})
+        </dd>
+        {values.linkedin_url.trim() && (
+          <>
+            <dt>LinkedIn</dt>
+            <dd>{values.linkedin_url.trim()}</dd>
+          </>
+        )}
+        {values.github_url.trim() && (
+          <>
+            <dt>GitHub</dt>
+            <dd>{values.github_url.trim()}</dd>
+          </>
+        )}
+        {!hasEducationStep && (
+          <>
+            <dt>Qualification</dt>
+            <dd>{educationLabel}</dd>
+            {values.tenth_marks_percentage.trim() && (
+              <>
+                <dt>10th marks</dt>
+                <dd>{values.tenth_marks_percentage.trim()}%</dd>
+              </>
+            )}
+            {marksCard && (
+              <>
+                <dt>10th marks card</dt>
+                <dd>{marksCard.name}</dd>
+              </>
+            )}
+          </>
+        )}
+      </ReviewSection>
+      {hasEducationStep && education && draft && (
+        <ReviewSection title="Education" onEdit={() => onEdit("education")}>
+          <dt>Qualification</dt>
+          <dd>
+            {qualificationLabel}
+            {education.branch && ` in ${education.branch}`}
+          </dd>
+          <dt>Institution</dt>
+          <dd>
+            {education.institution} ({education.completion_year})
+          </dd>
+          {education.tenth_marks_percentage !== null && String(education.tenth_marks_percentage) && (
+            <>
+              <dt>10th marks</dt>
+              <dd>{String(education.tenth_marks_percentage)}%</dd>
+            </>
+          )}
+          {marksCard && (
+            <>
+              <dt>10th marks card</dt>
+              <dd>{marksCard.name}</dd>
+            </>
+          )}
+          <dt>Document</dt>
+          <dd>
+            {draft.document?.filename}{" "}
+            <span
+              className={`chip ${draft.education_check.status === "VERIFIED" ? "chip-verified" : "chip-pending"}`}
+            >
+              {EDUCATION_STATUS_LABEL[draft.education_check.status] ?? "Not verified"}
+            </span>
+          </dd>
+        </ReviewSection>
+      )}
+      <ReviewSection title="Resume" onEdit={() => onEdit("resume")}>
+        <dt>Resume</dt>
+        <dd>{resume?.name}</dd>
+      </ReviewSection>
+      <p className="muted">
+        Please check your details — once submitted, an application can't be edited online.
+      </p>
+      <UpdateInfoNote contactEmail={contactEmail} />
+      {children}
+    </div>
   );
 }

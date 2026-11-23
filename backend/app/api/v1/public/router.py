@@ -2,6 +2,8 @@ from fastapi import APIRouter
 
 from app.api.v1.public.ai import router as ai_router
 from app.api.v1.public.applications import router as applications_router
+from app.api.v1.public.apply_flow import campus_router as apply_flow_campus_router
+from app.api.v1.public.apply_flow import careers_router as apply_flow_careers_router
 from app.api.v1.public.assessments import router as assessments_router
 from app.api.v1.public.campus_drives import router as campus_drives_router
 from app.api.v1.public.candidate_intake import router as candidate_intake_router
@@ -16,5 +18,7 @@ router.include_router(ai_router)
 router.include_router(applications_router)
 router.include_router(assessments_router)
 router.include_router(campus_drives_router)
+router.include_router(apply_flow_careers_router)
+router.include_router(apply_flow_campus_router)
 router.include_router(program_listing_router)
 router.include_router(programs_router)

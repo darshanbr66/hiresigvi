@@ -36,21 +36,30 @@ drag them (or use the arrow keys on the drag handle) to rearrange a department;
 the position itself is internal and never shown. An org admin can also delete
 activity entries in bulk (a selection, or every entry of their own organization).
 
-**Candidate intake** (careers site and campus drive links, no account): the
-candidate first verifies their email with a one-time code, then fills in a
-form (mandatory: mobile number, date of birth, place of birth, languages
-known and the professional details; optional: LinkedIn, GitHub, 10th marks
-and a 10th marks card, PDF/PNG/JPG up to 5 MB, stored like resumes — GridFS
-in production) and uploads a resume. Each person gets one profile and one
-self-service application per organization, matched by email or mobile
-number. Mobile numbers are normalized, so "98765 43210" and "+91
-98765-43210" are the same person. The application is saved first, then
+**Candidate intake** (careers site and campus drive links, no account) is a
+progressive, six-step flow: your details (name, email, mobile) → email
+verification with a one-time code → professional background (mandatory:
+date of birth, place of birth, languages known and the professional details;
+optional: LinkedIn, GitHub) → education → resume → review & submit. The
+education step offers only the qualifications the job's own JD accepts
+(derived by AI from the JD and cached per JD version). It requires an
+academic document (marks card or certificate, PDF/PNG/JPG up to 5 MB),
+which AI checks for consistency with the selected qualification: match,
+mismatch, unclear, or check failed. HR manually reviews any document the
+check couldn't confirm. This is a consistency check, not a statement that a
+document is genuine. Each step is saved server-side in an application
+draft that only the verified email unlocks. The optional 10th marks and
+marks card are stored like resumes (GridFS in production). Each person gets
+one profile and one self-service application per organization, matched by
+email or mobile number. Mobile numbers are normalized, so "98765 43210" and
+"+91 98765-43210" are the same person. The application is saved first, then
 AI-screened against the job. A non-match becomes `AI_SCREENED_OUT`: it is
 kept and HR can override it (with a reason) or reject it. HR can also match
 the candidate to other jobs (a new `HR_MATCH` application) and see their
 full history. Each organization's public careers contact address
-(`careers_contact_email`, set by a super admin) is shown to candidates. See
-[`docs/recruitment-workflow.md`](docs/recruitment-workflow.md) § 6.
+(`careers_contact_email`, set by a super admin) is shown to candidates.
+Recruitment programs keep their one-request form, without the education
+step. See [`docs/recruitment-workflow.md`](docs/recruitment-workflow.md) § 6.
 
 The visual language, motion rules, the lazy-loaded 3D landing hero (with its
 static fallback) and the accessibility approach are described in

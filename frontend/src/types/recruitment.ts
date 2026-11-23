@@ -240,6 +240,38 @@ export interface ApplicationResponse {
   resume_id: string | null;
   resume_filename: string | null;
   deleted_at: string | null;
+  /** The academic-document check of a self-service application: VERIFIED,
+   * MANUAL_REVIEW (HR reviews the document), or null (no check made). */
+  education_verification_status?: "VERIFIED" | "MANUAL_REVIEW" | null;
+  /** The job's qualification requirements were ambiguous at submission. */
+  eligibility_review_required?: boolean;
+}
+
+/** GET /recruiter/applications/{id}/education — the uploaded academic
+ * document and every AI consistency check of it (advisory only). */
+export interface ApplicationEducation {
+  education_verification_status: "VERIFIED" | "MANUAL_REVIEW" | null;
+  eligibility_review_required: boolean;
+  qualification: string | null;
+  institution: string | null;
+  qualification_year: number | null;
+  document: { filename: string; content_type: string; size_bytes: number; uploaded_at: string } | null;
+  checks: {
+    outcome: "MATCH" | "MISMATCH" | "UNCLEAR" | "FAILED";
+    reason_code: string;
+    confidence: number | null;
+    candidate_message: string;
+    document_type: string | null;
+    detected_level: string | null;
+    degree_text: string | null;
+    branch_text: string | null;
+    institution_text: string | null;
+    name_on_document: string | null;
+    notes: string | null;
+    provider: string | null;
+    model: string | null;
+    created_at: string;
+  }[];
 }
 
 export interface ApplicationCreateRequest {

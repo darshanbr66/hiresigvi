@@ -4,13 +4,12 @@ authentication (docs/campus-hiring.md § 3).
 Applying follows the careers site's candidate identity rules exactly: the
 email is verified with a one-time code first (the two
 `/email-verification/*` endpoints below, same limits as the careers site),
-and the submission takes the same complete, mandatory form
-(`applicant_submission`)."""
+then the same progressive, draft-based flow as a careers-site job
+(`/{token}/apply/...`, app/api/v1/public/apply_flow.py)."""
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.public.applications import ApplicantSubmission, applicant_submission
 from app.api.v1.public.candidate_intake import (
     CandidateIntakeRateLimiters,
     enforce,
@@ -18,7 +17,6 @@ from app.api.v1.public.candidate_intake import (
     verified_response,
 )
 from app.db.session import get_db
-from app.integrations.storage import ResumeStorage, get_resume_storage
 from app.models.campus_drive import CampusDriveStatus
 from app.schemas.public import (
     ApplicantPrecheck,
@@ -30,7 +28,6 @@ from app.schemas.public import (
     EmailVerificationRequested,
 )
 from app.schemas.public_campus_drive import (
-    PublicCampusDriveApplicationResult,
     PublicCampusDriveUnavailable,
     PublicCampusDriveView,
 )
@@ -138,33 +135,3 @@ async def precheck_campus_application(
         phone=payload.phone,
     )
     return Response(status_code=204)
-
-
-@router.post("/{token}/apply", response_model=PublicCampusDriveApplicationResult, status_code=201)
-async def apply_to_campus_drive(
-    token: str,
-    submission: ApplicantSubmission = Depends(applicant_submission),
-    db: AsyncSession = Depends(get_db),
-    storage: ResumeStorage = Depends(get_resume_storage),
-) -> PublicCampusDriveApplicationResult:
-    result = await public_campus_drive_service.apply_to_drive(
-        db,
-        storage,
-        token=token,
-        email=submission.email,
-        verification_token=submission.verification_token,
-        profile=submission.profile,
-        resume_filename=submission.resume_filename,
-        resume_bytes=submission.resume_bytes,
-        marks_card=submission.marks_card,
-    )
-    application = result.submission.application
-    return PublicCampusDriveApplicationResult(
-        id=application.id,
-        job_title=application.job.title,
-        candidate_email=application.candidate.email,
-        confirmation_email_sent=result.submission.confirmation_email_sent,
-        careers_contact_email=result.organization.careers_contact_email,
-        submitted_at=application.applied_at,
-        assessment_invitation_link=result.assessment_invitation_link,
-    )

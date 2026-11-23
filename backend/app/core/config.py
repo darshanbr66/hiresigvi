@@ -45,6 +45,19 @@ class Settings(BaseSettings):
     # PNG/JPEG photo/scan), stored through the same storage abstraction as
     # resumes (app/services/candidate_document_service.py).
     max_marks_card_size_mb: int = 5
+    # The mandatory academic document (marks card / degree certificate) of
+    # the apply flow's Education step — PDF/PNG/JPG, same storage
+    # (app/services/application_draft_service.py).
+    max_academic_document_size_mb: int = 5
+    # AI checks of the academic document allowed per application draft
+    # (uploads + retries) — bounds AI cost per candidate.
+    max_education_checks_per_draft: int = 8
+    # An application draft that isn't submitted within this many days is
+    # purged with its document (`python -m app.cli purge-expired-drafts`).
+    application_draft_ttl_days: int = 14
+    # A job's AI-derived qualification requirements are recomputed when its
+    # JD changes; when the AI was unavailable, it is retried after this.
+    job_qualification_retry_minutes: int = 10
 
     # Resume *file bytes* storage backend (CLAUDE.md § 2: "Resume storage !=
     # DB blob") — see app/integrations/storage. "local" keeps the existing
@@ -197,6 +210,10 @@ class Settings(BaseSettings):
     public_otp_request_limit_per_window: int = 10
     public_otp_verify_limit_per_window: int = 30
     public_apply_limit_per_window: int = 10
+    # The apply flow's step saves and draft reads, and (separately) its
+    # academic-document uploads/AI checks.
+    public_draft_limit_per_window: int = 120
+    public_document_check_limit_per_window: int = 20
     # A candidate may self-apply again this many calendar months after their
     # previous self-service application (app/services/reapply_service.py).
     # HR can grant an earlier, single-use reapply.

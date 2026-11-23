@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { triggerBlobDownload } from "../../../lib/downloadBlob";
+import { EducationReviewCard } from "./EducationReviewCard";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
@@ -421,6 +422,14 @@ export function ApplicationDetailPage() {
               <p className="muted">No resume on file for this application.</p>
             )}
           </section>
+
+          {application.education_verification_status && (
+            <EducationReviewCard
+              applicationId={applicationId}
+              token={token}
+              status={application.education_verification_status}
+            />
+          )}
 
           {/* AI Screening */}
           <section className="card">

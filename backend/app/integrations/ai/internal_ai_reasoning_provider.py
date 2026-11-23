@@ -20,7 +20,9 @@ Same plain REST-over-httpx style as gemini_provider.py / gemini_embedding_
 provider.py, same `GEMINI_API_KEY`, same error hierarchy.
 """
 
+import base64
 import json
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -35,6 +37,7 @@ from app.integrations.ai.base import (
     AIProviderTimeoutError,
     AIProviderUnavailableError,
     ChatMessage,
+    InlineFile,
 )
 
 logger = get_logger(__name__)
@@ -70,6 +73,7 @@ class InternalAIReasoningProvider:
         response_schema: dict[str, Any],
         max_output_tokens: int = 512,
         thinking_budget: int | None = None,
+        attachments: Sequence[InlineFile] = (),
     ) -> dict[str, Any]:
         """`response_schema` is a Gemini-flavored OpenAPI subset schema
         (`type`/`properties`/`required`/`enum` — no `$ref`). Gemini is
@@ -80,13 +84,18 @@ class InternalAIReasoningProvider:
         `thinking_budget` is sent as `thinkingConfig.thinkingBudget` only
         when given: thinking models (e.g. gemini-2.5-flash) count thinking
         tokens against `maxOutputTokens`, while some models reject a
-        `thinkingConfig` outright — so callers opt in per model."""
+        `thinkingConfig` outright — so callers opt in per model.
+
+        `attachments` are sent as inline file parts of the user turn (a PDF
+        or image Gemini reads natively — the academic-document check), after
+        the text."""
         payload = await self._call(
             system_prompt=system_prompt,
             messages=[ChatMessage("user", user_content)],
             max_output_tokens=max_output_tokens,
             response_schema=response_schema,
             thinking_budget=thinking_budget,
+            attachments=attachments,
         )
         text = _extract_text(payload)
         try:
@@ -107,6 +116,7 @@ class InternalAIReasoningProvider:
         max_output_tokens: int,
         response_schema: dict[str, Any] | None,
         thinking_budget: int | None = None,
+        attachments: Sequence[InlineFile] = (),
     ) -> dict[str, Any]:
         generation_config: dict[str, Any] = {
             "maxOutputTokens": max_output_tokens,
@@ -118,15 +128,26 @@ class InternalAIReasoningProvider:
         if thinking_budget is not None:
             generation_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
 
+        contents: list[dict[str, Any]] = [
+            {
+                "role": "user" if message.role == "user" else "model",
+                "parts": [{"text": message.content}],
+            }
+            for message in messages
+        ]
+        if attachments:
+            contents[-1]["parts"].extend(
+                {
+                    "inline_data": {
+                        "mime_type": file.mime_type,
+                        "data": base64.b64encode(file.data).decode("ascii"),
+                    }
+                }
+                for file in attachments
+            )
         body: dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": system_prompt}]},
-            "contents": [
-                {
-                    "role": "user" if message.role == "user" else "model",
-                    "parts": [{"text": message.content}],
-                }
-                for message in messages
-            ],
+            "contents": contents,
             "generationConfig": generation_config,
         }
 

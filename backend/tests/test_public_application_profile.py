@@ -59,7 +59,8 @@ async def test_experienced_applicant_profile_is_stored(
     assert candidate["current_company"] == "Globex"
     assert candidate["location"] == "Pune"
     assert candidate["preferred_location"] == "Bengaluru"
-    assert candidate["qualification"] == "B.Tech Computer Science"
+    # Built from the Education step's structured selection.
+    assert candidate["qualification"] == "B.E. / B.Tech in Computer Science"
     assert candidate["linkedin_url"] == "https://linkedin.com/in/eli"
     assert candidate["github_url"] == "https://github.com/eli"
     # New identity fields, normalized.
@@ -134,7 +135,6 @@ async def test_every_field_is_mandatory_server_side(
         "candidate_type",
         "current_location",
         "preferred_location",
-        "qualification",
         "email_verification_token",
     ):
         overrides: dict = {field: None}

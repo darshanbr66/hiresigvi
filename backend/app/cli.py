@@ -19,6 +19,10 @@ Usage:
     # exercising AI resume screening — DRAFT unless --open is given.
     python -m app.cli seed-demo-job --org-slug zodiac-patent \\
         --created-by-email hr.admin@example.com [--open]
+
+    # Remove expired, unsubmitted apply-flow drafts and their academic
+    # documents (schedule it, e.g. daily).
+    python -m app.cli purge-expired-drafts
 """
 
 import argparse
@@ -133,6 +137,17 @@ async def seed_demo_job(*, org_slug: str, created_by_email: str, publish: bool) 
     print(f"Created demo job {job.id} ({job.status.value}) in {org_slug}.")
 
 
+async def purge_expired_drafts() -> None:
+    """Every organization's expired drafts, so it runs under the RLS
+    bypass (an operator action, like the commands above)."""
+    from app.services import application_draft_service
+
+    async with AsyncSessionLocal() as db:
+        async with rls_bypass(db):
+            removed = await application_draft_service.purge_expired_drafts(db)
+    print(f"Removed {removed} expired application draft(s).")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="AI Recruitment Platform operational CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -151,7 +166,15 @@ def main() -> None:
     demo_parser.add_argument("--created-by-email", required=True)
     demo_parser.add_argument("--open", action="store_true", help="Publish it (status OPEN)")
 
+    subparsers.add_parser(
+        "purge-expired-drafts",
+        help="Delete expired, unsubmitted application drafts and their academic documents",
+    )
+
     args = parser.parse_args()
+
+    if args.command == "purge-expired-drafts":
+        asyncio.run(purge_expired_drafts())
 
     if args.command == "seed-demo-job":
         asyncio.run(

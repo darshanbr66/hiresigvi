@@ -1,6 +1,13 @@
-"""Anonymous job application submission — the candidate-facing entry point
-into the recruiting pipeline (CLAUDE.md § 1: "public career site... entry
-point into candidate apply flow").
+"""The one-request ("full form") self-service application and the
+identity precheck.
+
+A careers-site job and a campus drive link are applied to through the
+progressive, draft-based flow (app/api/v1/public/apply_flow.py: verified
+email -> background -> education + academic document check -> resume ->
+submit). `applicant_submission` below is the complete form for the entry
+point that still submits everything in one request — a recruitment
+program (app/api/v1/public/programs.py), whose education is captured by
+the program's own declaration instead.
 
 Every field is mandatory — except the LinkedIn/GitHub profile URLs and the
 10th marks percentage and marks card, which are optional — and validated
@@ -9,9 +16,6 @@ must have been verified with a one-time code (the `email_verification_token` fro
 `POST .../email-verification/verify`); the resume must be a real PDF. The
 orchestration (identity check, AI screening, welcome email) lives in
 app/services/public_application_service.py.
-
-`applicant_submission` is the one definition of that form: the campus drive
-link (app/api/v1/public/campus_drives.py) takes exactly the same fields.
 """
 
 import uuid
@@ -34,10 +38,9 @@ from app.api.v1.public.candidate_intake import (
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.db.session import get_db
-from app.integrations.storage import ResumeStorage, get_resume_storage
 from app.models.candidate import CandidateType
 from app.schemas.candidate import PublicApplicantProfile
-from app.schemas.public import ApplicantPrecheck, PublicApplicationResult
+from app.schemas.public import ApplicantPrecheck
 from app.services import candidate_document_service, public_application_service
 from app.services.candidate_document_service import MarksCardUpload
 
@@ -140,11 +143,11 @@ async def applicant_submission(
         profile=profile,
         resume_filename=resume.filename or "resume.pdf",
         resume_bytes=resume_bytes,
-        marks_card=await _read_marks_card(tenth_marks_card),
+        marks_card=await read_marks_card(tenth_marks_card),
     )
 
 
-async def _read_marks_card(upload: UploadFile | None) -> MarksCardUpload | None:
+async def read_marks_card(upload: UploadFile | None) -> MarksCardUpload | None:
     """The optional marks card: absent (or an empty file part with no name,
     as a browser sends for an untouched file input) = not uploaded. Read at
     most one byte past the limit, like the resume."""
@@ -184,36 +187,3 @@ async def precheck_application(
         phone=payload.phone,
     )
     return Response(status_code=204)
-
-
-@router.post("/{job_id}/apply", response_model=PublicApplicationResult, status_code=201)
-async def apply_to_job(
-    slug: str,
-    job_id: uuid.UUID,
-    submission: ApplicantSubmission = Depends(applicant_submission),
-    db: AsyncSession = Depends(get_db),
-    storage: ResumeStorage = Depends(get_resume_storage),
-) -> PublicApplicationResult:
-    organization = await resolve_organization(db, slug)
-    result = await public_application_service.submit_application(
-        db,
-        storage,
-        organization=organization,
-        job_id=job_id,
-        email=submission.email,
-        verification_token=submission.verification_token,
-        profile=submission.profile,
-        resume_filename=submission.resume_filename,
-        resume_content_type="application/pdf",
-        resume_bytes=submission.resume_bytes,
-        marks_card=submission.marks_card,
-    )
-
-    return PublicApplicationResult(
-        id=result.application.id,
-        job_title=result.application.job.title,
-        candidate_email=result.application.candidate.email,
-        confirmation_email_sent=result.confirmation_email_sent,
-        careers_contact_email=organization.careers_contact_email,
-        submitted_at=result.application.applied_at,
-    )

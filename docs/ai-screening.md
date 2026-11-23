@@ -188,6 +188,30 @@ orchestration framework (LangChain/LangGraph) is assumed to exist; if one is
 introduced later, it is confined inside a concrete adapter implementing
 these same interfaces — `services/screening/` does not change.
 
+### 5a. Education capability (implemented)
+
+`EducationAIProvider` (`app/integrations/ai/education.py`) is a separate
+capability used by the self-service apply flow:
+
+- `analyze_job_qualifications` reads a JD into the qualification
+  vocabulary.
+- `analyze_academic_document` reports what an uploaded marks card or
+  certificate appears to show.
+
+Adapters live in `education_providers.py`. Gemini comes first: it reads
+PDFs and images natively, through the existing structured-output client,
+which now accepts inline file parts. Groq is the text-only fallback, for
+the JD or a PDF's text layer. `get_education_ai_provider()` chains them
+like screening's fallback.
+
+Both return observations only. Eligibility (minimum level, related higher
+degrees, mandatory branch) and the document outcome (MATCH / MISMATCH /
+UNCLEAR / FAILED, confidence threshold 0.6) are decided deterministically
+in `app/services/education/`, so prompt injection inside a document can't
+choose its own outcome. Results are advisory consistency checks, never a
+statement that a document is genuine. See
+`docs/recruitment-workflow.md` § 6.
+
 ## 6. Open items (not decided in Phase 0)
 
 - Which embedding provider/model, and therefore the `vector(N)` dimension

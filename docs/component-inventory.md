@@ -159,7 +159,9 @@ the page uses TanStack Query keys of the form `["recruiter", "<area>", …]`.
 |---|---|---|
 | `features/public/` | `PublicHomePage` (ZPHIREX single-screen opportunity picker for Zodiac Patent: four cards → careers-page views), `HomeGraphics` (wordmark, opportunity glyphs), `homeContent.ts` (card copy, official logo path), `careersOrg.ts` (`careersViewPath`), `PublicHeader` | PublicHomePage.test |
 | `features/careers/CareersPage`, `JobDetailPage`, `careersView.ts`, `jobDescription.ts` | organization careers site: navy hero, All / Open Roles tabs, published roles and programs as cards; `?view=internships\|campus\|programs` (homepage links, no tab); job details: navy hero with facts (pay only here), structured description | CareersPage.test, JobDetailPage.test, jobDescription.test |
-| `features/careers/JobApplicationForm` | the shared apply form: email code, identity fields, resume and marks card, early "already applied" check; also used by drives and programs | JobApplicationForm.test |
+| `features/careers/JobApplicationForm` | the progressive apply flow (details → verify → background → education → resume → review), early "already applied" check; server-side draft for jobs and drives, one-request form for programs | JobApplicationForm.test |
+| `features/careers/apply/*` | the flow's parts: `ApplyStepper` (non-clickable, mobile caption), `EducationStep` (JD-specific qualifications, academic document upload + AI check outcomes), `PhoneInput` (country code), `FormField`/`fieldAria`, `validation` | JobApplicationForm.test |
+| `features/recruiter/applications/EducationReviewCard` | the academic document + AI checks of a self-service application (manual-review flag) | EducationReviewCard.test |
 | `features/careers/CampusDriveApplyPage` | drive page from its link token | CampusDriveApplyPage.test |
 | `features/careers/ProgramApplyPage` | program disclosures (amounts only when finalized), education declaration, terms acceptance | ProgramApplyPage.test |
 | `features/careers/AssessmentTakingPage`, `MonitoringConsentScreen`, `useProctoring` | taking a test by token; monitoring consent | AssessmentTakingPage.test |

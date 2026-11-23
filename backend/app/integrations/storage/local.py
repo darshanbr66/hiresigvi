@@ -34,7 +34,7 @@ class LocalResumeStorage(ResumeStorage):
         self,
         *,
         organization_id: uuid.UUID,
-        candidate_id: uuid.UUID,
+        candidate_id: uuid.UUID | None,
         application_id: uuid.UUID | None,
         original_filename: str,
         content_type: str,

@@ -21,6 +21,13 @@ import type {
   PublicCampusDriveResult,
 } from "../../types/publicCampusDrive";
 import type {
+  ApplicantBackground,
+  DraftAuth,
+  DraftView,
+  EducationDetails,
+  QualificationOptions,
+} from "../../types/applyFlow";
+import type {
   ProgramDeclaration,
   PublicProgramApplicationResult,
   PublicProgramResult,
@@ -67,8 +74,9 @@ export function checkCampusApplicantStatus(token: string, query: ApplicantStatus
   return apiClient.post<ApplicantStatus>(`/api/v1/public/campus-drive/${token}/applicant-status`, query);
 }
 
-/** The complete application form — shared by the careers site and campus
- * drive links, which take exactly the same fields. */
+/** The complete one-request application form — used by a recruitment
+ * program (careers-site jobs and campus drives use the progressive,
+ * draft-based flow below). */
 function buildApplicationFormData(
   values: JobApplicationFormValues,
   resume: File,
@@ -112,20 +120,6 @@ function buildApplicationFormData(
   return formData;
 }
 
-export function applyToJob(
-  slug: string,
-  jobId: string,
-  values: JobApplicationFormValues,
-  resume: File,
-  verificationToken: string,
-  marksCard: File | null = null,
-) {
-  return apiClient.postForm<PublicApplicationResult>(
-    `/api/v1/public/organizations/${slug}/jobs/${jobId}/apply`,
-    buildApplicationFormData(values, resume, verificationToken, marksCard),
-  );
-}
-
 export function getAssessmentInvitation(token: string) {
   return apiClient.get<PublicInvitationView>(`/api/v1/public/assessment/${token}`);
 }
@@ -159,19 +153,6 @@ export function verifyCampusEmailCode(token: string, email: string, code: string
   return apiClient.post<EmailVerificationConfirmed>(
     `/api/v1/public/campus-drive/${token}/email-verification/verify`,
     { email, code },
-  );
-}
-
-export function applyToCampusDrive(
-  token: string,
-  values: JobApplicationFormValues,
-  resume: File,
-  verificationToken: string,
-  marksCard: File | null = null,
-) {
-  return apiClient.postForm<PublicCampusDriveApplicationResult>(
-    `/api/v1/public/campus-drive/${token}/apply`,
-    buildApplicationFormData(values, resume, verificationToken, marksCard),
   );
 }
 
@@ -244,4 +225,79 @@ export async function applyToProgram(
     careers_contact_email: result.careers_contact_email,
     submitted_at: result.submitted_at,
   };
+}
+
+// --- Progressive apply flow (careers-site jobs and campus drive links) ---
+// `base` is the job's or the drive's public path (applyFlowBase). Every draft
+// call carries the email + the verification token; the server, not the
+// browser, decides what is verified.
+
+export function applyFlowBase(
+  target: { slug: string; jobId: string } | { campusToken: string },
+): string {
+  return "campusToken" in target
+    ? `/api/v1/public/campus-drive/${target.campusToken}`
+    : `/api/v1/public/organizations/${target.slug}/jobs/${target.jobId}`;
+}
+
+export function getQualificationOptions(base: string) {
+  return apiClient.get<QualificationOptions>(`${base}/qualification-options`);
+}
+
+export function startApplicationDraft(base: string, auth: DraftAuth, fullName: string, phone: string) {
+  return apiClient.post<DraftView>(`${base}/apply/draft`, { ...auth, full_name: fullName, phone });
+}
+
+export function saveDraftBackground(base: string, auth: DraftAuth, background: ApplicantBackground) {
+  return apiClient.put<DraftView>(`${base}/apply/draft/background`, { ...auth, background });
+}
+
+export function saveDraftEducation(base: string, auth: DraftAuth, education: EducationDetails) {
+  return apiClient.put<DraftView>(`${base}/apply/draft/education`, { ...auth, education });
+}
+
+export function uploadAcademicDocument(
+  base: string,
+  auth: DraftAuth,
+  file: File,
+  onProgress: (fraction: number) => void,
+) {
+  const formData = new FormData();
+  formData.append("email", auth.email);
+  formData.append("email_verification_token", auth.email_verification_token);
+  formData.append("document", file);
+  return apiClient.postFormWithProgress<DraftView>(
+    `${base}/apply/draft/education/document`,
+    formData,
+    onProgress,
+  );
+}
+
+export function recheckAcademicDocument(base: string, auth: DraftAuth) {
+  return apiClient.post<DraftView>(`${base}/apply/draft/education/recheck`, auth);
+}
+
+export function requestEducationManualReview(base: string, auth: DraftAuth) {
+  return apiClient.post<DraftView>(`${base}/apply/draft/education/manual-review`, auth);
+}
+
+/** Step 6: the resume (and optional 10th marks card) — everything else
+ * comes from the draft the server holds. */
+export function submitApplicationDraft(
+  base: string,
+  auth: DraftAuth,
+  resume: File,
+  marksCard: File | null,
+  onProgress: (fraction: number) => void,
+) {
+  const formData = new FormData();
+  formData.append("email", auth.email);
+  formData.append("email_verification_token", auth.email_verification_token);
+  formData.append("resume", resume);
+  if (marksCard) formData.append("tenth_marks_card", marksCard);
+  return apiClient.postFormWithProgress<PublicApplicationResult | PublicCampusDriveApplicationResult>(
+    `${base}/apply`,
+    formData,
+    onProgress,
+  );
 }

@@ -6,9 +6,18 @@ from app.models.activity import Activity
 from app.models.admin_message import AdminConversation, AdminMessage
 from app.models.application import (
     Application,
+    ApplicationEducationStatus,
     ApplicationSource,
     ApplicationStatus,
     ApplicationStatusHistory,
+)
+from app.models.application_draft import (
+    AcademicDocument,
+    ApplicationDraft,
+    ApplicationDraftStatus,
+    EducationCheckStatus,
+    EducationVerificationOutcome,
+    EducationVerificationRun,
 )
 from app.models.assessment import (
     Assessment,
@@ -44,6 +53,7 @@ from app.models.institution import (
 )
 from app.models.interview import ApplicationInterview, InterviewOutcome, InterviewStatus
 from app.models.job import Job, JobStatus
+from app.models.job_qualification import JobQualificationProfile, JobQualificationStatus
 from app.models.job_requirement import JobRequirement, RequirementCategory
 from app.models.match_result import AI_MATCH_DISCLAIMER, MatchResult, MatchStatus
 from app.models.note import Note, NoteVisibility
@@ -79,7 +89,16 @@ from app.models.team_hierarchy import Department, Employee, EmploymentStatus
 from app.models.user import User, UserRefreshToken
 
 __all__ = [
+    "AcademicDocument",
     "Activity",
+    "ApplicationDraft",
+    "ApplicationDraftStatus",
+    "ApplicationEducationStatus",
+    "EducationCheckStatus",
+    "EducationVerificationOutcome",
+    "EducationVerificationRun",
+    "JobQualificationProfile",
+    "JobQualificationStatus",
     "Organization",
     "User",
     "UserRefreshToken",

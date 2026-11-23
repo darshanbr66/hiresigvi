@@ -967,3 +967,37 @@ async def _send_welcome_email(
         description=f'Welcome email sent to {candidate.full_name} ("{rendered.subject}").',
     )
     return True
+
+
+async def identify_applicant(
+    db: AsyncSession,
+    *,
+    organization: Organization,
+    email: str,
+    phone: str,
+    job: Job,
+    verification: EmailVerification,
+) -> Candidate | None:
+    """The submission's identity rules (`_identify_applicant`), for the
+    progressive apply flow's draft start (app/services/
+    application_draft_service.py) — same checks, same consequences."""
+    return await _identify_applicant(
+        db,
+        organization=organization,
+        email=email,
+        phone=phone,
+        job=job,
+        verification=verification,
+    )
+
+
+async def load_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    organization_id: uuid.UUID,
+    campus_drive: CampusDrive | None,
+) -> Job:
+    """The job a careers-site / campus-drive application is for, under
+    the same rules as a submission (`_load_job`)."""
+    return await _load_job(db, job_id, organization_id=organization_id, campus_drive=campus_drive)

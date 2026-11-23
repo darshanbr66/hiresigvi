@@ -144,6 +144,38 @@ async function requestForm<T>(path: string, formData: FormData, accessToken?: st
   return response.json() as Promise<T>;
 }
 
+/** A multipart POST that reports upload progress (0–1) — `fetch` can't, so
+ * this is the one XMLHttpRequest in the client. Errors become the same
+ * ApiError as every other call. */
+function requestFormWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress: (fraction: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE_URL}${path}`);
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
+    };
+    xhr.onerror = () => reject(new ApiError(NETWORK_MESSAGE, 0, "network_error"));
+    xhr.onload = () => {
+      const response = new Response(xhr.responseText || null, {
+        status: xhr.status,
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        toApiError(response).then(reject, reject);
+        return;
+      }
+      onProgress(1);
+      response.json().then((body) => resolve(body as T), reject);
+    };
+    xhr.send(formData);
+  });
+}
+
 async function requestBlob(
   path: string,
   accessToken: string,
@@ -201,5 +233,8 @@ export const apiClient = {
    * this too. */
   postForm: <T>(path: string, formData: FormData, accessToken?: string) =>
     requestForm<T>(path, formData, accessToken),
+  /** `postForm` for a public upload that shows progress. */
+  postFormWithProgress: <T>(path: string, formData: FormData, onProgress: (fraction: number) => void) =>
+    requestFormWithProgress<T>(path, formData, onProgress),
   getBlob: (path: string, accessToken: string) => requestBlob(path, accessToken),
 };

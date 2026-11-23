@@ -39,11 +39,25 @@ RATE_LIMITED_MESSAGE = "Too many requests. Please wait a few minutes and try aga
 
 
 class CandidateIntakeRateLimiters:
-    def __init__(self, *, otp_request: int, otp_verify: int, apply: int) -> None:
+    def __init__(
+        self,
+        *,
+        otp_request: int,
+        otp_verify: int,
+        apply: int,
+        draft: int = 120,
+        document_check: int = 20,
+    ) -> None:
         window = RATE_WINDOW_SECONDS
         self.otp_request = SlidingWindowRateLimiter(limit=otp_request, window_seconds=window)
         self.otp_verify = SlidingWindowRateLimiter(limit=otp_verify, window_seconds=window)
         self.apply = SlidingWindowRateLimiter(limit=apply, window_seconds=window)
+        # The progressive apply flow's step saves/reads, and its academic
+        # document uploads + AI checks (each one an AI call).
+        self.draft = SlidingWindowRateLimiter(limit=draft, window_seconds=window)
+        self.document_check = SlidingWindowRateLimiter(
+            limit=document_check, window_seconds=window
+        )
 
 
 @lru_cache
@@ -53,6 +67,8 @@ def get_candidate_intake_rate_limiters() -> CandidateIntakeRateLimiters:
         otp_request=settings.public_otp_request_limit_per_window,
         otp_verify=settings.public_otp_verify_limit_per_window,
         apply=settings.public_apply_limit_per_window,
+        draft=settings.public_draft_limit_per_window,
+        document_check=settings.public_document_check_limit_per_window,
     )
 
 

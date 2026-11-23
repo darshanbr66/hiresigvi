@@ -133,13 +133,16 @@ one), only its SHA-256 hash is persisted.
 GET  /api/v1/public/campus-drive/{token}                            -- drive/job/college details, no auth
 POST /api/v1/public/campus-drive/{token}/email-verification/request -- email a one-time code
 POST /api/v1/public/campus-drive/{token}/email-verification/verify  -- confirm it, get a verification token
-POST /api/v1/public/campus-drive/{token}/apply                      -- verified token + full form + resume — no account
+POST /api/v1/public/campus-drive/{token}/apply/draft[...]           -- the progressive flow's steps (as for a careers-site job)
+GET  /api/v1/public/campus-drive/{token}/qualification-options      -- the drive job's JD-derived qualifications
+POST /api/v1/public/campus-drive/{token}/apply                      -- verified token + resume; the rest comes from the draft — no account
 ```
 
 `apply` is the careers site's self-service flow
 (`docs/recruitment-workflow.md` § 6), applied to the drive's job, with the
-same identity rules: a verified email, the full mandatory form (including
-date of birth, place of birth and languages), one profile per person by
+same identity rules and the same progressive steps: a verified email, the
+professional background (including date of birth, place of birth and
+languages), the education step with the AI-checked academic document, one profile per person by
 email or normalized mobile number, and one self-service application per
 person *across the careers site and every drive*. A duplicate is refused,
 never merged or upserted. The `Application` is created with

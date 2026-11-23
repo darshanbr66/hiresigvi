@@ -217,21 +217,102 @@ Both entry points run the same code, `app/services/public_application_service.py
 so the identity rules below are identical for both.
 
 ```
-early "already applied?" check (email / mobile, before any code) →
-verify email (one-time code) → fill the full form + resume → identity check
-(one profile per person) → Candidate + Application + resume COMMITTED →
-AI screening against the job → MATCH / AI unavailable: APPLIED
-                              → NOT_MATCH: AI_SCREENED_OUT (kept, HR can override)
-→ welcome email (both outcomes)
+1 Your details (name, email, mobile) + early "already applied?" check →
+2 Verify (email one-time code) → draft opened (identity checks run here) →
+3 Professional background → 4 Education: JD-specific qualification +
+  mandatory academic document, AI consistency check → 5 Resume →
+6 Review & submit → identity check again (one profile per person) →
+Candidate + Application + resume COMMITTED → AI screening against the job →
+MATCH / AI unavailable: APPLIED; NOT_MATCH: AI_SCREENED_OUT (kept, HR can
+override) → welcome email (both outcomes)
 ```
+
+**Progressive flow, server-side draft.** The careers site and campus drive
+links collect the application step by step
+(`frontend/src/features/careers/JobApplicationForm.tsx`; backend
+`app/services/application_draft_service.py`, routes
+`app/api/v1/public/apply_flow.py`). Step 1 asks only for full name, email
+and mobile number (with a country code). The code is sent as soon as they
+are valid. Once it is verified, an `ApplicationDraft` is opened (or
+resumed — one OPEN draft per organization, email and job). Every later step
+is saved into it, and every draft request must carry the verification
+token, so the draft is only reachable by whoever proved the email. A draft
+is **not** an Application, so nothing incomplete is ever treated as
+submitted. The final submission builds the Application from what the
+server validated at each step. The browser sends only the resume and the
+optional 10th marks card. Going back to edit is free. Changing the email
+needs a new verification (and a new draft). Changing the qualification or
+branch resets the document check. A JD that changed since the Education
+step is re-checked at submission (409 `education_recheck_required` if the
+selection is no longer eligible). Expired drafts are removed with their
+document by `python -m app.cli purge-expired-drafts`
+(`APPLICATION_DRAFT_TTL_DAYS`, default 14; schedule it). A recruitment
+program keeps its one-request form (with its own education declaration),
+shown in the same shorter steps without the Education step.
+
+**Education — JD-specific qualifications.** Jobs have no structured
+qualification fields, so the job's own description + eligibility criteria
+are read by AI (`app/services/education/job_qualification_service.py`). The
+AI maps them onto a fixed qualification vocabulary
+(`app/services/education/catalog.py`: diploma, bachelor's, master's and
+doctorate degrees, grouped into families). The result is cached in
+`job_qualification_profiles` per JD version (a hash of the text), so the AI
+runs once per JD edit, not once per candidate. Deterministic rules on top
+of the AI's reading:
+
+- nothing below the stated minimum level is offered;
+- related higher qualifications of the same family are added unless the JD
+  restricts to exactly the listed degrees;
+- a mandatory branch or field becomes a required choice.
+
+The job is restricted only when the JD clearly *requires* a qualification
+(not "preferred") with confidence ≥ 0.6. When restricted, the candidate is
+shown the minimum qualification and the eligible options. An ambiguous JD,
+a "preferred" one or an AI outage never invents a rule: every qualification
+is offered. When the requirements were *ambiguous* (a stated requirement
+the AI couldn't resolve confidently, or the AI was unavailable), the
+submitted application gets `eligibility_review_required = true` and a
+`QUALIFICATION_REVIEW_REQUIRED` activity, so HR checks eligibility against
+the JD. A JD that states no qualification, or only a preferred one, isn't
+ambiguous and isn't flagged.
+
+**Education — the academic document check.** A marks card or certificate
+is mandatory (PDF/PNG/JPG, up to `MAX_ACADEMIC_DOCUMENT_SIZE_MB`, extension
+*and* file signature checked). It is stored like resumes. The AI (Gemini
+reads the file itself; Groq falls back for PDFs with a text layer) reports
+what the document appears to show. `app/services/education/document_check.py`
+decides the outcome from those structured fields only, so a document
+can't talk its way into a match:
+
+- **MATCH**: consistent with the selected qualification and the job. The
+  candidate continues.
+- **MISMATCH**: a confident, specific inconsistency. Examples: an M.Tech
+  selected but a B.Tech record uploaded ("You selected M.E. / M.Tech, but
+  the uploaded document appears to be a B.E. / B.Tech academic record…"), a
+  school record, a different branch, or a non-academic file. The candidate
+  must upload the correct document; manual review is not offered.
+- **UNCLEAR**: illegible, low confidence, or the name on the document
+  doesn't match. The candidate may upload a clearer copy or continue to
+  manual review.
+- **FAILED**: the AI was unavailable. The upload is kept and the candidate
+  can retry. Manual review is offered after 2 failures, or at once if no AI
+  is configured.
+
+Every attempt is an `EducationVerificationRun` (history, never overwritten;
+at most `MAX_EDUCATION_CHECKS_PER_DRAFT` per draft). The submitted
+application records `education_verification_status`: `VERIFIED` or
+`MANUAL_REVIEW`. A `MANUAL_REVIEW` application gets an
+`EDUCATION_MANUAL_REVIEW_REQUIRED` activity, and HR sees the document and
+the checks on the application page. This is a consistency check, never a
+claim that a document is genuine.
 
 **1. Email verification (required).** The candidate asks for a 6-digit code
 and then confirms it. Confirming it returns a short-lived verification token,
-which the application form must send back. The browser never holds a
+which every later step must send back. The browser never holds a
 "verified" flag of its own. Everything is enforced server-side in
 `app/services/email_verification_service.py`, and its state is stored in the
 tenant-scoped `email_verifications` table. In the form, a valid code moves
-the candidate straight on to the resume upload step (there is no separate
+the candidate straight on to the professional background step (there is no separate
 "verified" screen); a wrong or expired code keeps them on the verification
 step with the server's message:
 
@@ -278,10 +359,13 @@ Once the code is confirmed, the caller has proven they own the address, so a
 remaining conflict is told at that point (for example 409 `already_registered`)
 rather than after filling in the form.
 
-**2. The form.** All of these are mandatory: full name (no length limit),
-email, mobile number, date of birth (at least 16 years old), place of birth,
-languages known (1–15), candidate type, current and preferred location,
-qualification, and a resume. Optional: LinkedIn and GitHub URLs (validated
+**2. The form.** All of these are mandatory: full name (letters, spaces,
+dots, hyphens and apostrophes; no length limit), email, mobile number, date
+of birth (at least 16 years old), place of birth, languages known (1–15),
+candidate type, current and preferred location, the qualification (the
+Education step: qualification, branch where applicable, institution, year
+of completion and the academic document; for a program, a free-text
+qualification), and a resume. Optional: LinkedIn and GitHub URLs (validated
 when given), 10th marks (percentage) and a 10th marks card (PDF/PNG/JPG, up
 to 5 MB) — the card is candidate profile data, stored through the resume
 storage abstraction and referenced from `candidates.tenth_marks_card_*`.

@@ -1,18 +1,30 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiClient } from "../../lib/apiClient";
+import { ApiError } from "../../lib/apiClient";
+import type { DraftView, EducationCheck, QualificationOptions } from "../../types/applyFlow";
 import type { PublicApplicationResult } from "../../types/careers";
+import type { ProgramDeclaration } from "../../types/program";
 import * as careersApi from "./api";
 import { JobApplicationForm } from "./JobApplicationForm";
 
-function renderForm() {
-  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+const JOB_BASE = "/api/v1/public/organizations/acme/jobs/job-1";
+
+function renderForm(props: Partial<ComponentProps<typeof JobApplicationForm>> = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  });
+  const formProps = (
+    "campusToken" in props || "program" in props
+      ? props
+      : { slug: "acme", jobId: "job-1", contactEmail: "careers@acme.test", ...props }
+  ) as ComponentProps<typeof JobApplicationForm>;
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <JobApplicationForm slug="acme" jobId="job-1" contactEmail="careers@acme.test" />
+        <JobApplicationForm {...formProps} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -22,59 +34,80 @@ function fill(label: string | RegExp, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
-function submitCurrentStep() {
-  // jsdom doesn't enforce `required` on submit; each step's own checks run.
-  fireEvent.submit(screen.getByRole("button", { name: /continue/i }).closest("form")!);
+function click(name: string | RegExp) {
+  fireEvent.click(screen.getByRole("button", { name }));
 }
 
-function fillDetails({ experienced = false } = {}) {
-  fill(/Full name/, "Eli Experienced");
-  fill(/^Email/, "eli@example.com");
-  fill(/Mobile number/, "+91 98765 43210");
-  fill(/Date of birth/, "1995-06-01");
-  fill(/Place of birth/, "Pune");
-  fill(/Languages known/, "English");
-  fireEvent.keyDown(screen.getByLabelText(/Languages known/), { key: "Enter" });
-  fill(/I am a/, experienced ? "EXPERIENCED" : "FRESHER");
-  if (experienced) {
-    fill(/Total experience/, "6");
-    fill(/Notice period/, "30");
-    fill(/Current job title/, "Senior Engineer");
-    fill(/Current company/, "Globex");
-  }
-  fill(/Current location/, "Pune");
-  fill(/Preferred location/, "Bengaluru");
-  fill(/Highest qualification/, "B.Tech");
-  fill(/LinkedIn/, "https://www.linkedin.com/in/eli");
-  fill(/GitHub/, "https://github.com/eli");
-}
+const check = (overrides: Partial<EducationCheck> = {}): EducationCheck => ({
+  status: "NOT_STARTED",
+  message: null,
+  can_continue: false,
+  can_retry: false,
+  can_request_manual_review: false,
+  attempts_remaining: 8,
+  ...overrides,
+});
 
-async function verifyEmail() {
-  vi.spyOn(careersApi, "requestEmailCode").mockResolvedValue({
-    expires_in_seconds: 600,
-    resend_available_in_seconds: 60,
-  });
-  vi.spyOn(careersApi, "verifyEmailCode").mockResolvedValue({
-    verification_token: "verified-token",
-    expires_at: new Date(Date.now() + 3_600_000).toISOString(),
-  });
-  fireEvent.click(await screen.findByRole("button", { name: "Send verification code" }));
-  await screen.findByLabelText(/Verification code/);
-  fill(/Verification code/, "123456");
-  fireEvent.click(await screen.findByRole("button", { name: "Verify email" }));
-  // A valid code lands directly on the resume step.
-  expect(await screen.findByLabelText(/Resume \(PDF only\)/)).toBeInTheDocument();
-}
+const draftView = (overrides: Partial<DraftView> = {}): DraftView => ({
+  email: "eli@example.com",
+  full_name: "Eli Candidate",
+  phone: "+919876543210",
+  background: null,
+  education: null,
+  document: null,
+  education_check: check(),
+  expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+  ...overrides,
+});
 
-function attachResume(name = "resume.pdf") {
-  const file = new File(["%PDF-1.4"], name, { type: "application/pdf" });
-  fireEvent.change(screen.getByLabelText(/Resume \(PDF only\)/), { target: { files: [file] } });
-  return file;
-}
+const DOCUMENT = {
+  filename: "mtech.pdf",
+  content_type: "application/pdf",
+  size_bytes: 2048,
+  uploaded_at: new Date().toISOString(),
+};
+
+const EDUCATION = {
+  qualification_key: "ME_MTECH",
+  degree_name: null,
+  branch: "Mechanical Engineering",
+  institution: "IIT Madras",
+  completion_year: 2022,
+  tenth_marks_percentage: null,
+};
+
+const MTECH_OPTIONS: QualificationOptions = {
+  restricted: true,
+  summary: "Eligible qualifications for this role: M.E. / M.Tech, Ph.D.",
+  options: [
+    {
+      key: "ME_MTECH",
+      label: "M.E. / M.Tech",
+      level: "MASTERS",
+      branch_label: "Specialization",
+      branch_required: true,
+      requires_degree_name: false,
+      document_hint: "your final-year marks card or degree certificate",
+    },
+    {
+      key: "PHD",
+      label: "Ph.D.",
+      level: "DOCTORATE",
+      branch_label: "Research area",
+      branch_required: true,
+      requires_degree_name: false,
+      document_hint: "your Ph.D. degree certificate",
+    },
+  ],
+  fields_of_study: [],
+  field_mandatory: false,
+  accepted_document_types: ["PDF", "PNG", "JPG"],
+  max_document_size_mb: 5,
+};
 
 const result = (overrides: Partial<PublicApplicationResult> = {}): PublicApplicationResult => ({
   id: "app-1",
-  job_title: "Backend Engineer",
+  job_title: "Patent Engineer",
   candidate_email: "eli@example.com",
   confirmation_email_sent: true,
   careers_contact_email: "careers@acme.test",
@@ -82,779 +115,661 @@ const result = (overrides: Partial<PublicApplicationResult> = {}): PublicApplica
   ...overrides,
 });
 
-async function completeFlow() {
-  fillDetails({ experienced: true });
-  submitCurrentStep();
-  await verifyEmail();
-  const file = attachResume();
-  submitCurrentStep();
-  fireEvent.click(await screen.findByRole("button", { name: "Submit application" }));
+type DraftSpy = { mock: { settledResults: { type: string; value: unknown }[]; invocationCallOrder: number[] } };
+
+/** The draft the mocked server last returned (by call order), so the
+ * education save behaves like the real one: it keeps the stored document. */
+function latestDraft(spies: DraftSpy[]): DraftView {
+  let latest: { order: number; value: DraftView } | null = null;
+  for (const spy of spies) {
+    spy.mock.settledResults.forEach((settled, index) => {
+      const order = spy.mock.invocationCallOrder[index];
+      if (settled.type === "fulfilled" && (!latest || order > latest.order)) {
+        latest = { order, value: settled.value as DraftView };
+      }
+    });
+  }
+  return (latest as { value: DraftView } | null)?.value ?? draftView();
+}
+
+function mockApi() {
+  const draftSpies: DraftSpy[] = [];
+  const spies = {
+    requestCode: vi.spyOn(careersApi, "requestEmailCode").mockResolvedValue({
+      expires_in_seconds: 600,
+      resend_available_in_seconds: 60,
+    }),
+    verifyCode: vi.spyOn(careersApi, "verifyEmailCode").mockResolvedValue({
+      verification_token: "verified-token",
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+    }),
+    startDraft: vi.spyOn(careersApi, "startApplicationDraft").mockResolvedValue(draftView()),
+    saveBackground: vi
+      .spyOn(careersApi, "saveDraftBackground")
+      .mockImplementation(async (_b, _a, background) => ({ ...latestDraft(draftSpies), background })),
+    options: vi.spyOn(careersApi, "getQualificationOptions").mockResolvedValue(MTECH_OPTIONS),
+    // Like the server: the document and its check survive a save, and a
+    // changed qualification or branch resets the check.
+    saveEducation: vi.spyOn(careersApi, "saveDraftEducation").mockImplementation(
+      async (_b, _a, education) => {
+        const current = latestDraft(draftSpies);
+        const changed =
+          current.education?.qualification_key !== education.qualification_key ||
+          (current.education?.branch ?? "").toLowerCase() !== (education.branch ?? "").toLowerCase();
+        return {
+          ...current,
+          education,
+          education_check: changed ? check() : current.education_check,
+        };
+      },
+    ),
+    upload: vi.spyOn(careersApi, "uploadAcademicDocument").mockResolvedValue(
+      draftView({
+        education: EDUCATION,
+        document: DOCUMENT,
+        education_check: check({
+          status: "VERIFIED",
+          can_continue: true,
+          message: "Your document appears consistent with M.E. / M.Tech. You can continue.",
+        }),
+      }),
+    ),
+    recheck: vi.spyOn(careersApi, "recheckAcademicDocument"),
+    manualReview: vi.spyOn(careersApi, "requestEducationManualReview"),
+    submit: vi.spyOn(careersApi, "submitApplicationDraft").mockResolvedValue(result()),
+  };
+  draftSpies.push(
+    spies.upload,
+    spies.recheck,
+    spies.manualReview,
+    spies.saveEducation,
+    spies.saveBackground,
+  );
+  return spies;
+}
+
+const AUTH = { email: "eli@example.com", email_verification_token: "verified-token" };
+
+async function completeDetails() {
+  fill(/Full name/, "Eli Candidate");
+  fill(/Email address/, "eli@example.com");
+  fill(/Mobile number/, "98765 43210");
+  click(/Continue & verify email/);
+  await screen.findByLabelText(/Verification code/);
+}
+
+async function completeVerify() {
+  fill(/Verification code/, "123456");
+  click("Verify email");
+  await screen.findByRole("heading", { name: /Professional background/ });
+}
+
+async function completeBackground() {
+  fill(/Date of birth/, "1998-06-01");
+  fill(/Place of birth/, "Pune");
+  fill(/Languages known/, "English");
+  fireEvent.keyDown(screen.getByLabelText(/Languages known/), { key: "Enter" });
+  fill(/I am a/, "FRESHER");
+  fill(/Current location/, "Pune");
+  fill(/Preferred location/, "Bengaluru");
+  click(/^Continue/);
+  await screen.findByRole("heading", { name: /Step \d of \d: Education/ });
+}
+
+async function fillEducationDetails() {
+  await screen.findByLabelText(/Highest qualification/);
+  fill(/Highest qualification/, "ME_MTECH");
+  fill(/Specialization/, "Mechanical Engineering");
+  fill(/Year of completion/, "2022");
+  fill(/Institution \/ university/, "IIT Madras");
+}
+
+function uploadDocument(file = new File(["%PDF-1.4"], "mtech.pdf", { type: "application/pdf" })) {
+  fireEvent.change(screen.getByLabelText("Academic document"), { target: { files: [file] } });
+}
+
+async function reachEducation() {
+  renderForm();
+  await completeDetails();
+  await completeVerify();
+  await completeBackground();
+}
+
+async function reachResume(api: ReturnType<typeof mockApi>) {
+  await reachEducation();
+  await fillEducationDetails();
+  uploadDocument();
+  await screen.findByText(/appears consistent with M.E. \/ M.Tech/);
+  click(/^Continue/);
+  await screen.findByRole("heading", { name: /Resume/ });
+  return api;
+}
+
+function attachResume(name = "resume.pdf") {
+  const file = new File(["%PDF-1.4"], name, { type: "application/pdf" });
+  fireEvent.change(screen.getByLabelText(/^Resume/), { target: { files: [file] } });
   return file;
 }
 
-describe("JobApplicationForm", () => {
+describe("JobApplicationForm — progressive apply flow", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    // The early "already applied?" check: nobody has, unless a test says so.
     vi.spyOn(careersApi, "checkApplicantStatus").mockResolvedValue({ already_applied: false });
     vi.spyOn(careersApi, "checkCampusApplicantStatus").mockResolvedValue({ already_applied: false });
   });
 
-  it("marks the mandatory fields and shows experience fields only for experienced candidates", () => {
-    renderForm();
-
-    for (const label of [/Full name/, /^Email/, /Mobile number/, /Date of birth/, /Place of birth/, /Current location/, /Preferred location/, /Highest qualification/]) {
-      expect(screen.getByLabelText(label)).toBeRequired();
-    }
-    // LinkedIn, GitHub and the 10th marks are optional — and say so.
-    for (const label of [/LinkedIn/, /GitHub/, /^10th Marks \(Optional\)/, /10th Marks Card/]) {
-      const input = screen.getByLabelText(label);
-      expect(input).not.toBeRequired();
-      expect(input.closest(".field")).toHaveTextContent("(Optional)");
-    }
-    expect(screen.queryByLabelText(/Total experience/)).not.toBeInTheDocument();
-
-    fill(/I am a/, "EXPERIENCED");
-    expect(screen.getByLabelText(/Total experience/)).toBeRequired();
-    expect(screen.getByLabelText(/Current job title/)).toBeRequired();
-    expect(screen.getByLabelText(/Current company/)).toBeRequired();
-  });
-
-  it("requires a language and a candidate type before continuing", async () => {
-    renderForm();
-    fill(/Full name/, "Someone");
-    submitCurrentStep();
-    expect(await screen.findByText(/fresher or an experienced professional/)).toBeInTheDocument();
-
-    fill(/I am a/, "FRESHER");
-    submitCurrentStep();
-    expect(await screen.findByText(/at least one language/)).toBeInTheDocument();
-  });
-
-  it("moves straight to the resume upload after a valid code, with no separate verified screen", async () => {
-    renderForm();
-    fillDetails();
-    submitCurrentStep();
-
-    expect(await screen.findByText("Not verified yet")).toBeInTheDocument();
-    // Nothing to click past on the verification step.
-    expect(screen.queryByRole("button", { name: /continue/i })).not.toBeInTheDocument();
-
-    await verifyEmail();
-    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent(/Resume/);
-    expect(screen.queryByText("Email verified")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Verify email" })).not.toBeInTheDocument();
-  });
-
-  it("doesn't ask for verification again when a verified candidate goes back to edit details", async () => {
-    renderForm();
-    fillDetails();
-    submitCurrentStep();
-    await verifyEmail();
-
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(await screen.findByLabelText(/Full name/)).toBeInTheDocument();
-    submitCurrentStep();
-    expect(await screen.findByLabelText(/Resume \(PDF only\)/)).toBeInTheDocument();
-  });
-
-  it.each([
-    ["an incorrect", "Incorrect code. 4 attempts remaining.", "otp_incorrect"],
-    ["an expired", "This code has expired. Please request a new one.", "otp_expired"],
-  ])("stays on verification with the server's message for %s code", async (_kind, message, code) => {
-    renderForm();
-    fillDetails();
-    submitCurrentStep();
-    vi.spyOn(careersApi, "requestEmailCode").mockResolvedValue({
-      expires_in_seconds: 600,
-      resend_available_in_seconds: 60,
-    });
-    vi.spyOn(careersApi, "verifyEmailCode").mockRejectedValue(new ApiError(message, 422, code));
-    fireEvent.click(await screen.findByRole("button", { name: "Send verification code" }));
-    await screen.findByLabelText(/Verification code/);
-    fill(/Verification code/, "000000");
-    fireEvent.click(screen.getByRole("button", { name: "Verify email" }));
-
-    expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Verification code/)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Resume \(PDF only\)/)).not.toBeInTheDocument();
-    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent(/Verify/i);
-  });
-
-  it("shows the server's message for a wrong code", async () => {
-    renderForm();
-    fillDetails();
-    submitCurrentStep();
-    vi.spyOn(careersApi, "requestEmailCode").mockResolvedValue({
-      expires_in_seconds: 600,
-      resend_available_in_seconds: 60,
-    });
-    vi.spyOn(careersApi, "verifyEmailCode").mockRejectedValue(
-      new ApiError("Incorrect code. 4 attempts remaining.", 422, "otp_incorrect"),
-    );
-    fireEvent.click(await screen.findByRole("button", { name: "Send verification code" }));
-    expect(await screen.findByRole("button", { name: /Resend code in/ })).toBeDisabled();
-    fill(/Verification code/, "000000");
-    fireEvent.click(screen.getByRole("button", { name: "Verify email" }));
-
-    expect(await screen.findByText("Incorrect code. 4 attempts remaining.")).toBeInTheDocument();
-  });
-
-  it("accepts PDF resumes only", async () => {
-    renderForm();
-    fillDetails();
-    submitCurrentStep();
-    await verifyEmail();
-
-    attachResume("resume.docx");
-    expect(await screen.findByText(/upload your resume as a PDF/)).toBeInTheDocument();
-  });
-
-  it("submits the full profile with the verification token and confirms only a sent email", async () => {
-    const apply = vi.spyOn(careersApi, "applyToJob").mockResolvedValue(result());
-    renderForm();
-
-    const file = await completeFlow();
-
-    await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
-    expect(apply).toHaveBeenCalledWith(
-      "acme",
-      "job-1",
-      expect.objectContaining({
-        candidate_type: "EXPERIENCED",
-        phone: "+91 98765 43210",
-        date_of_birth: "1995-06-01",
-        place_of_birth: "Pune",
-        languages: ["English"],
-        years_experience: "6",
-        current_title: "Senior Engineer",
-      }),
-      file,
-      "verified-token",
-      null,
-    );
-    expect(await screen.findByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
-    expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
-    expect(screen.getByText(/successfully submitted and will be reviewed/)).toBeInTheDocument();
-    expect(screen.getByText(/we will contact you by email/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Careers" })).toHaveAttribute("href", "/org/acme");
-    expect(screen.getByText(/confirmation email has been sent/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "careers@acme.test" })).toHaveAttribute(
-      "href",
-      "mailto:careers@acme.test",
-    );
-  });
-
-  it("never claims an email was sent when it wasn't", async () => {
-    vi.spyOn(careersApi, "applyToJob").mockResolvedValue(result({ confirmation_email_sent: false }));
-    renderForm();
-    await completeFlow();
-
-    expect(await screen.findByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
-    expect(screen.queryByText(/confirmation email has been sent/)).not.toBeInTheDocument();
-    expect(screen.getByText(/couldn't send a confirmation email/)).toBeInTheDocument();
-  });
-
-  it("never shows the candidate a screening result or decision, whatever the backend sends", async () => {
-    // The API no longer returns any screening data; even a stale backend
-    // still sending the old outcome field (or anything similar) must not
-    // change what the candidate sees.
-    const legacy = {
-      ...result(),
-      outcome: "NOT_SHORTLISTED_FOR_ROLE",
-      decision: "NOT_MATCH",
-      overall_score: 42,
-      missing_requirements: ["React.js"],
-      status: "AI_SCREENED_OUT",
-    } as PublicApplicationResult;
-    vi.spyOn(careersApi, "applyToJob").mockResolvedValue(legacy);
-    renderForm();
-    await completeFlow();
-
-    expect(await screen.findByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
-    const text = document.body.textContent ?? "";
-    for (const leaked of [
-      /\bMATCH\b/,
-      /NOT[ _]MATCH/i,
-      /\bAI\b/,
-      /score/i,
-      /%/,
-      /skills?/i,
-      /React\.js/,
-      /screen(ed|ing)/i,
-      /not eligible/i,
-      /shortlist/i,
-      /rejected/i,
-      /recommend/i,
-      /congratulations/i,
-      /selected/i,
-    ]) {
-      expect(text).not.toMatch(leaked);
-    }
-  });
-
-  it.each([
-    ["mobile", 375],
-    ["desktop", 1280],
-  ])("shows the same complete confirmation on a %s viewport", async (_label, width) => {
-    // jsdom has no CSS layout engine: this checks the confirmation's content
-    // and actions render at either width; the responsive styling itself is
-    // the @media rule in styles/public.css.
-    vi.stubGlobal("innerWidth", width);
-    vi.spyOn(careersApi, "applyToJob").mockResolvedValue(result());
-    renderForm();
-    await completeFlow();
-
-    const heading = await screen.findByRole("heading", { name: "Application Submitted" });
-    expect(heading.closest('[role="status"]')).toHaveClass("application-outcome-success");
-    expect(screen.getByRole("link", { name: "Back to Careers" })).toBeInTheDocument();
-    vi.unstubAllGlobals();
-  });
-
-  it("tells a returning candidate they've already applied", async () => {
-    vi.spyOn(careersApi, "applyToJob").mockRejectedValue(
-      new ApiError("An application has already been submitted with the details provided.", 409, "already_registered"),
-    );
-    renderForm();
-    await completeFlow();
-
-    expect(await screen.findByText("You've already applied")).toBeInTheDocument();
-  });
-
-  describe("early 'already applied' check", () => {
-    const continueButton = () => screen.getByRole("button", { name: /continue/i });
-
-    it("shows 'You have already applied.' directly below the Email field, with Continue disabled", async () => {
-      const check = vi
-        .spyOn(careersApi, "checkApplicantStatus")
-        .mockResolvedValue({ already_applied: true });
+  describe("stepper", () => {
+    it("shows the six steps with the current one marked, and is not clickable", () => {
       renderForm();
-      fillDetails();
-
-      const message = await screen.findByText("You have already applied.");
-      expect(continueButton()).toBeDisabled();
-      // Directly below the Email input, in the Email field — not at the
-      // bottom of the form — and announced as the input's description.
-      const email = screen.getByLabelText(/^Email/);
-      expect(message.closest(".field")).toBe(email.closest(".field"));
-      expect(email.nextElementSibling).toBe(message);
-      expect(email).toHaveAttribute("aria-describedby", message.id);
-      expect(email).toHaveAttribute("aria-invalid", "true");
-      // Shown once only (no second copy next to the button).
-      expect(screen.getAllByText("You have already applied.")).toHaveLength(1);
-      // Email and mobile are checked separately — one identifier per request.
-      expect(check).toHaveBeenCalledWith("acme", { email: "eli@example.com", job_id: "job-1" });
-      expect(check).toHaveBeenCalledWith("acme", { phone: "+91 98765 43210", job_id: "job-1" });
-      // Both blocked: one message, under Email, described for both inputs.
-      expect(screen.getByLabelText(/Mobile number/)).toHaveAttribute("aria-describedby", message.id);
-      // Nothing private comes back or is shown — only the message.
-      expect(screen.queryByText(/eligible|reapply|applied on/i)).not.toBeInTheDocument();
+      const progress = screen.getByRole("navigation", { name: "Application progress" });
+      const items = within(progress).getAllByRole("listitem");
+      expect(items).toHaveLength(6);
+      expect(items[0]).toHaveAttribute("aria-current", "step");
+      expect(items[0]).toHaveTextContent("Step 1 of 6: Your details, current step");
+      expect(items[5]).toHaveTextContent("Review & submit, not started");
+      expect(within(progress).queryByRole("button")).not.toBeInTheDocument();
+      expect(within(progress).queryByRole("link")).not.toBeInTheDocument();
     });
 
-    it("never lets a blocked candidate reach the code, resume or submit steps", async () => {
-      vi.spyOn(careersApi, "checkApplicantStatus").mockResolvedValue({ already_applied: true });
-      const requestCode = vi.spyOn(careersApi, "requestEmailCode");
+    it("marks completed steps as the candidate moves on", async () => {
+      mockApi();
       renderForm();
-      fillDetails();
-      await screen.findByText("You have already applied.");
-
-      submitCurrentStep(); // even forcing the form's submit
-      expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent(/Your details/);
-      expect(screen.queryByText("Not verified yet")).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Send verification code" })).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/Resume \(PDF only\)/)).not.toBeInTheDocument();
-      expect(requestCode).not.toHaveBeenCalled();
+      await completeDetails();
+      await completeVerify();
+      const items = within(screen.getByRole("navigation", { name: "Application progress" })).getAllByRole(
+        "listitem",
+      );
+      expect(items[0]).toHaveTextContent("completed");
+      expect(items[1]).toHaveTextContent("completed");
+      expect(items[2]).toHaveAttribute("aria-current", "step");
     });
+  });
 
-    it("waits for typing to pause instead of checking on every keystroke", async () => {
-      const check = vi.spyOn(careersApi, "checkApplicantStatus");
+  describe("step 1 — basic information", () => {
+    it("asks only for name, email and mobile number", () => {
       renderForm();
-      for (const partial of ["e", "el", "eli@", "eli@ex", "eli@example.co", "eli@example.com"]) {
-        fill(/^Email/, partial);
+      expect(screen.getByLabelText(/Full name/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Email address/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Mobile number/)).toBeInTheDocument();
+      expect(screen.getByLabelText("Country code")).toHaveValue("+91");
+      for (const absent of [/Date of birth/, /Place of birth/, /Languages known/, /qualification/i, /LinkedIn/, /GitHub/, /Resume/]) {
+        expect(screen.queryByLabelText(absent)).not.toBeInTheDocument();
       }
-      await waitFor(() => expect(check).toHaveBeenCalledTimes(1));
-      expect(check).toHaveBeenCalledWith("acme", { email: "eli@example.com", job_id: "job-1" });
     });
 
-    it("lets a candidate who may (re)apply continue to verification", async () => {
-      const check = vi.spyOn(careersApi, "checkApplicantStatus");
+    it("validates every field before sending a code", () => {
+      const api = mockApi();
       renderForm();
-      fillDetails();
-      await waitFor(() => expect(check).toHaveBeenCalled());
+      click(/Continue & verify email/);
+      expect(screen.getByText("Enter your full name.")).toBeInTheDocument();
+      expect(screen.getByText("Enter your email address.")).toBeInTheDocument();
+      expect(screen.getByText("Enter your mobile number.")).toBeInTheDocument();
 
-      expect(screen.queryByText("You have already applied.")).not.toBeInTheDocument();
-      expect(continueButton()).toBeEnabled();
-      submitCurrentStep();
-      expect(await screen.findByText("Not verified yet")).toBeInTheDocument();
+      fill(/Full name/, "J0hn");
+      fill(/Email address/, "not-an-email");
+      fill(/Mobile number/, "12345");
+      click(/Continue & verify email/);
+      expect(screen.getByText(/A name can contain letters/)).toBeInTheDocument();
+      expect(screen.getByText(/Enter a valid email address/)).toBeInTheDocument();
+      expect(screen.getByText("Enter a valid 10-digit Indian mobile number.")).toBeInTheDocument();
+      expect(screen.getByLabelText(/Full name/)).toHaveAttribute("aria-invalid", "true");
+      expect(api.requestCode).not.toHaveBeenCalled();
     });
 
-    it("returns to details with the message when the server refuses the code", async () => {
-      // e.g. the early check hadn't answered yet, or the client skipped it.
-      vi.spyOn(careersApi, "requestEmailCode").mockRejectedValue(
-        new ApiError("You have already applied.", 409, "already_applied"),
+    it("validates the number for the selected country code", () => {
+      mockApi();
+      renderForm();
+      fill("Country code", "+44");
+      fill(/Mobile number/, "7911 123456");
+      fill(/Full name/, "Eli Candidate");
+      fill(/Email address/, "eli@example.com");
+      click(/Continue & verify email/);
+      expect(screen.queryByText(/valid .*mobile number/)).not.toBeInTheDocument();
+    });
+
+    it("shows 'You have already applied.' below Email with Continue disabled", async () => {
+      vi.spyOn(careersApi, "checkApplicantStatus").mockResolvedValue({ already_applied: true });
+      renderForm();
+      fill(/Email address/, "taken@example.com");
+      expect(await screen.findByText("You have already applied.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Continue & verify email/ })).toBeDisabled();
+    });
+  });
+
+  describe("step 2 — email verification", () => {
+    it("sends the code once, shows where it went and the resend cooldown", async () => {
+      const api = mockApi();
+      renderForm();
+      await completeDetails();
+      expect(api.requestCode).toHaveBeenCalledTimes(1);
+      expect(api.requestCode).toHaveBeenCalledWith("acme", "eli@example.com", "job-1");
+      expect(screen.getByText(/We sent a 6-digit code to/)).toHaveTextContent("eli@example.com");
+      expect(screen.getByRole("button", { name: /Resend code in 60s/ })).toBeDisabled();
+    });
+
+    it("keeps the candidate here with the server's message for a wrong code", async () => {
+      const api = mockApi();
+      api.verifyCode.mockRejectedValue(
+        new ApiError("Incorrect code. 4 attempts remaining.", 422, "otp_incorrect"),
       );
       renderForm();
-      fillDetails();
-      submitCurrentStep();
-      fireEvent.click(await screen.findByRole("button", { name: "Send verification code" }));
-
-      expect(await screen.findByText("You have already applied.")).toBeInTheDocument();
-      expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent(/Your details/);
-      expect(continueButton()).toBeDisabled();
-      // A different email is a different person: the block lifts.
-      fill(/^Email/, "someone.else@example.com");
-      expect(screen.queryByText("You have already applied.")).not.toBeInTheDocument();
+      await completeDetails();
+      fill(/Verification code/, "000000");
+      click("Verify email");
+      expect(await screen.findByText("Incorrect code. 4 attempts remaining.")).toBeInTheDocument();
+      expect(screen.getByLabelText(/Verification code/)).toBeInTheDocument();
+      expect(api.startDraft).not.toHaveBeenCalled();
     });
 
-    it("prefills a returning candidate's stored profile only after the code is verified", async () => {
-      const verify = vi.spyOn(careersApi, "verifyEmailCode").mockResolvedValue({
-        verification_token: "verified-token",
-        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
-        existing_profile: {
-          full_name: "Rita Returning",
-          phone: "+91 91234 56789",
-          date_of_birth: "1994-02-03",
-          place_of_birth: "Chennai",
-          languages: ["English", "Tamil"],
-          candidate_type: "FRESHER",
-          years_experience: null,
-          notice_period_days: null,
-          immediate_joiner: null,
-          current_title: null,
-          current_company: null,
-          location: "Chennai",
-          preferred_location: "Hyderabad",
-          qualification: "M.Sc",
-          linkedin_url: "https://www.linkedin.com/in/rita",
-          github_url: "https://github.com/rita",
-          tenth_marks_percentage: 82.4,
-        },
-      });
-      vi.spyOn(careersApi, "requestEmailCode").mockResolvedValue({
-        expires_in_seconds: 600,
-        resend_available_in_seconds: 60,
-      });
+    it("starts the server-side draft with the normalized mobile number once verified", async () => {
+      const api = mockApi();
       renderForm();
-      // Only some details typed; what is typed must win over the stored value.
-      fill(/^Email/, "rita@example.com");
+      await completeDetails();
+      await completeVerify();
+      expect(api.startDraft).toHaveBeenCalledWith(JOB_BASE, AUTH, "Eli Candidate", "+919876543210");
+      expect(screen.getByText(/Email verified: eli@example.com/)).toBeInTheDocument();
+    });
+
+    it("lets the candidate change the email, which needs a new verification", async () => {
+      const api = mockApi();
+      renderForm();
+      await completeDetails();
+      await completeVerify();
+      click(/Back/);
+      expect(screen.getByRole("button", { name: /^Continue$/ })).toBeInTheDocument();
+      expect(screen.getByLabelText(/Full name/)).toHaveValue("Eli Candidate");
+      fill(/Email address/, "eli.new@example.com");
+      click(/Continue & verify email/);
+      await screen.findByLabelText(/Verification code/);
+      expect(api.requestCode).toHaveBeenLastCalledWith("acme", "eli.new@example.com", "job-1");
+    });
+
+    it("returns to Step 1 when the mobile number belongs to someone else", async () => {
+      const api = mockApi();
+      api.startDraft.mockRejectedValue(
+        new ApiError("This mobile number is already registered.", 409, "phone_already_registered"),
+      );
+      renderForm();
+      await completeDetails();
+      fill(/Verification code/, "123456");
+      click("Verify email");
+      expect(await screen.findByText("This mobile number is already registered.")).toBeInTheDocument();
+      expect(screen.getByLabelText(/Mobile number/)).toHaveAttribute("aria-invalid", "true");
+    });
+  });
+
+  describe("step 3 — professional background", () => {
+    it("validates the step and saves it to the draft", async () => {
+      const api = mockApi();
+      renderForm();
+      await completeDetails();
+      await completeVerify();
+      click(/^Continue/);
+      expect(screen.getByText("Enter your date of birth.")).toBeInTheDocument();
+      expect(screen.getByText("Add at least one language you know.")).toBeInTheDocument();
+      expect(api.saveBackground).not.toHaveBeenCalled();
+
+      fill(/I am a/, "EXPERIENCED");
+      expect(screen.getByLabelText(/Total experience/)).toBeInTheDocument();
+      fill(/I am a/, "FRESHER");
+      expect(screen.queryByLabelText(/Total experience/)).not.toBeInTheDocument();
+      await completeBackground();
+      expect(api.saveBackground).toHaveBeenCalledWith(
+        JOB_BASE,
+        AUTH,
+        expect.objectContaining({
+          date_of_birth: "1998-06-01",
+          languages: ["English"],
+          candidate_type: "FRESHER",
+          location: "Pune",
+          preferred_location: "Bengaluru",
+          linkedin_url: null,
+        }),
+      );
+    });
+
+    it("preserves entered values when going back and forward", async () => {
+      mockApi();
+      await reachEducation();
+      await screen.findByLabelText(/Highest qualification/);
+      click(/Back/);
+      expect(await screen.findByLabelText(/Place of birth/)).toHaveValue("Pune");
+      expect(screen.getByLabelText(/Preferred location/)).toHaveValue("Bengaluru");
+    });
+  });
+
+  describe("step 4 — education and AI document check", () => {
+    it("offers only the qualifications the job's JD allows", async () => {
+      mockApi();
+      await reachEducation();
+      await screen.findByText(MTECH_OPTIONS.summary);
+      const select = screen.getByLabelText(/Highest qualification/);
+      const labels = within(select).getAllByRole("option").map((option) => option.textContent);
+      expect(labels).toEqual(["Select…", "M.E. / M.Tech", "Ph.D."]);
+    });
+
+    it("requires the document and the details before uploading", async () => {
+      const api = mockApi();
+      await reachEducation();
+      await screen.findByLabelText(/Highest qualification/);
+      click(/Save and continue/);
+      expect(screen.getByText("Select your qualification.")).toBeInTheDocument();
+      fill(/Highest qualification/, "ME_MTECH");
+      expect(screen.getByText(/Upload your final-year marks card or degree certificate/)).toBeInTheDocument();
+      expect(screen.getByText(/PDF, PNG, JPG, up to 5 MB/)).toBeInTheDocument();
+      uploadDocument();
+      expect(screen.getByText("Enter your specialization.")).toBeInTheDocument();
+      expect(api.upload).not.toHaveBeenCalled();
+    });
+
+    it("rejects other file types and oversized files without uploading", async () => {
+      const api = mockApi();
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument(new File(["x"], "card.docx"));
+      expect(screen.getByText("The document must be a PDF, PNG or JPG file.")).toBeInTheDocument();
+      const big = new File(["x"], "card.pdf", { type: "application/pdf" });
+      Object.defineProperty(big, "size", { value: 6 * 1024 * 1024 });
+      uploadDocument(big);
+      expect(screen.getByText("The document must be smaller than 5 MB.")).toBeInTheDocument();
+      expect(api.upload).not.toHaveBeenCalled();
+    });
+
+    it("shows the checking state, then the verified outcome", async () => {
+      const api = mockApi();
+      let resolve: (view: DraftView) => void = () => undefined;
+      api.upload.mockImplementation(
+        (_base, _auth, _file, onProgress) =>
+          new Promise((done) => {
+            onProgress(1);
+            resolve = done;
+          }),
+      );
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument();
+      expect(await screen.findByText(/Checking your document/)).toBeInTheDocument();
+      expect(api.saveEducation).toHaveBeenCalledWith(
+        JOB_BASE,
+        AUTH,
+        expect.objectContaining({ qualification_key: "ME_MTECH", completion_year: 2022 }),
+      );
+      await act(async () =>
+        resolve(
+          draftView({
+            education: EDUCATION,
+            document: DOCUMENT,
+            education_check: check({
+              status: "VERIFIED",
+              can_continue: true,
+              message: "Your document appears consistent with M.E. / M.Tech. You can continue.",
+            }),
+          }),
+        ),
+      );
+      expect(screen.getByText("Document checked")).toBeInTheDocument();
+      expect(screen.getByText(/not a verification of authenticity/)).toBeInTheDocument();
+    });
+
+    it("explains a mismatch and lets the candidate upload the right document", async () => {
+      const api = mockApi();
+      const mismatch =
+        "The qualification selected does not appear to match the uploaded document. You selected M.E. / M.Tech, but the uploaded document appears to be a B.E. / B.Tech academic record. Please upload the correct document.";
+      api.upload.mockResolvedValueOnce(
+        draftView({
+          education: EDUCATION,
+          document: { ...DOCUMENT, filename: "btech.pdf" },
+          education_check: check({ status: "MISMATCH", message: mismatch }),
+        }),
+      );
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument(new File(["%PDF"], "btech.pdf", { type: "application/pdf" }));
+      expect(await screen.findByText(mismatch)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /manual review/ })).not.toBeInTheDocument();
+
+      api.saveEducation.mockResolvedValueOnce(
+        draftView({ education: EDUCATION, document: DOCUMENT, education_check: check({ status: "MISMATCH", message: mismatch }) }),
+      );
+      click(/Save and continue/);
+      expect(
+        await screen.findByText("Your academic document needs to be verified before you continue."),
+      ).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText("Replace academic document"), {
+        target: { files: [new File(["%PDF"], "mtech.pdf", { type: "application/pdf" })] },
+      });
+      expect(await screen.findByText(/appears consistent with M.E. \/ M.Tech/)).toBeInTheDocument();
+      expect(api.upload).toHaveBeenCalledTimes(2);
+    });
+
+    it("offers manual review for an unclear document", async () => {
+      const api = mockApi();
+      api.upload.mockResolvedValueOnce(
+        draftView({
+          education: EDUCATION,
+          document: DOCUMENT,
+          education_check: check({
+            status: "UNCLEAR",
+            message: "We couldn't read the uploaded document clearly.",
+            can_request_manual_review: true,
+          }),
+        }),
+      );
+      api.manualReview.mockResolvedValue(
+        draftView({
+          education: EDUCATION,
+          document: DOCUMENT,
+          education_check: check({ status: "MANUAL_REVIEW", can_continue: true, message: "Your document will be reviewed by our recruitment team." }),
+        }),
+      );
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument();
+      expect(await screen.findByText("We couldn't confirm your document")).toBeInTheDocument();
+      click("Continue with manual review");
+      expect(await screen.findByText("Document sent for manual review")).toBeInTheDocument();
+      expect(api.manualReview).toHaveBeenCalledWith(JOB_BASE, AUTH);
+    });
+
+    it("keeps the document after an AI failure and retries the check", async () => {
+      const api = mockApi();
+      api.upload.mockResolvedValueOnce(
+        draftView({
+          education: EDUCATION,
+          document: DOCUMENT,
+          education_check: check({
+            status: "FAILED",
+            can_retry: true,
+            message: "We couldn't check your document right now.",
+          }),
+        }),
+      );
+      api.recheck.mockResolvedValue(
+        draftView({ education: EDUCATION, document: DOCUMENT, education_check: check({ status: "VERIFIED", can_continue: true, message: "Your document appears consistent with M.E. / M.Tech." }) }),
+      );
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument();
+      expect(await screen.findByText("Check not completed")).toBeInTheDocument();
+      expect(screen.getByText("mtech.pdf")).toBeInTheDocument();
+      click("Try again");
+      expect(await screen.findByText("Document checked")).toBeInTheDocument();
+      expect(api.recheck).toHaveBeenCalledTimes(1);
+    });
+
+    it("re-checks the document when the qualification changes after verification", async () => {
+      const api = mockApi();
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument();
+      await screen.findByText("Document checked");
+      fill(/Highest qualification/, "PHD");
+      expect(screen.getByText("Details changed")).toBeInTheDocument();
+      fill(/Research area/, "Robotics");
+      api.saveEducation.mockResolvedValueOnce(
+        draftView({ education: { ...EDUCATION, qualification_key: "PHD", branch: "Robotics" }, document: DOCUMENT, education_check: check() }),
+      );
+      api.recheck.mockResolvedValue(
+        draftView({
+          education: { ...EDUCATION, qualification_key: "PHD", branch: "Robotics" },
+          document: DOCUMENT,
+          education_check: check({ status: "MISMATCH", message: "You selected Ph.D., but the uploaded document appears to be an M.E. / M.Tech academic record." }),
+        }),
+      );
+      click(/Save and continue/);
+      expect(await screen.findByText(/You selected Ph.D./)).toBeInTheDocument();
+      expect(api.recheck).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("heading", { name: /Resume/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("steps 5–6 — resume, review and submit", () => {
+    it("accepts PDF resumes only", async () => {
+      const api = mockApi();
+      await reachResume(api);
+      attachResume("resume.docx");
+      expect(screen.getByText("Please upload your resume as a PDF file.")).toBeInTheDocument();
+      click(/^Continue/);
+      expect(screen.queryByRole("button", { name: "Submit application" })).not.toBeInTheDocument();
+    });
+
+    it("reviews every step, edits go back with values kept, and submits once", async () => {
+      const api = mockApi();
+      let finish: (value: PublicApplicationResult) => void = () => undefined;
+      api.submit.mockImplementation(() => new Promise((done) => (finish = done)));
+      await reachResume(api);
+      const file = attachResume();
+      click(/^Continue/);
+      await screen.findByRole("button", { name: "Submit application" });
+
+      const basic = screen.getByRole("region", { name: "Basic information" });
+      expect(basic).toHaveTextContent("Eli Candidate");
+      expect(basic).toHaveTextContent("Verified");
+      expect(screen.getByRole("region", { name: "Professional background" })).toHaveTextContent("Pune");
+      const education = screen.getByRole("region", { name: "Education" });
+      expect(education).toHaveTextContent("M.E. / M.Tech in Mechanical Engineering");
+      expect(education).toHaveTextContent("Document checked");
+      expect(screen.getByRole("region", { name: "Resume" })).toHaveTextContent("resume.pdf");
+
+      fireEvent.click(within(screen.getByRole("region", { name: "Professional background" })).getByRole("button", { name: /Edit/ }));
+      expect(await screen.findByLabelText(/Place of birth/)).toHaveValue("Pune");
+      click(/^Continue/); // background saved again
+      await screen.findByLabelText(/Highest qualification/);
+      click(/^Continue/);
+      await screen.findByRole("heading", { name: /Resume/ });
+      click(/^Continue/);
+
+      const submit = await screen.findByRole("button", { name: "Submit application" });
+      fireEvent.click(submit);
+      fireEvent.click(submit);
+      await waitFor(() => expect(api.submit).toHaveBeenCalledTimes(1));
+      expect(api.submit).toHaveBeenCalledWith(JOB_BASE, AUTH, file, null, expect.any(Function));
+      await act(async () => finish(result()));
+      expect(await screen.findByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
+    });
+
+    it("never shows a screening result, whatever the backend sends", async () => {
+      const api = mockApi();
+      api.submit.mockResolvedValue({
+        ...result(),
+        ...({ decision: "NOT_MATCH", overall_score: 12 } as object),
+      } as PublicApplicationResult);
+      await reachResume(api);
+      attachResume();
+      click(/^Continue/);
+      click("Submit application");
+      await screen.findByRole("heading", { name: "Application Submitted" });
+      expect(screen.queryByText(/NOT_MATCH|12/)).not.toBeInTheDocument();
+    });
+
+    it("sends the candidate back to Education when the JD's eligibility changed", async () => {
+      const api = mockApi();
+      api.submit.mockRejectedValue(
+        new ApiError(
+          "This role's eligibility requirements have changed since you entered your education.",
+          409,
+          "education_recheck_required",
+        ),
+      );
+      await reachResume(api);
+      attachResume();
+      click(/^Continue/);
+      click("Submit application");
+      expect(await screen.findByText(/eligibility requirements have changed/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Highest qualification/)).toBeInTheDocument();
+    });
+
+    it("asks to verify again when the verification expired, keeping progress", async () => {
+      const api = mockApi();
+      api.saveBackground.mockRejectedValueOnce(
+        new ApiError("Your email verification has expired.", 422, "email_not_verified"),
+      );
+      renderForm();
+      await completeDetails();
+      await completeVerify();
+      fill(/Date of birth/, "1998-06-01");
       fill(/Place of birth/, "Pune");
       fill(/Languages known/, "English");
       fireEvent.keyDown(screen.getByLabelText(/Languages known/), { key: "Enter" });
       fill(/I am a/, "FRESHER");
-      // Nothing about the profile is on screen before the code — not the
-      // name, nor the stored mobile number.
-      expect(screen.queryByDisplayValue("Rita Returning")).not.toBeInTheDocument();
-      expect(screen.queryByDisplayValue("+91 91234 56789")).not.toBeInTheDocument();
-      expect(screen.getByLabelText(/Mobile number/)).toHaveValue("");
-      submitCurrentStep();
-
-      fireEvent.click(await screen.findByRole("button", { name: "Send verification code" }));
-      await screen.findByLabelText(/Verification code/);
-      fill(/Verification code/, "123456");
-      fireEvent.click(screen.getByRole("button", { name: "Verify email" }));
-      await screen.findByLabelText(/Resume \(PDF only\)/);
-      expect(verify).toHaveBeenCalledWith("acme", "rita@example.com", "123456", "job-1");
-
-      fireEvent.click(screen.getByRole("button", { name: "Back" }));
-      expect(await screen.findByDisplayValue("Rita Returning")).toBeInTheDocument();
-      expect(screen.getByLabelText(/Date of birth/)).toHaveValue("1994-02-03");
-      expect(screen.getByLabelText(/Highest qualification/)).toHaveValue("M.Sc");
-      expect(screen.getByLabelText(/Current location/)).toHaveValue("Chennai");
-      expect(screen.getByLabelText(/Place of birth/)).toHaveValue("Pune"); // typed value kept
-      // The stored mobile number and marks are filled in after verification.
-      expect(screen.getByLabelText(/Mobile number/)).toHaveValue("+91 91234 56789");
-      expect(screen.getByLabelText(/^10th Marks \(Optional\)/)).toHaveValue("82.4");
+      fill(/Current location/, "Pune");
+      fill(/Preferred location/, "Bengaluru");
+      click(/^Continue/);
+      expect(await screen.findByText(/Your email verification has expired/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Send verification code/ })).toBeInTheDocument();
     });
+  });
 
-    it("never fills the stored mobile number from the existing-email check (regression)", async () => {
-      const check = vi
-        .spyOn(careersApi, "checkApplicantStatus")
-        .mockResolvedValue({ already_applied: true });
-      const requestCode = vi.spyOn(careersApi, "requestEmailCode");
-      const verify = vi.spyOn(careersApi, "verifyEmailCode");
-      renderForm();
-      // Only the email is entered — as when an existing candidate starts over.
-      fill(/^Email/, "dbr@example.com");
-
-      const message = await screen.findByText("You have already applied.");
-      const email = screen.getByLabelText(/^Email/);
-      expect(email.nextElementSibling).toBe(message);
-      expect(check).toHaveBeenCalledWith("acme", { email: "dbr@example.com", job_id: "job-1" });
-      // The check answered; nothing was put into the Mobile number field,
-      // and no code was requested or verified (so no profile came back).
-      expect(screen.getByLabelText(/Mobile number/)).toHaveValue("");
-      expect(screen.queryByDisplayValue(/^\+91/)).not.toBeInTheDocument();
-      expect(requestCode).not.toHaveBeenCalled();
-      expect(verify).not.toHaveBeenCalled();
-    });
-
-    it("fills the stored mobile number only once the code is verified (regression)", async () => {
-      vi.spyOn(careersApi, "requestEmailCode").mockResolvedValue({
+  describe("other entry points", () => {
+    it("uses the campus drive's own endpoints for a drive link", async () => {
+      const api = mockApi();
+      const campusCode = vi.spyOn(careersApi, "requestCampusEmailCode").mockResolvedValue({
         expires_in_seconds: 600,
         resend_available_in_seconds: 60,
       });
-      vi.spyOn(careersApi, "verifyEmailCode").mockResolvedValue({
+      vi.spyOn(careersApi, "verifyCampusEmailCode").mockResolvedValue({
         verification_token: "verified-token",
         expires_at: new Date(Date.now() + 3_600_000).toISOString(),
-        existing_profile: {
-          full_name: "Dee Returning",
-          phone: "+916363276931",
-          date_of_birth: "1994-02-03",
-          place_of_birth: "Chennai",
-          languages: ["English"],
-          candidate_type: "FRESHER",
-          years_experience: null,
-          notice_period_days: null,
-          immediate_joiner: null,
-          current_title: null,
-          current_company: null,
-          location: "Chennai",
-          preferred_location: "Pune",
-          qualification: "B.E",
-          linkedin_url: null,
-          github_url: null,
-          tenth_marks_percentage: null,
+      });
+      renderForm({ campusToken: "drive-tok" });
+      await completeDetails();
+      expect(campusCode).toHaveBeenCalledWith("drive-tok", "eli@example.com");
+      await completeVerify();
+      expect(api.startDraft).toHaveBeenCalledWith(
+        "/api/v1/public/campus-drive/drive-tok",
+        AUTH,
+        "Eli Candidate",
+        "+919876543210",
+      );
+    });
+
+    it("keeps a program's one-request form: no Education step", async () => {
+      vi.spyOn(careersApi, "checkProgramApplicantStatus").mockResolvedValue({ already_applied: false });
+      vi.spyOn(careersApi, "requestProgramEmailCode").mockResolvedValue({
+        expires_in_seconds: 600,
+        resend_available_in_seconds: 60,
+      });
+      vi.spyOn(careersApi, "verifyProgramEmailCode").mockResolvedValue({
+        verification_token: "verified-token",
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      });
+      const startDraft = vi.spyOn(careersApi, "startApplicationDraft");
+      renderForm({
+        program: {
+          id: "prog-1",
+          ready: true,
+          declaration: {} as ProgramDeclaration,
         },
       });
-      const check = vi.spyOn(careersApi, "checkApplicantStatus");
-      renderForm();
-      fill(/^Email/, "dee@example.com");
-      fill(/I am a/, "FRESHER");
-      fill(/Languages known/, "English");
-      fireEvent.keyDown(screen.getByLabelText(/Languages known/), { key: "Enter" });
-      await waitFor(() => expect(check).toHaveBeenCalled());
-      // Existing email, may apply: still nothing filled before the code.
-      expect(screen.getByLabelText(/Mobile number/)).toHaveValue("");
-
-      submitCurrentStep();
-      fireEvent.click(await screen.findByRole("button", { name: "Send verification code" }));
-      await screen.findByLabelText(/Verification code/);
-      fill(/Verification code/, "123456");
-      fireEvent.click(screen.getByRole("button", { name: "Verify email" }));
-      await screen.findByLabelText(/Resume \(PDF only\)/);
-
-      fireEvent.click(screen.getByRole("button", { name: "Back" }));
-      expect(await screen.findByLabelText(/Mobile number/)).toHaveValue("+916363276931");
-      expect(screen.getByLabelText(/Full name/)).toHaveValue("Dee Returning");
-    });
-
-    describe("message placement", () => {
-      const BLOCKED_EMAIL = "blocked@example.com";
-      const BLOCKED_PHONE = "+91 91111 22222";
-      function mockStatus() {
-        return vi
-          .spyOn(careersApi, "checkApplicantStatus")
-          .mockImplementation(async (_slug, query) => ({
-            already_applied: query.email === BLOCKED_EMAIL || query.phone === BLOCKED_PHONE,
-          }));
-      }
-      const emailInput = () => screen.getByLabelText(/^Email/);
-      const mobileInput = () => screen.getByLabelText(/Mobile number/);
-      const messages = () => screen.queryAllByText("You have already applied.");
-
-      it("blocked email, empty mobile: only under Email, and no OTP request", async () => {
-        const check = mockStatus();
-        const requestCode = vi.spyOn(careersApi, "requestEmailCode");
-        renderForm();
-        fill(/^Email/, BLOCKED_EMAIL);
-
-        const message = await screen.findByText("You have already applied.");
-        expect(emailInput().nextElementSibling).toBe(message);
-        expect(messages()).toHaveLength(1);
-        expect(mobileInput()).toHaveValue("");
-        expect(mobileInput()).not.toHaveAttribute("aria-invalid");
-        expect(check).toHaveBeenCalledTimes(1);
-        expect(check).toHaveBeenCalledWith("acme", { email: BLOCKED_EMAIL, job_id: "job-1" });
-        submitCurrentStep();
-        expect(requestCode).not.toHaveBeenCalled();
-      });
-
-      it("blocked mobile: under Mobile, not under Email", async () => {
-        mockStatus();
-        const requestCode = vi.spyOn(careersApi, "requestEmailCode");
-        renderForm();
-        fill(/Mobile number/, BLOCKED_PHONE);
-
-        const message = await screen.findByText("You have already applied.");
-        expect(mobileInput().nextElementSibling).toBe(message);
-        expect(mobileInput()).toHaveAttribute("aria-describedby", message.id);
-        expect(mobileInput()).toHaveAttribute("aria-invalid", "true");
-        expect(emailInput()).not.toHaveAttribute("aria-invalid");
-        expect(messages()).toHaveLength(1);
-        expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
-        expect(requestCode).not.toHaveBeenCalled();
-      });
-
-      it("allowed email + blocked mobile: only Mobile shows the message", async () => {
-        const check = mockStatus();
-        const requestCode = vi.spyOn(careersApi, "requestEmailCode");
-        renderForm();
-        fill(/^Email/, "allowed@example.com");
-        await waitFor(() =>
-          expect(check).toHaveBeenCalledWith("acme", { email: "allowed@example.com", job_id: "job-1" }),
-        );
-        expect(messages()).toHaveLength(0);
-
-        fill(/Mobile number/, BLOCKED_PHONE);
-        const message = await screen.findByText("You have already applied.");
-        expect(mobileInput().nextElementSibling).toBe(message);
-        expect(emailInput().nextElementSibling).not.toBe(message);
-        expect(emailInput()).not.toHaveAttribute("aria-invalid");
-        expect(messages()).toHaveLength(1);
-        submitCurrentStep();
-        expect(requestCode).not.toHaveBeenCalled();
-      });
-
-      it("blocked email + blocked mobile: a single message under Email", async () => {
-        mockStatus();
-        renderForm();
-        fill(/^Email/, BLOCKED_EMAIL);
-        fill(/Mobile number/, BLOCKED_PHONE);
-
-        const message = await screen.findByText("You have already applied.");
-        await waitFor(() => expect(mobileInput()).toHaveAttribute("aria-invalid", "true"));
-        expect(emailInput().nextElementSibling).toBe(message);
-        expect(messages()).toHaveLength(1);
-        expect(mobileInput()).toHaveAttribute("aria-describedby", message.id);
-      });
-    });
-
-    it("checks the campus drive's own endpoint for a drive link", async () => {
-      const campusCheck = vi
-        .spyOn(careersApi, "checkCampusApplicantStatus")
-        .mockResolvedValue({ already_applied: true });
-      const careersCheck = vi.spyOn(careersApi, "checkApplicantStatus");
-      const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-      render(
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter>
-            <JobApplicationForm campusToken="drive-tok" />
-          </MemoryRouter>
-        </QueryClientProvider>,
+      const items = within(screen.getByRole("navigation", { name: "Application progress" })).getAllByRole(
+        "listitem",
       );
-      fill(/^Email/, "eli@example.com");
-
-      expect(await screen.findByText("You have already applied.")).toBeInTheDocument();
-      expect(continueButton()).toBeDisabled();
-      expect(campusCheck).toHaveBeenCalledWith("drive-tok", { email: "eli@example.com" });
-      expect(careersCheck).not.toHaveBeenCalled();
-    });
-  });
-
-  it("uses the campus drive's own verification and apply endpoints for a drive link", async () => {
-    const requestCode = vi.spyOn(careersApi, "requestCampusEmailCode").mockResolvedValue({
-      expires_in_seconds: 600,
-      resend_available_in_seconds: 60,
-    });
-    const verifyCode = vi.spyOn(careersApi, "verifyCampusEmailCode").mockResolvedValue({
-      verification_token: "campus-token",
-      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
-    });
-    const careersRequest = vi.spyOn(careersApi, "requestEmailCode");
-    const apply = vi
-      .spyOn(careersApi, "applyToCampusDrive")
-      .mockResolvedValue({ ...result(), assessment_invitation_link: "/assessment/abc" });
-    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
-          <JobApplicationForm campusToken="drive-tok" title="Apply for this drive" />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-
-    expect(screen.getByRole("heading", { name: "Apply for this drive" })).toBeInTheDocument();
-    fillDetails();
-    submitCurrentStep();
-    fireEvent.click(await screen.findByRole("button", { name: "Send verification code" }));
-    await screen.findByLabelText(/Verification code/);
-    fill(/Verification code/, "123456");
-    fireEvent.click(await screen.findByRole("button", { name: "Verify email" }));
-    expect(await screen.findByLabelText(/Resume \(PDF only\)/)).toBeInTheDocument();
-    expect(requestCode).toHaveBeenCalledWith("drive-tok", "eli@example.com");
-    expect(verifyCode).toHaveBeenCalledWith("drive-tok", "eli@example.com", "123456");
-    expect(careersRequest).not.toHaveBeenCalled();
-
-    const file = attachResume();
-    submitCurrentStep();
-    fireEvent.click(await screen.findByRole("button", { name: "Submit application" }));
-
-    await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
-    expect(apply).toHaveBeenCalledWith(
-      "drive-tok",
-      expect.objectContaining({ email: "eli@example.com", place_of_birth: "Pune" }),
-      file,
-      "campus-token",
-      null,
-    );
-    expect(await screen.findByRole("link", { name: "Start assessment" })).toHaveAttribute(
-      "href",
-      "/assessment/abc",
-    );
-    expect(screen.getByRole("heading", { name: "Application Submitted" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Careers" })).toHaveAttribute("href", "/");
-  });
-
-  describe("registration fields", () => {
-    it("puts no length limit on the full name", () => {
-      renderForm();
-      const name = screen.getByLabelText(/Full name/);
-      expect(name).not.toHaveAttribute("maxLength");
-      const longName = "Venkata ".repeat(150).trim();
-      fill(/Full name/, longName);
-      expect(name).toHaveValue(longName);
-      expect(name).toBeRequired();
-    });
-
-    it("continues without LinkedIn and GitHub, and doesn't send them", async () => {
-      const postForm = vi.spyOn(apiClient, "postForm").mockResolvedValue(result());
-      renderForm();
-      fillDetails({ experienced: true });
-      fill(/LinkedIn/, "");
-      fill(/GitHub/, "");
-      submitCurrentStep();
-      await verifyEmail();
-      attachResume();
-      submitCurrentStep();
-      fireEvent.click(await screen.findByRole("button", { name: "Submit application" }));
-
-      await waitFor(() => expect(postForm).toHaveBeenCalledTimes(1));
-      const sent = postForm.mock.calls[0][1] as FormData;
-      expect(sent.has("linkedin_url")).toBe(false);
-      expect(sent.has("github_url")).toBe(false);
-      expect(sent.has("tenth_marks_percentage")).toBe(false);
-      expect(sent.has("tenth_marks_card")).toBe(false);
-      expect(sent.get("full_name")).toBe("Eli Experienced");
-    });
-
-    it("keeps URL validation for LinkedIn and GitHub when a value is entered", () => {
-      renderForm();
-      expect(screen.getByLabelText(/LinkedIn/)).toHaveAttribute("type", "url");
-      expect(screen.getByLabelText(/GitHub/)).toHaveAttribute("type", "url");
-    });
-  });
-
-  describe("languages multi-select", () => {
-    const languages = () => screen.getByLabelText(/Languages known/);
-    const chips = () =>
-      screen.queryAllByRole("listitem").filter((item) => item.classList.contains("lang-chip"));
-
-    it("opens a compact list, adds a language on click and removes it on a second click", () => {
-      renderForm();
-      fireEvent.focus(languages());
-      const listbox = screen.getByRole("listbox", { name: "Available languages" });
-      expect(listbox).toHaveAttribute("aria-multiselectable", "true");
-      expect(languages()).toHaveAttribute("aria-expanded", "true");
-
-      fireEvent.click(screen.getByRole("option", { name: "Hindi" }));
-      expect(chips().map((chip) => chip.textContent)).toEqual(["Hindi"]);
-      expect(screen.getByRole("option", { name: "Hindi" })).toHaveAttribute("aria-selected", "true");
-
-      fireEvent.click(screen.getByRole("option", { name: "Hindi" }));
-      expect(chips()).toHaveLength(0);
-    });
-
-    it("never adds the same language twice", () => {
-      renderForm();
-      fill(/Languages known/, "English");
-      fireEvent.keyDown(languages(), { key: "Enter" });
-      // Another spelling of a selected language is not offered as new.
-      fill(/Languages known/, "ENGLISH");
-      expect(screen.queryByRole("option", { name: /Add/ })).not.toBeInTheDocument();
-      // A custom language can be added once; then it isn't offered again.
-      fill(/Languages known/, "Sanskrit");
-      fireEvent.click(screen.getByRole("option", { name: "Add “Sanskrit”" }));
-      fill(/Languages known/, "sanskrit");
-      expect(screen.queryByRole("option", { name: /Add/ })).not.toBeInTheDocument();
-      expect(chips().map((chip) => chip.textContent)).toEqual(["English", "Sanskrit"]);
-    });
-
-    it("works from the keyboard and removes chips", () => {
-      renderForm();
-      fireEvent.focus(languages());
-      fireEvent.keyDown(languages(), { key: "ArrowDown" });
-      fireEvent.keyDown(languages(), { key: "Enter" }); // Hindi (2nd option)
-      expect(chips().map((chip) => chip.textContent)).toEqual(["Hindi"]);
-      expect(languages()).toHaveAttribute("aria-activedescendant");
-
-      fireEvent.keyDown(languages(), { key: "Escape" });
-      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-
-      fireEvent.keyDown(languages(), { key: "Backspace" });
-      expect(chips()).toHaveLength(0);
-
-      fireEvent.click(languages()); // reopens the list
-      fireEvent.click(screen.getByRole("option", { name: "Tamil" }));
-      fireEvent.click(screen.getByRole("button", { name: "Remove Tamil" }));
-      expect(chips()).toHaveLength(0);
-    });
-  });
-
-  describe("10th marks", () => {
-    function attachMarksCard(file: File) {
-      fireEvent.change(screen.getByLabelText(/10th Marks Card/), { target: { files: [file] } });
-    }
-
-    it("is optional: registration continues without marks or a marks card", async () => {
-      renderForm();
-      fillDetails();
-      submitCurrentStep();
-      expect(await screen.findByText("Not verified yet")).toBeInTheDocument();
-    });
-
-    it("validates the marks value and blocks Continue until it's fixed or cleared", async () => {
-      renderForm();
-      fillDetails();
-      fill(/^10th Marks \(Optional\)/, "101");
-      expect(await screen.findByText(/between 0 and 100/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/^10th Marks \(Optional\)/)).toHaveAttribute("aria-invalid", "true");
-      submitCurrentStep();
-      expect(await screen.findByText(/correct the 10th marks/)).toBeInTheDocument();
-      expect(screen.queryByText("Not verified yet")).not.toBeInTheDocument();
-
-      fill(/^10th Marks \(Optional\)/, "87.555");
-      expect(screen.getByText(/between 0 and 100/)).toBeInTheDocument();
-      fill(/^10th Marks \(Optional\)/, "");
-      submitCurrentStep();
-      expect(await screen.findByText("Not verified yet")).toBeInTheDocument();
-    });
-
-    it("rejects other file types and oversized files", () => {
-      renderForm();
-      attachMarksCard(new File(["MZ"], "setup.exe", { type: "application/octet-stream" }));
-      expect(screen.getByText(/must be a PDF, PNG or JPG/)).toBeInTheDocument();
-
-      const big = new File(["x"], "marks.pdf", { type: "application/pdf" });
-      Object.defineProperty(big, "size", { value: 5 * 1024 * 1024 + 1 });
-      attachMarksCard(big);
-      expect(screen.getByText(/smaller than 5 MB/)).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /Remove marks/ })).not.toBeInTheDocument();
-    });
-
-    it("sends the marks and the card with the application, and the card can be removed", async () => {
-      const postForm = vi.spyOn(apiClient, "postForm").mockResolvedValue(result());
-      renderForm();
-      fillDetails({ experienced: true });
-      fill(/^10th Marks \(Optional\)/, "87.5");
-      attachMarksCard(new File(["png"], "marks-old.png", { type: "image/png" }));
-      fireEvent.click(screen.getByRole("button", { name: "Remove marks-old.png" }));
-      expect(screen.queryByText("marks-old.png")).not.toBeInTheDocument();
-      const card = new File(["%PDF-1.4"], "marks.pdf", { type: "application/pdf" });
-      attachMarksCard(card);
-      expect(screen.getByText("marks.pdf")).toBeInTheDocument();
-
-      submitCurrentStep();
-      await verifyEmail();
-      attachResume();
-      submitCurrentStep();
-      expect(await screen.findByText("87.5%")).toBeInTheDocument();
-      fireEvent.click(await screen.findByRole("button", { name: "Submit application" }));
-
-      await waitFor(() => expect(postForm).toHaveBeenCalledTimes(1));
-      const sent = postForm.mock.calls[0][1] as FormData;
-      expect(sent.get("tenth_marks_percentage")).toBe("87.5");
-      expect(sent.get("tenth_marks_card")).toBe(card);
-      expect(sent.get("resume")).toBeInstanceOf(File);
+      expect(items).toHaveLength(5);
+      await completeDetails();
+      await completeVerify();
+      expect(startDraft).not.toHaveBeenCalled();
+      expect(screen.getByLabelText(/Highest qualification/)).toBeInTheDocument();
     });
   });
 });

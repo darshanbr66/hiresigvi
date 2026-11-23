@@ -147,56 +147,32 @@ class CandidateProfileFields(BaseModel):
         return self
 
 
-class PublicApplicantProfile(BaseModel):
-    """Everything the public (self-service) application form collects. All
-    of it is mandatory except the LinkedIn/GitHub profile URLs and the 10th
-    marks percentage, which are optional (validated when supplied): an
-    incomplete submission is rejected here even if the React form is
-    bypassed. The full name is required but has no length limit. The fields
-    that only make sense for an
-    experienced professional (experience, current role, availability) are
-    required exactly when `candidate_type == EXPERIENCED`; a FRESHER carries
-    0 years of experience, no current role and no notice period.
+class ApplicantBackground(BaseModel):
+    """The self-service form's personal + professional background (the
+    progressive apply flow's "Professional background" step): everything
+    the application collects except the name, mobile number and education.
+    All of it is mandatory except the LinkedIn/GitHub URLs. The fields that
+    only make sense for an experienced professional (experience, current
+    role, availability) are required exactly when `candidate_type ==
+    EXPERIENCED`; a FRESHER carries 0 years of experience, no current role
+    and no notice period.
 
     Field names match `CandidateProfileFields` so the service can copy the
     profile onto a Candidate with the same `model_dump(include=...)`."""
 
-    full_name: str = Field(min_length=1)
-    phone: str = Field(min_length=1, max_length=32)
     date_of_birth: date
     place_of_birth: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
     languages: list[str] = Field(min_length=1)
     candidate_type: CandidateType
     location: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
     preferred_location: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
-    qualification: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
     linkedin_url: Annotated[str | None, BlankToNone] = Field(default=None, max_length=500)
     github_url: Annotated[str | None, BlankToNone] = Field(default=None, max_length=500)
-    #: The 10th-standard result as a percentage — optional for now.
-    tenth_marks_percentage: Decimal | None = Field(
-        default=None, ge=0, le=100, max_digits=5, decimal_places=2
-    )
     years_experience: int | None = Field(default=None, ge=0, le=80)
     current_title: Annotated[str | None, BlankToNone] = Field(default=None, max_length=255)
     current_company: Annotated[str | None, BlankToNone] = Field(default=None, max_length=255)
     notice_period_days: int | None = Field(default=None, ge=0, le=365)
     immediate_joiner: bool | None = None
-
-    @field_validator("full_name")
-    @classmethod
-    def _clean_full_name(cls, value: str) -> str:
-        cleaned = " ".join(value.split())
-        if not cleaned:
-            raise ValueError("Full name is required.")
-        return cleaned
-
-    @field_validator("phone")
-    @classmethod
-    def _normalize_phone(cls, value: str) -> str:
-        try:
-            return normalize_phone(value)
-        except InvalidPhoneNumberError as exc:
-            raise ValueError(str(exc)) from exc
 
     @field_validator("date_of_birth")
     @classmethod
@@ -222,7 +198,7 @@ class PublicApplicantProfile(BaseModel):
         return _normalize_profile_url(value, allowed_hosts=("github.com",))
 
     @model_validator(mode="after")
-    def _validate_by_candidate_type(self) -> "PublicApplicantProfile":
+    def _validate_by_candidate_type(self) -> "ApplicantBackground":
         if self.candidate_type == CandidateType.EXPERIENCED:
             missing = [
                 label
@@ -253,6 +229,38 @@ class PublicApplicantProfile(BaseModel):
             self.notice_period_days = None
             self.immediate_joiner = None
         return self
+
+
+class PublicApplicantProfile(ApplicantBackground):
+    """Everything the public (self-service) application form collects: the
+    background (`ApplicantBackground`, with all of its rules) plus the full
+    name, mobile number, qualification and the optional 10th marks. An
+    incomplete submission is rejected here even if the React form is
+    bypassed. The full name is required but has no length limit."""
+
+    full_name: str = Field(min_length=1)
+    phone: str = Field(min_length=1, max_length=32)
+    qualification: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
+    #: The 10th-standard result as a percentage — optional for now.
+    tenth_marks_percentage: Decimal | None = Field(
+        default=None, ge=0, le=100, max_digits=5, decimal_places=2
+    )
+
+    @field_validator("full_name")
+    @classmethod
+    def _clean_full_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Full name is required.")
+        return cleaned
+
+    @field_validator("phone")
+    @classmethod
+    def _normalize_phone(cls, value: str) -> str:
+        try:
+            return normalize_phone(value)
+        except InvalidPhoneNumberError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class CandidateCreateRequest(CandidateProfileFields):

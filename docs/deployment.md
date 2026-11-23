@@ -503,6 +503,19 @@ safe.**
 
 ## 12. Email — production behavior
 
+**Candidate-facing branding.** The verification code and welcome emails
+take the company name from the organization row ("Zodiac Patent" for the
+careers organization) and are signed "Recruitment Team, Zodiac Patent".
+The sender display name is "Zodiac Patent Recruitment" (`SMTP_FROM_NAME`,
+or the display part of `EMAIL_FROM`). The sender *address* is deployment
+configuration and still a `@sigvitas.com` mailbox. Changing it needs a
+verified Zodiac Patent sending domain (Resend) or mailbox (SMTP), which has
+to be supplied — none is invented here.
+
+**Housekeeping.** Schedule `python -m app.cli purge-expired-drafts` (e.g.
+daily) so that unsubmitted application drafts and their academic documents
+are removed after `APPLICATION_DRAFT_TTL_DAYS`.
+
 Outbound email goes through `app/integrations/email/get_email_provider()`,
 which picks, in this order:
 

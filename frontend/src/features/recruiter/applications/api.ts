@@ -2,6 +2,7 @@ import { apiClient } from "../../../lib/apiClient";
 import type {
   ApplicationCreateRequest,
   ApplicationDeleteRequest,
+  ApplicationEducation,
   ApplicationResponse,
   ApplicationStatus,
 } from "../../../types/recruitment";
@@ -105,6 +106,20 @@ export function sendEmail(applicationId: string, draft: EmailDraft, accessToken:
   return apiClient.post<EmailSendResult>(
     `/api/v1/recruiter/applications/${applicationId}/email/send`,
     draft,
+    accessToken,
+  );
+}
+
+export function getApplicationEducation(applicationId: string, accessToken: string) {
+  return apiClient.get<ApplicationEducation>(
+    `/api/v1/recruiter/applications/${applicationId}/education`,
+    accessToken,
+  );
+}
+
+export function downloadAcademicDocument(applicationId: string, accessToken: string) {
+  return apiClient.getBlob(
+    `/api/v1/recruiter/applications/${applicationId}/education/document`,
     accessToken,
   );
 }

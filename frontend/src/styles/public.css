@@ -891,3 +891,312 @@
   color: var(--color-text);
   font: inherit;
 }
+
+/* ---------------------------------------------------------------------------
+ * Progressive apply flow (JobApplicationForm + apply/*): six steps — details,
+ * verify, background, education (AI document check), resume, review. Tokens
+ * only, so the Zodiac Patent palette of .public-page and dark mode follow.
+ * ------------------------------------------------------------------------- */
+.apply-stepper {
+  grid-template-columns: repeat(var(--apply-steps, 6), minmax(0, 1fr));
+}
+
+.apply-step-label {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.apply-stepper-caption {
+  display: none;
+  margin: -0.75rem 0 1rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.apply-stepper-caption strong {
+  color: var(--color-text);
+}
+
+.apply-step-heading {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.apply-step-heading:focus {
+  outline: none;
+}
+
+.apply-step-heading:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.apply-step-lead {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .apply-step-body {
+    animation: apply-step-in 180ms ease-out;
+  }
+}
+
+@keyframes apply-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.apply-notice {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-md);
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+  font-size: 0.88rem;
+}
+
+.verify-status-ok {
+  background: var(--color-active-bg);
+  color: var(--color-active-text);
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.apply-verify-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.apply-card .btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* Mobile number: dial-code select + number, one control row. */
+.phone-input {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 11rem) minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.phone-input-code {
+  min-width: 0;
+}
+
+.apply-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--color-text-muted);
+}
+
+/* Education: the JD-derived eligibility line. */
+.apply-eligibility {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0 0 1.25rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--color-brand-soft-border, var(--color-border));
+  border-radius: var(--radius-md);
+  background: var(--color-brand-soft, var(--color-bg-subtle));
+  color: var(--color-text);
+  font-size: 0.88rem;
+}
+
+.apply-eligibility svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--color-primary);
+}
+
+.apply-doc-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.88rem;
+}
+
+.apply-upload {
+  margin: 0.6rem 0 0.25rem;
+}
+
+.apply-upload-btn {
+  cursor: pointer;
+}
+
+.apply-upload input:focus-visible + .apply-upload-btn,
+.apply-upload-btn:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.apply-upload-progress {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.apply-upload-progress progress {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: var(--color-primary-solid);
+}
+
+.apply-card .apply-processing {
+  margin-top: 0.75rem;
+}
+
+/* The academic-document check outcome. */
+.apply-check {
+  margin-top: 0.85rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.88rem;
+}
+
+.apply-check p {
+  margin: 0;
+}
+
+.apply-check .apply-check-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.apply-check-success {
+  border-left-color: var(--color-active-text);
+  background: var(--color-active-bg);
+}
+
+.apply-check-success .apply-check-title {
+  color: var(--color-active-text);
+}
+
+.apply-check-warning {
+  border-left-color: var(--color-warn-text);
+  background: var(--color-warn-bg);
+}
+
+.apply-check-warning .apply-check-title {
+  color: var(--color-warn-text);
+}
+
+.apply-check-error {
+  border-left-color: var(--color-danger-text);
+  background: var(--color-danger-bg);
+}
+
+.apply-check-error .apply-check-title {
+  color: var(--color-danger-text);
+}
+
+.apply-check-info {
+  border-left-color: var(--color-primary);
+  background: var(--color-info-bg);
+}
+
+.apply-check-info .apply-check-title {
+  color: var(--color-info-text);
+}
+
+.apply-check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.apply-check .apply-check-note {
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+}
+
+/* Review & submit: one compact card per step, each with Edit. */
+.apply-review-section {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.apply-review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.apply-review-header h4 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.chip-pending {
+  color: var(--color-warn-text);
+  border-color: var(--color-warn-text);
+  background: var(--color-warn-bg);
+}
+
+@media (max-width: 860px) {
+  /* Six labels don't fit: numbered nodes on a line, the current step named
+     in the caption below. */
+  .apply-stepper {
+    gap: 0.35rem;
+  }
+
+  .apply-step {
+    justify-content: center;
+  }
+
+  .apply-step-label {
+    display: none;
+  }
+
+  .apply-stepper-caption {
+    display: block;
+    margin-top: -1rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .apply-stepper {
+    grid-template-columns: repeat(var(--apply-steps, 6), minmax(0, 1fr));
+  }
+
+  .phone-input {
+    grid-template-columns: minmax(5.5rem, 8.5rem) minmax(0, 1fr);
+  }
+
+  .apply-actions .btn {
+    flex: 1 1 0;
+  }
+
+  .apply-review-section {
+    padding: 0.75rem 0.8rem 0.25rem;
+  }
+}

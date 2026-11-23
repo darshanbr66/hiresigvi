@@ -31,6 +31,7 @@ from app.core.exceptions import ConflictError, NotFoundError
 from app.db.rls import set_tenant_context
 from app.integrations.storage import get_resume_storage_for_provider
 from app.models.application import Application
+from app.models.application_draft import AcademicDocument, ApplicationDraft
 from app.models.candidate import Candidate
 from app.models.candidate_reapply_grant import CandidateReapplyGrant
 from app.models.candidate_resume_profile import CandidateResumeProfile
@@ -288,6 +289,25 @@ async def grant_reapply_permission(
         )
     )
     await db.execute(delete(Resume).where(Resume.id.in_(removed_resume_ids)))
+    # The apply flow's academic documents (and, through ON DELETE CASCADE,
+    # their verification runs) go with their applications; each file
+    # belongs to exactly one document row. The submitted drafts are cleared
+    # too — their step data is a copy of what the applications held.
+    academic_files = [
+        (document.storage_provider, document.storage_path)
+        for document in await db.scalars(
+            select(AcademicDocument).where(
+                AcademicDocument.organization_id == organization_id,
+                AcademicDocument.application_id.in_(application_ids),
+            )
+        )
+    ]
+    await db.execute(
+        delete(ApplicationDraft).where(
+            ApplicationDraft.organization_id == organization_id,
+            ApplicationDraft.submitted_application_id.in_(application_ids),
+        )
+    )
     await db.execute(
         delete(Application).where(
             Application.organization_id == organization_id,
@@ -334,6 +354,14 @@ async def grant_reapply_permission(
         except Exception:
             logger.exception(
                 "Could not remove a cleared resume file",
+                extra={"extra_fields": {"candidate_id": str(candidate_id)}},
+            )
+    for provider, storage_path in academic_files:
+        try:
+            await get_resume_storage_for_provider(provider).delete(storage_path)
+        except Exception:
+            logger.exception(
+                "Could not remove a cleared academic document file",
                 extra={"extra_fields": {"candidate_id": str(candidate_id)}},
             )
 

@@ -16,6 +16,13 @@ from app.integrations.ai.base import (
     LLMProvider,
     ScreeningVerdict,
 )
+from app.integrations.ai.education import EducationAIProvider
+from app.integrations.ai.education_providers import (
+    FallbackEducationAIProvider,
+    GeminiEducationProvider,
+    GroqEducationProvider,
+    UnconfiguredEducationAIProvider,
+)
 from app.integrations.ai.fallback_provider import FallbackLLMProvider
 from app.integrations.ai.gemini_embedding_provider import GeminiEmbeddingProvider
 from app.integrations.ai.gemini_provider import GeminiChatProvider
@@ -36,6 +43,7 @@ __all__ = [
     "AIProviderUnavailableError",
     "ChatMessage",
     "ChatProvider",
+    "EducationAIProvider",
     "EmbeddingProvider",
     "EmbeddingTaskType",
     "FallbackLLMProvider",
@@ -50,6 +58,7 @@ __all__ = [
     "OpenAILLMProvider",
     "OllamaLLMProvider",
     "get_chat_provider",
+    "get_education_ai_provider",
     "get_embedding_provider",
     "get_internal_ai_reasoning_provider",
     "get_llm_provider",
@@ -195,3 +204,41 @@ def get_internal_ai_reasoning_provider() -> InternalAIReasoningProvider | None:
         model=settings.gemini_model,
         timeout_seconds=settings.internal_ai_request_timeout_seconds,
     )
+
+
+def get_education_ai_provider() -> EducationAIProvider:
+    """The provider behind the apply flow's JD qualification analysis and
+    academic-document check (app/services/education/). Gemini first — the
+    only configured model that reads a scanned PDF or an image — with Groq
+    as the text-only fallback (a JD, or a PDF with a text layer). Neither
+    key set: a provider that raises, so the flow degrades to "qualifications
+    not restricted" / "document pending manual review" instead of inventing
+    a result."""
+    settings = get_settings()
+    chain: list[EducationAIProvider] = []
+    gemini_key = (
+        settings.gemini_api_key.get_secret_value().strip() if settings.gemini_api_key else ""
+    )
+    if gemini_key:
+        chain.append(
+            GeminiEducationProvider(
+                api_key=gemini_key,
+                model=settings.gemini_screening_model,
+                timeout_seconds=settings.internal_ai_request_timeout_seconds,
+                thinking_budget=settings.gemini_screening_thinking_budget,
+            )
+        )
+    groq_key = settings.groq_api_key.get_secret_value().strip() if settings.groq_api_key else ""
+    if groq_key:
+        chain.append(
+            GroqEducationProvider(
+                api_key=groq_key,
+                model=settings.groq_screening_model,
+                timeout_seconds=settings.groq_request_timeout_seconds,
+            )
+        )
+    if not chain:
+        return UnconfiguredEducationAIProvider()
+    if len(chain) == 1:
+        return chain[0]
+    return FallbackEducationAIProvider(chain)

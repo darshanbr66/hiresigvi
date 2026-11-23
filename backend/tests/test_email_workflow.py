@@ -554,14 +554,22 @@ async def test_html_email_escapes_candidate_supplied_text(
     ctx = await _bootstrap_org_with_open_job(client, "wf-escape")
     with patch.object(notification_service, "get_email_provider", RecordingEmailProvider):
         response = await apply_publicly(
-            client,
-            ctx["slug"],
-            ctx["job_id"],
-            email="mallory@example.com",
-            full_name="<script>alert(1)</script> Mallory",
+            client, ctx["slug"], ctx["job_id"], email="mallory@example.com"
         )
     application_id = response.json()["id"]
     headers = ctx["admin_headers"]
+    # The self-service form only accepts letters in a name, but a profile
+    # edited by staff (or imported) can hold anything: the email must
+    # escape it either way.
+    application = (
+        await client.get(f"/api/v1/recruiter/applications/{application_id}", headers=headers)
+    ).json()
+    renamed = await client.patch(
+        f"/api/v1/recruiter/candidates/{application['candidate_id']}",
+        json={"full_name": "<script>alert(1)</script> Mallory"},
+        headers=headers,
+    )
+    assert renamed.status_code == 200, renamed.text
 
     composed = (await _compose(client, headers, application_id, "APPLICATION_RECEIVED")).json()
     await client.post(_email_url(application_id, "send"), json=_draft(composed), headers=headers)

@@ -4,7 +4,12 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.application import ApplicationSource, ApplicationStatus
+from app.models.application import (
+    ApplicationEducationStatus,
+    ApplicationSource,
+    ApplicationStatus,
+)
+from app.models.application_draft import EducationVerificationOutcome
 from app.models.job import EmploymentType
 from app.schemas.screening import ScreeningRunResponse
 
@@ -73,12 +78,59 @@ class ApplicationResponse(BaseModel):
     #: The candidate submitted it themselves (careers site / campus drive
     #: link) — as opposed to staff creating it.
     is_self_service: bool = False
+    #: The academic-document check it was submitted with: VERIFIED,
+    #: MANUAL_REVIEW (HR must review the document), or None (no check —
+    #: HR-created, programs, or older applications).
+    education_verification_status: ApplicationEducationStatus | None = None
+    #: The job's qualification requirements were ambiguous at submission:
+    #: HR must check eligibility against the JD.
+    eligibility_review_required: bool = False
     applied_at: datetime
     created_at: datetime
     updated_at: datetime
     resume_id: uuid.UUID | None = None
     resume_filename: str | None = None
     deleted_at: datetime | None = None
+
+
+class AcademicDocumentSummary(BaseModel):
+    filename: str
+    content_type: str
+    size_bytes: int
+    uploaded_at: datetime
+
+
+class EducationCheckEntry(BaseModel):
+    """One AI consistency check of the academic document — advisory only,
+    never a statement that the document is genuine."""
+
+    outcome: EducationVerificationOutcome
+    reason_code: str
+    confidence: float | None
+    #: What the candidate was told.
+    candidate_message: str
+    #: The model's observations, for the reviewer (None when the AI call
+    #: failed).
+    document_type: str | None = None
+    detected_level: str | None = None
+    degree_text: str | None = None
+    branch_text: str | None = None
+    institution_text: str | None = None
+    name_on_document: str | None = None
+    notes: str | None = None
+    provider: str | None
+    model: str | None
+    created_at: datetime
+
+
+class ApplicationEducationResponse(BaseModel):
+    education_verification_status: ApplicationEducationStatus | None
+    eligibility_review_required: bool
+    qualification: str | None
+    institution: str | None
+    qualification_year: int | None
+    document: AcademicDocumentSummary | None
+    checks: list[EducationCheckEntry]
 
 
 class ApplicationStatusHistoryEntry(BaseModel):

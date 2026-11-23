@@ -188,6 +188,9 @@ class Candidate(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     )
     institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expected_completion_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Year the highest qualification was (or will be) completed — from the
+    # self-service apply flow's Education step.
+    qualification_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Set once the candidate proved ownership of `email` with a one-time code
     # (app/services/email_verification_service.py). NULL for recruiter-added
     # and imported candidates, whose email was never verified by the platform.

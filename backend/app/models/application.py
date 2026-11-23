@@ -51,6 +51,21 @@ class ApplicationSource(StrEnum):
     HR_MATCH = "HR_MATCH"
 
 
+class ApplicationEducationStatus(StrEnum):
+    """The academic-document check a self-service application was submitted
+    with (app/services/application_draft_service.py). NULL = none was made:
+    HR-created/imported/matched applications, programs, and every
+    application from before the check existed."""
+
+    #: The AI found the document consistent with the selected qualification
+    #: and the job's requirements — advisory, never proof of authenticity.
+    VERIFIED = "VERIFIED"
+    #: The check could not reach a confident answer (unclear document, or
+    #: the AI was unavailable) and the candidate continued: HR must review
+    #: the document.
+    MANUAL_REVIEW = "MANUAL_REVIEW"
+
+
 class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     """The relationship between one Candidate and one Job — carries all
     workflow state (CLAUDE.md § 2: "Candidate != Application"). `resume` is
@@ -112,6 +127,16 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     # the 3-month self-apply rule (app/services/reapply_service.py) counts
     # only these.
     is_self_service: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    education_verification_status: Mapped[ApplicationEducationStatus | None] = mapped_column(
+        Enum(ApplicationEducationStatus, name="application_education_status", native_enum=True),
+        nullable=True,
+    )
+    #: The job's qualification requirements were ambiguous (or the AI was
+    #: unavailable) when this was submitted: the general qualification list
+    #: was offered, and HR must check eligibility against the JD.
+    eligibility_review_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
 

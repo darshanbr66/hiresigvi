@@ -244,7 +244,8 @@ optional 10th marks card. Going back to edit is free. Changing the email
 needs a new verification (and a new draft). Changing the qualification or
 branch resets the document check. A JD that changed since the Education
 step is re-checked at submission (409 `education_recheck_required` if the
-selection is no longer eligible). Expired drafts are removed with their
+selection is no longer eligible); the selection is re-validated on every
+submit, not only when the JD changed. Expired drafts are removed with their
 document by `python -m app.cli purge-expired-drafts`
 (`APPLICATION_DRAFT_TTL_DAYS`, default 14; schedule it). A recruitment
 program keeps its one-request form (with its own education declaration),
@@ -260,6 +261,17 @@ doctorate degrees, grouped into families). The result is cached in
 runs once per JD edit, not once per candidate. Deterministic rules on top
 of the AI's reading:
 
+- the Education step only ever offers the platform's **offered list**
+  (`catalog.OFFERED_KEYS`, currently **M.Tech** and **Ph.D.**): all of it
+  when the JD doesn't restrict, otherwise only the JD's eligible
+  qualifications within it. A JD whose eligible qualifications are all
+  outside the list (e.g. "B.Tech only") offers nothing and the step says so.
+  The full vocabulary is still used to read JDs and uploaded documents
+  (so a B.Tech marks card is still recognized as one). The offered list is
+  computed when read, never cached, and the server accepts only it;
+  widening it (e.g. per-job recruiter configuration later) changes this
+  set, not the vocabulary;
+
 - nothing below the stated minimum level is offered;
 - related higher qualifications of the same family are added unless the JD
   restricts to exactly the listed degrees;
@@ -268,7 +280,7 @@ of the AI's reading:
 The job is restricted only when the JD clearly *requires* a qualification
 (not "preferred") with confidence ≥ 0.6. When restricted, the candidate is
 shown the minimum qualification and the eligible options. An ambiguous JD,
-a "preferred" one or an AI outage never invents a rule: every qualification
+a "preferred" one or an AI outage never invents a rule: the default list
 is offered. When the requirements were *ambiguous* (a stated requirement
 the AI couldn't resolve confidently, or the AI was unavailable), the
 submitted application gets `eligibility_review_required = true` and a
@@ -287,7 +299,7 @@ can't talk its way into a match:
 - **MATCH**: consistent with the selected qualification and the job. The
   candidate continues.
 - **MISMATCH**: a confident, specific inconsistency. Examples: an M.Tech
-  selected but a B.Tech record uploaded ("You selected M.E. / M.Tech, but
+  selected but a B.Tech record uploaded ("You selected M.Tech, but
   the uploaded document appears to be a B.E. / B.Tech academic record…"), a
   school record, a different branch, or a non-academic file. The candidate
   must upload the correct document; manual review is not offered.

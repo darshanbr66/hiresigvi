@@ -78,11 +78,11 @@ const EDUCATION = {
 
 const MTECH_OPTIONS: QualificationOptions = {
   restricted: true,
-  summary: "Eligible qualifications for this role: M.E. / M.Tech, Ph.D.",
+  summary: "Eligible qualifications for this role: M.Tech, Ph.D.",
   options: [
     {
       key: "ME_MTECH",
-      label: "M.E. / M.Tech",
+      label: "M.Tech",
       level: "MASTERS",
       branch_label: "Specialization",
       branch_required: true,
@@ -170,7 +170,7 @@ function mockApi() {
         education_check: check({
           status: "VERIFIED",
           can_continue: true,
-          message: "Your document appears consistent with M.E. / M.Tech. You can continue.",
+          message: "Your document appears consistent with M.Tech. You can continue.",
         }),
       }),
     ),
@@ -239,7 +239,7 @@ async function reachResume(api: ReturnType<typeof mockApi>) {
   await reachEducation();
   await fillEducationDetails();
   uploadDocument();
-  await screen.findByText(/appears consistent with M.E. \/ M.Tech/);
+  await screen.findByText(/appears consistent with M\.Tech/);
   click(/^Continue/);
   await screen.findByRole("heading", { name: /Resume/ });
   return api;
@@ -445,7 +445,17 @@ describe("JobApplicationForm — progressive apply flow", () => {
       await screen.findByText(MTECH_OPTIONS.summary);
       const select = screen.getByLabelText(/Highest qualification/);
       const labels = within(select).getAllByRole("option").map((option) => option.textContent);
-      expect(labels).toEqual(["Select…", "M.E. / M.Tech", "Ph.D."]);
+      expect(labels).toEqual(["Select…", "M.Tech", "Ph.D."]);
+    });
+
+    it("explains instead of showing an empty dropdown when nothing is selectable", async () => {
+      const api = mockApi();
+      const summary =
+        "The qualifications this role accepts can't be selected in the online application. Please contact the recruitment team.";
+      api.options.mockResolvedValue({ ...MTECH_OPTIONS, options: [], summary });
+      await reachEducation();
+      expect(await screen.findByText(summary)).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Highest qualification/)).not.toBeInTheDocument();
     });
 
     it("requires the document and the details before uploading", async () => {
@@ -502,7 +512,7 @@ describe("JobApplicationForm — progressive apply flow", () => {
             education_check: check({
               status: "VERIFIED",
               can_continue: true,
-              message: "Your document appears consistent with M.E. / M.Tech. You can continue.",
+              message: "Your document appears consistent with M.Tech. You can continue.",
             }),
           }),
         ),
@@ -514,7 +524,7 @@ describe("JobApplicationForm — progressive apply flow", () => {
     it("explains a mismatch and lets the candidate upload the right document", async () => {
       const api = mockApi();
       const mismatch =
-        "The qualification selected does not appear to match the uploaded document. You selected M.E. / M.Tech, but the uploaded document appears to be a B.E. / B.Tech academic record. Please upload the correct document.";
+        "The qualification selected does not appear to match the uploaded document. You selected M.Tech, but the uploaded document appears to be a B.E. / B.Tech academic record. Please upload the correct document.";
       api.upload.mockResolvedValueOnce(
         draftView({
           education: EDUCATION,
@@ -539,7 +549,7 @@ describe("JobApplicationForm — progressive apply flow", () => {
       fireEvent.change(screen.getByLabelText("Replace academic document"), {
         target: { files: [new File(["%PDF"], "mtech.pdf", { type: "application/pdf" })] },
       });
-      expect(await screen.findByText(/appears consistent with M.E. \/ M.Tech/)).toBeInTheDocument();
+      expect(await screen.findByText(/appears consistent with M\.Tech/)).toBeInTheDocument();
       expect(api.upload).toHaveBeenCalledTimes(2);
     });
 
@@ -586,7 +596,7 @@ describe("JobApplicationForm — progressive apply flow", () => {
         }),
       );
       api.recheck.mockResolvedValue(
-        draftView({ education: EDUCATION, document: DOCUMENT, education_check: check({ status: "VERIFIED", can_continue: true, message: "Your document appears consistent with M.E. / M.Tech." }) }),
+        draftView({ education: EDUCATION, document: DOCUMENT, education_check: check({ status: "VERIFIED", can_continue: true, message: "Your document appears consistent with M.Tech." }) }),
       );
       await reachEducation();
       await fillEducationDetails();
@@ -614,7 +624,7 @@ describe("JobApplicationForm — progressive apply flow", () => {
         draftView({
           education: { ...EDUCATION, qualification_key: "PHD", branch: "Robotics" },
           document: DOCUMENT,
-          education_check: check({ status: "MISMATCH", message: "You selected Ph.D., but the uploaded document appears to be an M.E. / M.Tech academic record." }),
+          education_check: check({ status: "MISMATCH", message: "You selected Ph.D., but the uploaded document appears to be an M.Tech academic record." }),
         }),
       );
       click(/Save and continue/);
@@ -648,7 +658,7 @@ describe("JobApplicationForm — progressive apply flow", () => {
       expect(basic).toHaveTextContent("Verified");
       expect(screen.getByRole("region", { name: "Professional background" })).toHaveTextContent("Pune");
       const education = screen.getByRole("region", { name: "Education" });
-      expect(education).toHaveTextContent("M.E. / M.Tech in Mechanical Engineering");
+      expect(education).toHaveTextContent("M.Tech in Mechanical Engineering");
       expect(education).toHaveTextContent("Document checked");
       expect(screen.getByRole("region", { name: "Resume" })).toHaveTextContent("resume.pdf");
 

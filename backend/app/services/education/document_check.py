@@ -149,7 +149,7 @@ def evaluate(
             "application. Please upload a document issued in your name, or continue and our "
             "recruitment team will review it.",
         )
-    if requirements.restricted and not requirements.allows(selected.key):
+    if not requirements.allows(selected.key):
         return CheckResult(
             mismatch,
             "not_eligible",

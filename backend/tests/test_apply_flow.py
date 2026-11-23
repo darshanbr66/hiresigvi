@@ -74,9 +74,9 @@ def doc(**overrides: Any) -> AcademicDocumentAnalysis:
         "is_academic_document": True,
         "legible": True,
         "document_type": "MARKS_CARD",
-        "detected_level": "BACHELORS",
-        "detected_qualification_key": "BE_BTECH",
-        "degree_text": "Bachelor of Technology",
+        "detected_level": "MASTERS",
+        "detected_qualification_key": "ME_MTECH",
+        "degree_text": "Master of Technology",
         "branch_text": "Computer Science",
         "institution_text": "Anna University",
         "name_on_document": "Jane Candidate",
@@ -86,6 +86,14 @@ def doc(**overrides: Any) -> AcademicDocumentAnalysis:
     }
     data.update(overrides)
     return AcademicDocumentAnalysis.model_validate(data)
+
+
+#: `doc()` overrides for a B.Tech marks card.
+BTECH_RECORD: dict[str, Any] = {
+    "detected_level": "BACHELORS",
+    "detected_qualification_key": "BE_BTECH",
+    "degree_text": "Bachelor of Technology",
+}
 
 
 class FakeEducationAI(EducationAIProvider):
@@ -201,6 +209,8 @@ def test_bachelors_engineering_requirement_adds_related_higher_qualifications() 
     result = normalize(jd(accepted_qualification_keys=["BE_BTECH"]), "h")
     assert result.restricted
     assert result.eligible_keys == ["BE_BTECH", "ME_MTECH", "PHD"]
+    # B.E./B.Tech isn't in the offered list, so only the higher ones show.
+    assert result.offered_keys == ["ME_MTECH", "PHD"]
 
 
 def test_masters_mandatory_never_offers_undergraduate_degrees() -> None:
@@ -212,6 +222,16 @@ def test_masters_mandatory_never_offers_undergraduate_degrees() -> None:
     assert result.restricted
     assert "BE_BTECH" not in result.eligible_keys
     assert result.eligible_keys == ["ME_MTECH", "PHD"]
+    assert result.offered_keys == ["ME_MTECH", "PHD"]
+
+
+def test_doctorate_mandatory_offers_only_the_phd() -> None:
+    result = normalize(jd(minimum_level="DOCTORATE", accepted_qualification_keys=["PHD"]), "h")
+    assert result.offered_keys == ["PHD"]
+    assert not result.allows("ME_MTECH")
+    assert result.summary == (
+        "Minimum qualification: doctorate. Eligible qualifications for this role: Ph.D."
+    )
 
 
 def test_any_bachelors_degree_restricts_by_level_only() -> None:
@@ -241,6 +261,10 @@ def test_exact_degree_only_adds_no_higher_qualifications() -> None:
         jd(accepted_qualification_keys=["BE_BTECH"], higher_qualifications_accepted=False), "h"
     )
     assert result.eligible_keys == ["BE_BTECH"]
+    # "B.Tech only": nothing the form offers is eligible, so nothing is offered.
+    assert result.offered_keys == []
+    assert not result.allows("ME_MTECH")
+    assert "can't be selected in the online application" in result.summary
 
 
 @pytest.mark.parametrize(
@@ -256,6 +280,28 @@ def test_preferred_ambiguous_or_unknown_never_restricts(analysis: JobQualificati
     result = normalize(analysis, "h")
     assert not result.restricted
     assert result.eligible_keys == [o.key for o in catalog.CATALOG]
+    assert result.offered_keys == ["ME_MTECH", "PHD"]
+
+
+def test_default_list_is_only_mtech_and_phd() -> None:
+    open_job = job_qualification_service.unrestricted("h")
+    assert [(o.key, o.label) for o in application_draft_service.offered_options(open_job)] == [
+        ("ME_MTECH", "M.Tech"),
+        ("PHD", "Ph.D."),
+    ]
+    for key in ("BE_BTECH", "BSC", "BCA", "MSC", "MCA", "BACHELORS_OTHER", "MASTERS_OTHER"):
+        assert not open_job.allows(key)
+    assert open_job.summary == (
+        "Select your highest qualification. Accepted qualifications: M.Tech, Ph.D."
+    )
+
+
+def test_a_lower_jd_minimum_is_not_stated_above_the_offered_options() -> None:
+    # "Bachelor's degree" JD: M.Tech/Ph.D. are offered; saying "minimum:
+    # bachelor's" next to a dropdown without one would contradict it.
+    result = normalize(jd(minimum_level="BACHELORS"), "h")
+    assert result.offered_keys == ["ME_MTECH", "PHD"]
+    assert result.summary == "Eligible qualifications for this role: M.Tech, Ph.D."
 
 
 # --- Unit: document outcome rules ------------------------------------------------
@@ -265,7 +311,7 @@ _OPEN = QualificationRequirements(
 )
 
 
-def _evaluate(analysis: AcademicDocumentAnalysis, key: str = "BE_BTECH", **kwargs: Any):
+def _evaluate(analysis: AcademicDocumentAnalysis, key: str = "ME_MTECH", **kwargs: Any):
     return document_check.evaluate(
         analysis,
         selected=catalog.BY_KEY[key],
@@ -282,12 +328,12 @@ def test_consistent_document_matches_without_claiming_authenticity() -> None:
 
 
 def test_btech_record_for_selected_mtech_is_a_clear_mismatch() -> None:
-    result = _evaluate(doc(), key="ME_MTECH")
+    result = _evaluate(doc(**BTECH_RECORD), key="ME_MTECH")
     assert result.outcome == EducationVerificationOutcome.MISMATCH
     assert result.reason_code == "level_mismatch"
     assert result.message == (
         "The qualification selected does not appear to match the uploaded document. You "
-        "selected M.E. / M.Tech, but the uploaded document appears to be a B.E. / B.Tech "
+        "selected M.Tech, but the uploaded document appears to be a B.E. / B.Tech "
         "academic record. Please upload the correct document."
     )
 
@@ -327,10 +373,11 @@ def test_confident_non_academic_upload_is_a_mismatch() -> None:
 
 def test_branch_mismatch_and_ineligible_selection() -> None:
     assert _evaluate(doc(branch_matches_selected="NO")).reason_code == "branch_mismatch"
-    restricted = QualificationRequirements(
-        source_hash="h", restricted=True, eligible_keys=["ME_MTECH", "PHD"]
-    )
+    restricted = QualificationRequirements(source_hash="h", restricted=True, eligible_keys=["PHD"])
     assert _evaluate(doc(), requirements=restricted).reason_code == "not_eligible"
+    # The default list is enforced too, not only a restricting JD.
+    btech = _evaluate(doc(**BTECH_RECORD), key="BE_BTECH")
+    assert btech.reason_code == "not_eligible"
 
 
 def test_name_comparison_tolerates_initials_and_order() -> None:
@@ -368,17 +415,23 @@ async def test_options_follow_the_jd_and_are_cached_per_jd_version(
     assert edited.status_code == 200, edited.text
     again = await client.get(f"{ctx['base']}/qualification-options")
     assert fake_ai.job_calls == 2
-    assert [o["key"] for o in again.json()["options"]] == ["BE_BTECH", "ME_MTECH", "PHD"]
+    assert [o["key"] for o in again.json()["options"]] == ["ME_MTECH", "PHD"]
 
 
-async def test_ai_outage_offers_every_qualification(
+async def test_ai_outage_offers_the_default_list(
     client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
 ) -> None:
     ctx = await _setup(client, "flow-options-down")
     fake_ai.job_result = AIProviderTimeoutError("timed out")
     body = (await client.get(f"{ctx['base']}/qualification-options")).json()
     assert body["restricted"] is False
-    assert len(body["options"]) == len(catalog.CATALOG)
+    assert [(o["key"], o["label"]) for o in body["options"]] == [
+        ("ME_MTECH", "M.Tech"),
+        ("PHD", "Ph.D."),
+    ]
+    assert body["summary"] == (
+        "Select your highest qualification. Accepted qualifications: M.Tech, Ph.D."
+    )
 
 
 # --- API: draft access ---------------------------------------------------------------
@@ -461,6 +514,43 @@ async def test_ineligible_qualification_is_refused(
     assert response.json()["error"]["code"] == "qualification_not_eligible"
 
 
+async def test_default_list_is_enforced_server_side(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    # A JD with no qualification rule: a forged request for anything outside
+    # the default list (M.Tech, Ph.D.) is refused.
+    ctx = await _setup(client, "flow-default-list")
+    auth = await _start(client, ctx, "defaultlist@example.com")
+    for key in ("BE_BTECH", "BSC", "BCA", "MSC", "MCA", "BACHELORS_OTHER", "NOT_A_KEY"):
+        response = await _save_education(
+            client, ctx, auth, qualification_key=key, degree_name="Anything"
+        )
+        assert response.status_code == 422, key
+        assert response.json()["error"]["code"] == "qualification_not_eligible", key
+    for key in ("PHD", "ME_MTECH"):
+        assert (await _save_education(client, ctx, auth, qualification_key=key)).status_code == 200
+
+
+async def test_submit_revalidates_a_tampered_qualification(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI, db_session: AsyncSession
+) -> None:
+    # Even with the JD unchanged, submit re-checks the stored selection.
+    ctx = await _setup(client, "flow-tampered")
+    auth = await _start(client, ctx, "tampered@example.com")
+    await _save_education(client, ctx, auth)
+    await _upload(client, ctx, auth)
+    async with rls_bypass(db_session):
+        draft = await db_session.scalar(
+            select(ApplicationDraft).where(ApplicationDraft.email == "tampered@example.com")
+        )
+        assert draft is not None and draft.education is not None
+        draft.education = {**draft.education, "qualification_key": "BE_BTECH"}
+        await db_session.commit()
+    response = await _submit(client, ctx, auth)
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "education_recheck_required"
+
+
 async def test_match_then_submit_records_a_verified_application(
     client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI, db_session: AsyncSession
 ) -> None:
@@ -473,7 +563,7 @@ async def test_match_then_submit_records_a_verified_application(
     assert check["status"] == "VERIFIED" and check["can_continue"] is True
     assert "appears consistent" in check["message"]
     # Nothing about the model, prompt or extracted contents reaches the client.
-    assert "fake" not in uploaded.text and "Anna University. Bachelor" not in uploaded.text
+    assert "fake" not in uploaded.text and "Anna University. Master" not in uploaded.text
     assert fake_ai.document_calls[0]["content_type"] == "application/pdf"
 
     submitted = await _submit(client, ctx, auth)
@@ -485,7 +575,7 @@ async def test_match_then_submit_records_a_verified_application(
         assert application.education_verification_status == ApplicationEducationStatus.VERIFIED
         candidate = await db_session.get(Candidate, application.candidate_id)
         assert candidate is not None
-        assert candidate.qualification == "B.E. / B.Tech in Computer Science"
+        assert candidate.qualification == "M.Tech in Computer Science"
         assert candidate.institution_name == "Anna University"
         assert candidate.qualification_year == 2020
         document = await db_session.scalar(
@@ -507,7 +597,7 @@ async def test_match_then_submit_records_a_verified_application(
     )
     assert education.status_code == 200, education.text
     assert education.json()["education_verification_status"] == "VERIFIED"
-    assert education.json()["checks"][0]["detected_level"] == "BACHELORS"
+    assert education.json()["checks"][0]["detected_level"] == "MASTERS"
     download = await client.get(
         f"/api/v1/recruiter/applications/{application.id}/education/document",
         headers=ctx["headers"],
@@ -533,11 +623,11 @@ async def test_mismatch_blocks_until_the_right_document_is_uploaded(
         await _save_education(client, ctx, auth, qualification_key="ME_MTECH", branch="CSE")
     ).status_code == 200
 
-    fake_ai.document_results = [doc()]  # a B.Tech marks card
+    fake_ai.document_results = [doc(**BTECH_RECORD)]  # a B.Tech marks card
     first = (await _upload(client, ctx, auth)).json()["education_check"]
     assert first["status"] == "MISMATCH"
     assert first["can_continue"] is False and first["can_request_manual_review"] is False
-    assert "You selected M.E. / M.Tech" in first["message"]
+    assert "You selected M.Tech" in first["message"]
 
     refused = await client.post(f"{ctx['base']}/apply/draft/education/manual-review", json=auth)
     assert refused.status_code == 422
@@ -592,7 +682,7 @@ async def test_ai_failure_keeps_the_document_and_allows_retry_then_manual_review
     assert first["education_check"]["status"] == "FAILED"
     assert first["education_check"]["can_retry"] is True
     assert first["education_check"]["can_request_manual_review"] is False
-    assert first["document"]["filename"] == "btech-marks-card.pdf"  # not lost
+    assert first["document"]["filename"] == "mtech-marks-card.pdf"  # not lost
 
     second = (await client.post(f"{ctx['base']}/apply/draft/education/recheck", json=auth)).json()
     assert second["education_check"]["status"] == "FAILED"
@@ -610,18 +700,20 @@ async def test_changing_the_qualification_resets_the_check(
     await _save_education(client, ctx, auth)
     assert (await _upload(client, ctx, auth)).json()["education_check"]["status"] == "VERIFIED"
 
-    changed = await _save_education(client, ctx, auth, qualification_key="BSC", branch="Physics")
+    changed = await _save_education(client, ctx, auth, qualification_key="PHD", branch="Physics")
     assert changed.json()["education_check"]["status"] == "NOT_STARTED"
     assert changed.json()["document"] is not None  # kept, re-checkable
     assert (await _submit(client, ctx, auth)).status_code == 422
 
     # Same details again (e.g. only the year corrected): no reset.
-    await _save_education(client, ctx, auth, qualification_key="BSC", branch="Physics")
-    fake_ai.document_results = [doc(detected_qualification_key="BSC", branch_text="Physics")]
+    await _save_education(client, ctx, auth, qualification_key="PHD", branch="Physics")
+    fake_ai.document_results = [
+        doc(detected_level="DOCTORATE", detected_qualification_key="PHD", branch_text="Physics")
+    ]
     rechecked = await client.post(f"{ctx['base']}/apply/draft/education/recheck", json=auth)
     assert rechecked.json()["education_check"]["status"] == "VERIFIED"
     kept = await _save_education(
-        client, ctx, auth, qualification_key="BSC", branch="Physics", completion_year=2021
+        client, ctx, auth, qualification_key="PHD", branch="Physics", completion_year=2021
     )
     assert kept.json()["education_check"]["status"] == "VERIFIED"
 
@@ -634,10 +726,10 @@ async def test_jd_change_that_excludes_the_selection_requires_review(
     await _save_education(client, ctx, auth)
     await _upload(client, ctx, auth)
 
-    fake_ai.job_result = jd(minimum_level="MASTERS", accepted_qualification_keys=["ME_MTECH"])
+    fake_ai.job_result = jd(minimum_level="DOCTORATE", accepted_qualification_keys=["PHD"])
     await client.patch(
         f"/api/v1/recruiter/jobs/{ctx['job']['id']}",
-        json={"description": "M.Tech mandatory."},
+        json={"description": "Ph.D. mandatory."},
         headers=ctx["headers"],
     )
     response = await _submit(client, ctx, auth)
@@ -818,7 +910,10 @@ def test_summary_states_the_minimum_qualification() -> None:
     result = normalize(
         jd(minimum_level="MASTERS", accepted_qualification_keys=["ME_MTECH"]), "h"
     )
-    assert result.summary.startswith("Minimum qualification: master's degree.")
+    assert result.summary == (
+        "Minimum qualification: master's degree. "
+        "Eligible qualifications for this role: M.Tech, Ph.D."
+    )
 
 
 async def test_ai_outage_on_the_jd_flags_the_application_for_eligibility_review(

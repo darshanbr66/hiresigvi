@@ -197,7 +197,7 @@ async def test_verified_returning_candidate_gets_every_stored_field_to_prefill(
         "current_company": "Globex",
         "location": "Chennai",
         "preferred_location": "Bengaluru",
-        "qualification": "B.E. / B.Tech in Computer Science",
+        "qualification": "M.Tech in Computer Science",
         "linkedin_url": "https://www.linkedin.com/in/jane-candidate",
         "github_url": "https://github.com/jane-candidate",
         "tenth_marks_percentage": None,

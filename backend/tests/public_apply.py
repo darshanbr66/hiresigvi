@@ -132,7 +132,7 @@ _BACKGROUND_FIELDS = {
 }
 
 DEFAULT_EDUCATION: dict[str, Any] = {
-    "qualification_key": "BE_BTECH",
+    "qualification_key": "ME_MTECH",
     "branch": "Computer Science",
     "institution": "Anna University",
     "completion_year": 2020,
@@ -141,8 +141,8 @@ DEFAULT_EDUCATION: dict[str, Any] = {
 
 def academic_document_pdf() -> tuple[str, bytes, str]:
     return (
-        "btech-marks-card.pdf",
-        make_minimal_pdf("Anna University. Bachelor of Technology, Computer Science. Marks card."),
+        "mtech-marks-card.pdf",
+        make_minimal_pdf("Anna University. Master of Technology, Computer Science. Marks card."),
         "application/pdf",
     )
 

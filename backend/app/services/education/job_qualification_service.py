@@ -16,8 +16,14 @@ enforced in code, not trusted from the model:
 * the job is *restricted* only when the JD clearly **requires** a
   qualification (not merely "preferred") with enough confidence. An
   ambiguous JD, a "preferred" one, or an AI outage never invents strict
-  rules: the job is treated as unrestricted (every qualification offered),
-  and the academic-document check still runs.
+  rules: the job is treated as unrestricted (the default list,
+  `catalog.OFFERED_KEYS`, is offered), and the academic-document check
+  still runs.
+
+What a candidate can actually pick is always `offered_keys`: the job's
+eligible keys intersected with `catalog.OFFERED_KEYS`. It is computed when
+read, never stored, so a cached profile can't offer a qualification the
+platform no longer offers.
 """
 
 import hashlib
@@ -42,7 +48,7 @@ logger = get_logger(__name__)
 
 #: Bump when the normalization rules or prompt change, so every cached
 #: profile is recomputed under the new rules.
-RULES_VERSION = "2"
+RULES_VERSION = "3"
 
 #: Below this, a JD's requirement is too ambiguous to restrict on.
 MIN_RESTRICT_CONFIDENCE = 0.6
@@ -75,7 +81,7 @@ class QualificationRequirements:
 
     source_hash: str
     #: True = only `eligible_keys` may be chosen (the JD clearly requires
-    #: them). False = every qualification is offered.
+    #: them). False = the default list (`catalog.OFFERED_KEYS`) is offered.
     restricted: bool
     eligible_keys: list[str]
     minimum_level: str | None = None
@@ -87,20 +93,43 @@ class QualificationRequirements:
     evidence: str = ""
     #: The requirements couldn't be determined with confidence — the AI was
     #: unavailable, or the JD states a required qualification that couldn't
-    #: be resolved. The general list is offered (no invented rule) and the
+    #: be resolved. The default list is offered (no invented rule) and the
     #: submitted application is flagged for HR to check eligibility. A JD
     #: that simply states no qualification, or only a preferred one, is not
     #: ambiguous and isn't flagged.
     needs_review: bool = False
 
     @property
-    def summary(self) -> str:
-        """Candidate-facing, composed here from structured fields."""
+    def offered_keys(self) -> list[str]:
+        """What the candidate may choose — and the only keys the server
+        accepts: the job's eligible keys within the platform's offered list
+        (all of that list when the job doesn't restrict)."""
         if not self.restricted:
-            return "Select your highest qualification."
-        labels = catalog.describe_options(self.eligible_keys)
+            return list(catalog.OFFERED_KEYS)
+        eligible = set(self.eligible_keys)
+        return [key for key in catalog.OFFERED_KEYS if key in eligible]
+
+    @property
+    def summary(self) -> str:
+        """Candidate-facing, composed here from structured fields — always
+        from `offered_keys`, so it lists exactly what the dropdown shows."""
+        offered = self.offered_keys
+        if not offered:
+            return (
+                "The qualifications this role accepts can't be selected in the online "
+                "application. Please contact the recruitment team."
+            )
+        # Labels like "Ph.D." already end in a period.
+        labels = catalog.describe_options(offered).rstrip(".")
+        if not self.restricted:
+            return f"Select your highest qualification. Accepted qualifications: {labels}."
         text = ""
-        if self.minimum_level:
+        lowest_offered = min(catalog.rank(catalog.BY_KEY[k].level) for k in offered)
+        if self.minimum_level and catalog.rank(QualificationLevel(self.minimum_level)) >= (
+            lowest_offered
+        ):
+            # Stated only when it matches what's offered; a lower JD minimum
+            # (e.g. a bachelor's) would contradict the dropdown.
             text = f"Minimum qualification: {level_label(self.minimum_level)}. "
         text += f"Eligible qualifications for this role: {labels}."
         if self.field_mandatory and self.fields_of_study:
@@ -108,7 +137,7 @@ class QualificationRequirements:
         return text
 
     def allows(self, key: str) -> bool:
-        return key in self.eligible_keys
+        return key in self.offered_keys
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -119,6 +148,8 @@ class QualificationRequirements:
 
 
 def _all_keys() -> list[str]:
+    """Stored for an unrestricted job; what's offered is still bounded by
+    `offered_keys`."""
     return [o.key for o in CATALOG]
 
 

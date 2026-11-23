@@ -20,7 +20,7 @@ describe("EducationReviewCard", () => {
     vi.spyOn(api, "getApplicationEducation").mockResolvedValue({
       education_verification_status: "MANUAL_REVIEW",
       eligibility_review_required: true,
-      qualification: "M.E. / M.Tech in Mechanical Engineering",
+      qualification: "M.Tech in Mechanical Engineering",
       institution: "IIT Madras",
       qualification_year: 2022,
       document: { filename: "mtech.pdf", content_type: "application/pdf", size_bytes: 1, uploaded_at: "" },

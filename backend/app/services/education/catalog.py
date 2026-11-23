@@ -3,17 +3,22 @@
 This is a *vocabulary*, not an eligibility rule. Which of these a candidate
 may choose for a given job comes from that job's own description and
 eligibility text (job_qualification_service.py), never from this module:
-a job whose JD says "M.Tech mandatory" offers only M.E./M.Tech (and related
-higher qualifications); a job that says nothing restrictive offers all of
-them. A fixed vocabulary is what makes that enforceable server-side: the
-AI maps free JD text onto these keys, and every later comparison
+a job whose JD says "M.Tech mandatory" offers only M.Tech (and related
+higher qualifications); a job that says nothing restrictive offers the
+default list (`OFFERED_KEYS`). A fixed vocabulary is what makes that
+enforceable server-side: the AI maps free JD text onto these keys, and
+every later comparison
 (eligibility, the uploaded document's detected degree) is a deterministic
 comparison of keys and levels, not of free text.
 
 Levels are ordered (`LEVEL_RANK`) so "below the stated minimum" is a plain
 comparison. `family` groups related degrees, so "related higher
-qualifications" (B.E./B.Tech -> M.E./M.Tech) can be derived rather than
-guessed.
+qualifications" (B.E./B.Tech -> M.Tech) can be derived rather than guessed.
+
+The vocabulary is wider than what candidates may pick: the AI still needs
+every degree to read a JD or recognize an uploaded B.Tech marks card, but
+the Education step only ever offers `OFFERED_KEYS` (intersected with the
+job's own requirements).
 """
 
 from dataclasses import dataclass
@@ -120,7 +125,7 @@ CATALOG: tuple[QualificationOption, ...] = (
         "Specialization", _DEGREE_RECORD, is_other=True,
     ),
     QualificationOption(
-        "ME_MTECH", "M.E. / M.Tech", QualificationLevel.MASTERS, "ENGINEERING",
+        "ME_MTECH", "M.Tech", QualificationLevel.MASTERS, "ENGINEERING",
         "Specialization", _DEGREE_RECORD,
     ),
     QualificationOption(
@@ -160,6 +165,13 @@ CATALOG: tuple[QualificationOption, ...] = (
 )
 
 BY_KEY: dict[str, QualificationOption] = {option.key: option for option in CATALOG}
+
+#: The qualifications the candidate Education step can offer at all — the
+#: platform default when a job doesn't restrict qualifications, and the
+#: upper bound when it does (a job's eligible keys are intersected with
+#: it). Widening what candidates may choose (e.g. per-job recruiter
+#: configuration later) changes this set, not the vocabulary above.
+OFFERED_KEYS: tuple[str, ...] = ("ME_MTECH", "PHD")
 
 
 def get_option(key: str | None) -> QualificationOption | None:

@@ -261,12 +261,12 @@ async def save_background(
 
 
 def offered_options(requirements: QualificationRequirements) -> list[QualificationOption]:
-    """What the Education step offers: only the JD's eligible
-    qualifications when it restricts them; everything (catch-alls included)
-    when it doesn't. Never anything below a stated minimum."""
-    if requirements.restricted:
-        return [catalog.BY_KEY[key] for key in requirements.eligible_keys if key in catalog.BY_KEY]
-    return list(catalog.CATALOG)
+    """What the Education step offers, and the only qualifications
+    `_validate_education` accepts: `requirements.offered_keys` — the JD's
+    eligible qualifications within the platform's offered list, or that
+    whole list when the JD doesn't restrict. Never anything below a stated
+    minimum."""
+    return [catalog.BY_KEY[key] for key in requirements.offered_keys]
 
 
 def branch_required(option: QualificationOption, requirements: QualificationRequirements) -> bool:
@@ -642,10 +642,10 @@ async def _recheck_eligibility(
 ) -> QualificationRequirements:
     """The JD may have changed since the education step: the selection is
     re-validated against the job's *current* requirements, and a selection
-    that's no longer eligible sends the candidate back to Step 4."""
+    that's no longer eligible sends the candidate back to Step 4. Always
+    re-validated (it's deterministic and cheap), not only when the JD hash
+    changed, so a change to the offered list is enforced too."""
     requirements = await job_qualification_service.get_requirements(db, ctx.job)
-    if requirements.source_hash == draft.qualification_source_hash:
-        return requirements
     try:
         _validate_education(details, requirements)
     except UnprocessableError as exc:
@@ -733,7 +733,7 @@ async def submit(
                 entity_label=f"{candidate.full_name} — {ctx.job.title}",
                 description=(
                     "The job's qualification requirements couldn't be determined automatically, "
-                    "so every qualification was offered; please check the candidate's "
+                    "so the default qualification list was offered; please check the candidate's "
                     "eligibility against the job description."
                 ),
             )

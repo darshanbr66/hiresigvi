@@ -253,6 +253,21 @@ export function EducationStep({
     );
   }
 
+  if (options.options.length === 0) {
+    // The role accepts only qualifications this form doesn't offer; the
+    // server would refuse any selection, so there's nothing to choose.
+    return (
+      <div className="apply-step-body">
+        <Alert>{options.summary}</Alert>
+        <div className="apply-actions">
+          <button type="button" className="btn btn-ghost" onClick={onBack}>
+            <Icon name="arrow-left" size={16} /> Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const branchHint = options.field_mandatory
     ? "This role requires one of the listed fields."
     : undefined;

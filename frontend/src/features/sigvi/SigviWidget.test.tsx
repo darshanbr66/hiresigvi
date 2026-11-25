@@ -50,6 +50,19 @@ afterEach(() => {
   document.body.style.overflow = "";
 });
 
+describe("room for the launcher", () => {
+  it("marks the page while mounted so it can keep its controls clear of the launcher", () => {
+    const root = document.documentElement;
+    expect(root).not.toHaveClass("sigvi-present");
+
+    const { unmount } = renderWidget();
+    expect(root).toHaveClass("sigvi-present");
+
+    unmount();
+    expect(root).not.toHaveClass("sigvi-present");
+  });
+});
+
 describe("opening and closing", () => {
   it("starts closed: a launcher and no visible dialog", () => {
     renderWidget();

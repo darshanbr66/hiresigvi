@@ -109,6 +109,16 @@ export function SigviWidget({
     }
   }, [turns.length, status, open, reducedMotion]);
 
+  // The launcher floats over the page's bottom-right corner. While it is on
+  // the page, let the page reserve room for it (sigvi.css: `.sigvi-present`)
+  // so focused controls and the page's last controls — the application
+  // form's Continue/Submit buttons — can always sit clear of it.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("sigvi-present");
+    return () => root.classList.remove("sigvi-present");
+  }, []);
+
   // A phone sheet covers the page, so the page must not scroll beneath it.
   useEffect(() => {
     if (!open || !isMobile) return;

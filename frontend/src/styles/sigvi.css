@@ -46,6 +46,27 @@
   outline-offset: 2px;
 }
 
+/* ===================== room for the launcher ============================ */
+
+/* The launcher is fixed over the bottom-right corner. On a page that has it
+   (`.sigvi-present` on <html>, set by the widget while mounted):
+   - keyboard focus scrolls a control clear of it, not just into the
+     viewport (WCAG 2.4.11, focus not obscured);
+   - the application form — the last thing on a role's page — ends with
+     enough room below it that its Continue/Submit buttons can scroll above
+     the launcher at every width. Pages without the assistant (campus drive,
+     programs) are untouched.
+   The clearance is the launcher's height plus its bottom gap plus a little
+   air, so it follows the phone sizes below. */
+:root.sigvi-present {
+  --sigvi-clearance: calc(2.75rem + 1.25rem + 0.75rem);
+  scroll-padding-bottom: var(--sigvi-clearance);
+}
+
+:root.sigvi-present .apply-card {
+  margin-bottom: var(--sigvi-clearance);
+}
+
 /* ============================ launcher ================================== */
 
 .sigvi-launcher {
@@ -731,6 +752,10 @@
 /* ============================== phones ================================== */
 
 @media (max-width: 640px) {
+  :root.sigvi-present {
+    --sigvi-clearance: calc(3rem + 1rem + 0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
   .sigvi {
     --sv-gap: 1rem;
     bottom: calc(var(--sv-gap) + env(safe-area-inset-bottom, 0px));

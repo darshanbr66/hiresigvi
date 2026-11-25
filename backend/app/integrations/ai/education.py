@@ -170,8 +170,10 @@ keys):
 - minimum_level: the lowest level the text accepts (NONE if not stated).
 - accepted_qualification_keys: every vocabulary key the text explicitly accepts. Do not add
   degrees the text does not mention. Never include a key below the minimum level.
-- higher_qualifications_accepted: true unless the text restricts to exactly the listed degrees
-  (e.g. "only B.Tech", "freshers with B.E. only").
+- higher_qualifications_accepted: true unless the text explicitly restricts to exactly the listed
+  degrees (e.g. "only B.Tech", "freshers with B.E. only", "Ph.D. holders need not apply").
+  Merely naming a degree or a branch ("M.Tech in CSE required", "minimum M.Tech") is not such a
+  restriction: keep it true. When false, quote the restricting words in evidence.
 - fields_of_study: branches/streams/subjects the text requires or names (e.g. "Mechanical
   Engineering", "Biotechnology"); empty if any field is fine.
 - field_mandatory: true only if the text makes the field/branch a requirement.

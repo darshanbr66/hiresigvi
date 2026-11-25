@@ -273,8 +273,14 @@ of the AI's reading:
   set, not the vocabulary;
 
 - nothing below the stated minimum level is offered;
-- related higher qualifications of the same family are added unless the JD
-  restricts to exactly the listed degrees;
+- related higher qualifications of the same family are added (for an
+  M.Tech requirement, the Ph.D. — the doctorate relates to every family)
+  unless the JD restricts to exactly the listed degrees. That restriction
+  is honoured only when the requirement the AI quoted actually says so
+  ("only", "exclusively", "strictly", "not eligible", "need not apply",
+  "no Ph.D.", …): a JD that merely names a degree or branch ("M.Tech in CSE
+  required") keeps the Ph.D. eligible even if the AI flagged it as
+  exact-only (`_states_exact_degrees`, rules version 4);
 - a field of study the JD makes mandatory never narrows the choice (see
   the specialization below): when the selected specialization doesn't
   deterministically match one of the JD's fields, the submitted

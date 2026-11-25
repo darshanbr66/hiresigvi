@@ -11,8 +11,10 @@ enforced in code, not trusted from the model:
 
 * unknown keys are dropped; nothing below the stated minimum level is ever
   offered;
-* "related higher qualifications" are derived from the vocabulary's
-  families when the JD doesn't restrict to exactly the listed degrees;
+* "related higher qualifications" (for M.Tech, the Ph.D.) are derived from
+  the vocabulary's families unless the JD restricts to exactly the listed
+  degrees — and that restriction is honoured only when the JD's own words
+  say so (`_states_exact_degrees`), never on the model's say-so alone;
 * the job is *restricted* only when the JD clearly **requires** a
   qualification (not merely "preferred") with enough confidence. An
   ambiguous JD, a "preferred" one, or an AI outage never invents strict
@@ -27,6 +29,7 @@ platform no longer offers.
 """
 
 import hashlib
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -48,7 +51,27 @@ logger = get_logger(__name__)
 
 #: Bump when the normalization rules or prompt change, so every cached
 #: profile is recomputed under the new rules.
-RULES_VERSION = "3"
+RULES_VERSION = "4"
+
+#: Wording that limits a JD to exactly the degrees it lists ("B.Tech only",
+#: "strictly M.Tech", "Ph.D. holders need not apply"). Without one of these
+#: in the quoted requirement, higher qualifications stay accepted.
+_EXACT_DEGREE_WORDING = re.compile(
+    r"\b(?:only|exclusively|strictly|solely)\b"
+    r"|\bnot\s+(?:be\s+)?(?:eligible|accepted|considered)\b"
+    r"|\bneed\s+not\s+apply\b"
+    r"|\boverqualified\b"
+    r"|\bno\s+(?:ph\.?\s?d|doctorates?|post[-\s]?graduates?|higher\s+(?:degrees?|qualifications?))\b",
+    re.IGNORECASE,
+)
+
+
+def _states_exact_degrees(analysis: JobQualificationAnalysis) -> bool:
+    """The model may say "exact degrees only", but a JD that merely names a
+    degree ("M.Tech in CSE required") doesn't exclude a Ph.D. Honour the
+    restriction only when the requirement it quoted says so."""
+    return bool(_EXACT_DEGREE_WORDING.search(analysis.evidence or ""))
+
 
 #: Below this, a JD's requirement is too ambiguous to restrict on.
 MIN_RESTRICT_CONFIDENCE = 0.6
@@ -177,7 +200,8 @@ def normalize(analysis: JobQualificationAnalysis, hash_: str) -> QualificationRe
     if minimum is not None:
         floor = catalog.rank(minimum)
         accepted = {k for k in accepted if catalog.rank(catalog.BY_KEY[k].level) >= floor}
-    if accepted and analysis.higher_qualifications_accepted:
+    exact_only = not analysis.higher_qualifications_accepted and _states_exact_degrees(analysis)
+    if accepted and not exact_only:
         accepted |= catalog.related_higher_keys(accepted)
     if not accepted and minimum is not None:
         # "Any bachelor's degree" — restricted by level only.

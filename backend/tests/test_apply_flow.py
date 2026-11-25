@@ -274,13 +274,87 @@ def test_mandatory_branch_is_kept() -> None:
 
 def test_exact_degree_only_adds_no_higher_qualifications() -> None:
     result = normalize(
-        jd(accepted_qualification_keys=["BE_BTECH"], higher_qualifications_accepted=False), "h"
+        jd(
+            accepted_qualification_keys=["BE_BTECH"],
+            higher_qualifications_accepted=False,
+            evidence="Freshers with B.Tech only.",
+        ),
+        "h",
     )
     assert result.eligible_keys == ["BE_BTECH"]
     # "B.Tech only": nothing the form offers is eligible, so nothing is offered.
     assert result.offered_keys == []
     assert not result.allows("ME_MTECH")
     assert "can't be selected in the online application" in result.summary
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        "M.Tech in Computer Science is required.",
+        "Minimum qualification: M.Tech / M.E. in ECE.",
+        "",
+    ],
+)
+def test_naming_a_masters_degree_keeps_the_phd_eligible(evidence: str) -> None:
+    # The model flagged "exact degrees only", but the JD never says so: a
+    # Ph.D. is a higher qualification and stays eligible.
+    result = normalize(
+        jd(
+            minimum_level="MASTERS",
+            accepted_qualification_keys=["ME_MTECH"],
+            higher_qualifications_accepted=False,
+            evidence=evidence,
+        ),
+        "h",
+    )
+    assert result.restricted
+    assert result.offered_keys == ["ME_MTECH", "PHD"]
+    assert result.allows("PHD")
+    assert "M.Tech, Ph.D." in result.summary
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        "M.Tech only.",
+        "Strictly M.Tech graduates.",
+        "Ph.D. holders need not apply.",
+        "M.Tech required; doctorates will not be considered.",
+        "No Ph.D. candidates.",
+    ],
+)
+def test_an_explicit_exact_degree_restriction_excludes_the_phd(evidence: str) -> None:
+    result = normalize(
+        jd(
+            minimum_level="MASTERS",
+            accepted_qualification_keys=["ME_MTECH"],
+            higher_qualifications_accepted=False,
+            evidence=evidence,
+        ),
+        "h",
+    )
+    assert result.offered_keys == ["ME_MTECH"]
+    assert not result.allows("PHD")
+
+
+async def test_options_and_validation_offer_the_phd_for_an_mtech_jd(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    ctx = await _setup(client, "flow-mtech-phd")
+    fake_ai.job_result = jd(
+        minimum_level="MASTERS",
+        accepted_qualification_keys=["ME_MTECH"],
+        higher_qualifications_accepted=False,
+        evidence="M.Tech in Computer Science is required.",
+    )
+    options = (await client.get(f"{ctx['base']}/qualification-options")).json()
+    assert [option["key"] for option in options["options"]] == ["ME_MTECH", "PHD"]
+    # The server accepts exactly what the API offered.
+    auth = await _start(client, ctx, "mtech-phd@example.com")
+    for key in ("ME_MTECH", "PHD"):
+        saved = await _save_education(client, ctx, auth, qualification_key=key)
+        assert saved.status_code == 200, saved.text
 
 
 @pytest.mark.parametrize(

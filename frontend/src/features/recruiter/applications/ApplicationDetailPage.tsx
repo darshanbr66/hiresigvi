@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../../lib/apiClient";
 import { triggerBlobDownload } from "../../../lib/downloadBlob";
+import { EducationDocumentsCard } from "./EducationDocumentsCard";
 import { EducationReviewCard } from "./EducationReviewCard";
 import { Alert } from "../../../shared/components/Alert";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
@@ -422,6 +423,8 @@ export function ApplicationDetailPage() {
               <p className="muted">No resume on file for this application.</p>
             )}
           </section>
+
+          <EducationDocumentsCard applicationId={applicationId} token={token} />
 
           {application.education_verification_status && (
             <EducationReviewCard

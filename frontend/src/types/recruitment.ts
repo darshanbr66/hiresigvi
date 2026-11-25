@@ -291,6 +291,29 @@ export interface ApplicationEducation {
   }[];
 }
 
+export type EducationDocumentKind = "academic-document" | "tenth-marks-card";
+
+/** One education document on an application — metadata only; the file is
+ * fetched through the authorized download endpoint. */
+export interface EducationDocument {
+  kind: EducationDocumentKind;
+  label: string;
+  description: string;
+  required: boolean;
+  /** The application has a record of this document. */
+  uploaded: boolean;
+  /** Its file can be read from storage right now. */
+  available: boolean;
+  filename: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  uploaded_at: string | null;
+}
+
+export interface EducationDocumentsResponse {
+  documents: EducationDocument[];
+}
+
 export interface ApplicationCreateRequest {
   candidate_id: string;
   job_id: string;

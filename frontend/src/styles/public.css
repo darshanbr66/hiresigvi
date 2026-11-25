@@ -978,6 +978,50 @@
   margin-left: 0.5rem;
 }
 
+/* Recruiter: the application's education documents. */
+.education-documents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.education-document {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.education-document:first-child {
+  border-top: 0;
+  padding-top: 0.25rem;
+}
+
+.education-document-info {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.education-document-info p {
+  margin: 0;
+}
+
+.education-document-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.education-document-file {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
 .verify-status-ok {
   background: var(--color-active-bg);
   color: var(--color-active-text);

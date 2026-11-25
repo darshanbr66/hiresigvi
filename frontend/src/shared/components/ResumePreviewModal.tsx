@@ -14,10 +14,15 @@ export function ResumePreviewModal({
   filename,
   fetchResume,
   onClose,
+  title = "Resume preview",
+  subject = "resume",
 }: {
   filename: string;
   fetchResume: () => Promise<{ blob: Blob; filename: string | null }>;
   onClose: () => void;
+  /** Reused for other candidate documents (e.g. academic documents). */
+  title?: string;
+  subject?: string;
 }) {
   const [state, setState] = useState<
     | { status: "loading" }
@@ -39,7 +44,7 @@ export function ResumePreviewModal({
         if (cancelled) return;
         setState({
           status: "error",
-          message: err instanceof ApiError ? err.message : "Could not load the resume.",
+          message: err instanceof ApiError ? err.message : `Could not load the ${subject}.`,
         });
       }
     }
@@ -58,18 +63,30 @@ export function ResumePreviewModal({
   }
 
   const canPreviewInline = state.status === "ready" && state.blob.type === "application/pdf";
+  const isImage = state.status === "ready" && state.blob.type.startsWith("image/");
 
   return (
-    <Modal title="Resume preview" onClose={onClose} wide>
-      {state.status === "loading" && <p role="status">Loading resume…</p>}
+    <Modal title={title} onClose={onClose} wide>
+      {state.status === "loading" && <p role="status">Loading {subject}…</p>}
       {state.status === "error" && <Alert>{state.message}</Alert>}
 
       {state.status === "ready" && (
         <div className="stack-sm">
-          {canPreviewInline ? (
+          {isImage ? (
+            <img
+              src={state.objectUrl}
+              alt={title}
+              style={{
+                maxWidth: "100%",
+                maxHeight: "70vh",
+                border: "1px solid var(--color-border)",
+                borderRadius: 8,
+              }}
+            />
+          ) : canPreviewInline ? (
             <iframe
               src={state.objectUrl}
-              title="Resume preview"
+              title={title}
               style={{
                 width: "100%",
                 height: "70vh",

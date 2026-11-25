@@ -5,6 +5,8 @@ import type {
   ApplicationEducation,
   ApplicationResponse,
   ApplicationStatus,
+  EducationDocumentKind,
+  EducationDocumentsResponse,
 } from "../../../types/recruitment";
 import type {
   EmailComposeRequest,
@@ -120,6 +122,24 @@ export function getApplicationEducation(applicationId: string, accessToken: stri
 export function downloadAcademicDocument(applicationId: string, accessToken: string) {
   return apiClient.getBlob(
     `/api/v1/recruiter/applications/${applicationId}/education/document`,
+    accessToken,
+  );
+}
+
+export function listEducationDocuments(applicationId: string, accessToken: string) {
+  return apiClient.get<EducationDocumentsResponse>(
+    `/api/v1/recruiter/applications/${applicationId}/documents`,
+    accessToken,
+  );
+}
+
+export function downloadEducationDocument(
+  applicationId: string,
+  kind: EducationDocumentKind,
+  accessToken: string,
+) {
+  return apiClient.getBlob(
+    `/api/v1/recruiter/applications/${applicationId}/documents/${kind}`,
     accessToken,
   );
 }

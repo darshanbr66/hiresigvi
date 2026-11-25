@@ -23,11 +23,13 @@ from app.schemas.application import (
     AIScreeningOverrideRequest,
     ApplicationCreateRequest,
     ApplicationDeleteRequest,
+    ApplicationDocumentsResponse,
     ApplicationEducationResponse,
     ApplicationResponse,
     ApplicationSortField,
     ApplicationStatusChangeRequest,
     EducationCheckEntry,
+    EducationDocumentEntry,
     SortDirection,
 )
 from app.schemas.assessment import AssessmentInvitationResponse, AssessmentResultResponse
@@ -40,11 +42,13 @@ from app.schemas.email import (
 )
 from app.schemas.public_assessment import MonitoringEventResponse
 from app.services import (
+    application_document_service,
     application_draft_service,
     application_service,
     assessment_service,
     email_composer,
 )
+from app.services.application_document_service import EducationDocumentKind
 from app.services.education import catalog as education_catalog
 from app.services.education import specializations
 
@@ -351,6 +355,57 @@ async def download_academic_document(
             "Content-Length": str(document.size_bytes),
         },
     )
+
+
+@router.get("/{application_id}/documents", response_model=ApplicationDocumentsResponse)
+async def list_education_documents(
+    application_id: uuid.UUID,
+    _: User = Depends(require_permission("application.read")),
+    db: AsyncSession = Depends(get_db),
+) -> ApplicationDocumentsResponse:
+    """The application's education documents (academic document, 10th
+    marks card): metadata and availability only."""
+    application = await application_service.get_application(db, application_id)
+    if application is None:
+        raise NotFoundError("Application not found.")
+    documents = await application_document_service.list_documents(db, application)
+    return ApplicationDocumentsResponse(
+        documents=[
+            EducationDocumentEntry(
+                kind=document.kind.value,
+                label=document.label,
+                description=document.description,
+                required=document.required,
+                uploaded=document.uploaded,
+                available=document.available,
+                filename=document.filename,
+                content_type=document.content_type,
+                size_bytes=document.size_bytes,
+                uploaded_at=document.uploaded_at,
+            )
+            for document in documents
+        ]
+    )
+
+
+@router.get("/{application_id}/documents/{kind}")
+async def download_education_document(
+    application_id: uuid.UUID,
+    kind: EducationDocumentKind,
+    _: User = Depends(require_permission("application.read")),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Streams one education document — the same access rule and mechanism
+    as the resume download."""
+    application = await application_service.get_application(db, application_id)
+    if application is None:
+        raise NotFoundError("Application not found.")
+    opened = await application_document_service.open_document(db, application, kind)
+    safe_name = opened.filename.replace('"', "")
+    headers = {"Content-Disposition": f'attachment; filename="{safe_name}"'}
+    if opened.size_bytes is not None:
+        headers["Content-Length"] = str(opened.size_bytes)
+    return StreamingResponse(opened.chunks, media_type=opened.content_type, headers=headers)
 
 
 def _invitation_to_response(

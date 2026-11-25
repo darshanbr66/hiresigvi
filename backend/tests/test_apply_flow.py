@@ -45,7 +45,7 @@ from app.services.education.job_qualification_service import (
     QualificationRequirements,
     normalize,
 )
-from tests.conftest import make_minimal_pdf
+from tests.conftest import SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, login, make_minimal_pdf
 from tests.org_setup import bootstrap_org, open_job
 from tests.public_apply import (
     DEFAULT_EDUCATION,
@@ -1356,3 +1356,117 @@ async def test_unclear_requirements_give_hr_the_reason(
     assert education["job_fields_of_study"] == []
     assert len(education["eligibility_review_reasons"]) == 1
     assert "couldn't be determined automatically" in education["eligibility_review_reasons"][0]
+
+
+# --- Recruiter: education documents ---------------------------------------------
+
+
+async def _submit_with_marks_card(client: AsyncClient, ctx: dict, auth: dict):
+    return await client.post(
+        f"{ctx['base']}/apply",
+        data=auth,
+        files={
+            "resume": ("resume.pdf", make_minimal_pdf("Jane. M.Tech."), "application/pdf"),
+            "tenth_marks_card": (
+                "10th-marks.pdf",
+                make_minimal_pdf("Secondary School Certificate. Marks."),
+                "application/pdf",
+            ),
+        },
+    )
+
+
+async def test_recruiter_lists_and_downloads_education_documents(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    ctx = await _setup(client, "flow-docs")
+    auth = await _start(client, ctx, "docs@example.com")
+    await _save_education(client, ctx, auth)
+    await _upload(client, ctx, auth)
+    submitted = await _submit_with_marks_card(client, ctx, auth)
+    assert submitted.status_code == 201, submitted.text
+    base = f"/api/v1/recruiter/applications/{submitted.json()['id']}/documents"
+
+    listed = await client.get(base, headers=ctx["headers"])
+    assert listed.status_code == 200, listed.text
+    documents = {d["kind"]: d for d in listed.json()["documents"]}
+    assert set(documents) == {"academic-document", "tenth-marks-card"}
+    academic = documents["academic-document"]
+    assert academic["uploaded"] is True and academic["available"] is True
+    assert academic["filename"] == "mtech-marks-card.pdf"
+    assert academic["description"] == "Marks card or certificate for M.Tech"
+    assert academic["required"] is True
+    marks = documents["tenth-marks-card"]
+    assert marks["uploaded"] is True and marks["available"] is True
+    assert marks["filename"] == "10th-marks.pdf" and marks["required"] is False
+    # Metadata only: no storage location reaches the client.
+    assert "storage" not in listed.text and "uploads" not in listed.text
+
+    for kind, filename in (
+        ("academic-document", "mtech-marks-card.pdf"),
+        ("tenth-marks-card", "10th-marks.pdf"),
+    ):
+        download = await client.get(f"{base}/{kind}", headers=ctx["headers"])
+        assert download.status_code == 200, download.text
+        assert download.content.startswith(b"%PDF")
+        assert download.headers["content-disposition"] == f'attachment; filename="{filename}"'
+
+    assert (await client.get(f"{base}/resume", headers=ctx["headers"])).status_code == 422
+
+
+async def test_missing_education_documents_are_reported_not_failed(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI, db_session: AsyncSession
+) -> None:
+    ctx = await _setup(client, "flow-docs-missing")
+    auth = await _start(client, ctx, "docs-missing@example.com")
+    await _save_education(client, ctx, auth)
+    await _upload(client, ctx, auth)
+    submitted = await _submit(client, ctx, auth)  # no 10th marks card
+    assert submitted.status_code == 201, submitted.text
+    base = f"/api/v1/recruiter/applications/{submitted.json()['id']}/documents"
+
+    listed = (await client.get(base, headers=ctx["headers"])).json()["documents"]
+    documents = {d["kind"]: d for d in listed}
+    assert documents["tenth-marks-card"]["uploaded"] is False
+    assert documents["tenth-marks-card"]["filename"] is None
+    missing = await client.get(f"{base}/tenth-marks-card", headers=ctx["headers"])
+    assert missing.status_code == 404
+    assert "No 10th marks card" in missing.json()["error"]["message"]
+
+    # The record exists but its file is gone from storage.
+    async with rls_bypass(db_session):
+        document = await db_session.scalar(
+            select(AcademicDocument).where(
+                AcademicDocument.application_id == submitted.json()["id"]
+            )
+        )
+        assert document is not None
+        document.storage_path = "missing/not-there.pdf"
+        await db_session.commit()
+    listed = (await client.get(base, headers=ctx["headers"])).json()["documents"]
+    documents = {d["kind"]: d for d in listed}
+    assert documents["academic-document"]["uploaded"] is True
+    assert documents["academic-document"]["available"] is False
+    gone = await client.get(f"{base}/academic-document", headers=ctx["headers"])
+    assert gone.status_code == 404
+
+
+async def test_education_documents_require_an_authorized_recruiter_of_the_organization(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    ctx = await _setup(client, "flow-docs-auth")
+    auth = await _start(client, ctx, "docs-auth@example.com")
+    await _save_education(client, ctx, auth)
+    await _upload(client, ctx, auth)
+    submitted = await _submit_with_marks_card(client, ctx, auth)
+    base = f"/api/v1/recruiter/applications/{submitted.json()['id']}/documents"
+    urls = [base, f"{base}/academic-document", f"{base}/tenth-marks-card"]
+
+    other = await bootstrap_org(client, "flow-docs-auth-other")
+    tokens = await login(client, email=SUPER_ADMIN_EMAIL, password=SUPER_ADMIN_PASSWORD)
+    platform_admin = {"Authorization": f"Bearer {tokens['access_token']}"}
+    for url in urls:
+        assert (await client.get(url)).status_code == 401
+        assert (await client.get(url, headers=platform_admin)).status_code == 403
+        # Another organization's recruiters can't even tell it exists.
+        assert (await client.get(url, headers=other["headers"])).status_code == 404

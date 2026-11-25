@@ -204,6 +204,13 @@ GET           /api/v1/recruiter/applications/{application_id}/education  (screen
                                                                  and every AI consistency check, each with the
                                                                  `selected_*` selections it was run against)
 GET           /api/v1/recruiter/applications/{application_id}/education/document  (application.read; download)
+GET           /api/v1/recruiter/applications/{application_id}/documents  (application.read; the education documents —
+                                                                 `academic-document` and the optional `tenth-marks-card`:
+                                                                 label, filename, type, size, `uploaded`, `available`;
+                                                                 metadata only, never a storage path or URL)
+GET           /api/v1/recruiter/applications/{application_id}/documents/{kind}  (application.read; streams one, same
+                                                                 mechanism as the resume download; 404 when not uploaded
+                                                                 or missing from storage, 422 for an unknown kind)
 POST          /api/v1/recruiter/applications/{application_id}/screening-runs
 GET           /api/v1/recruiter/applications/{application_id}/screening-runs
 POST          /api/v1/recruiter/applications/{application_id}/notes

@@ -93,6 +93,30 @@ class ApplicationResponse(BaseModel):
     deleted_at: datetime | None = None
 
 
+class EducationDocumentEntry(BaseModel):
+    """One education document on an application, for the recruiter's
+    Education documents list. Metadata only — the file itself is streamed
+    by `GET .../documents/{kind}`; no storage path or URL is ever exposed."""
+
+    #: `academic-document` | `tenth-marks-card` (also the download path).
+    kind: str
+    label: str
+    description: str
+    required: bool
+    #: The application has a record of this document.
+    uploaded: bool
+    #: Its file can be read from storage right now.
+    available: bool
+    filename: str | None = None
+    content_type: str | None = None
+    size_bytes: int | None = None
+    uploaded_at: datetime | None = None
+
+
+class ApplicationDocumentsResponse(BaseModel):
+    documents: list[EducationDocumentEntry]
+
+
 class AcademicDocumentSummary(BaseModel):
     filename: str
     content_type: str

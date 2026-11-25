@@ -3,12 +3,12 @@ import smtplib
 import ssl
 from collections.abc import Sequence
 from email.message import EmailMessage
-from email.utils import formataddr
 
 from pydantic import SecretStr
 
 from app.core.logging import get_logger
 from app.integrations.email.base import EmailError, EmailProvider, as_address_list
+from app.integrations.email.branding import from_header
 
 logger = get_logger(__name__)
 
@@ -59,7 +59,7 @@ class SmtpEmailProvider(EmailProvider):
         reply_to: str | None,
     ) -> EmailMessage:
         message = EmailMessage()
-        message["From"] = formataddr((self._from_name, self._from_email))
+        message["From"] = from_header(self._from_email, self._from_name)
         message["To"] = ", ".join(to)
         if cc:
             message["Cc"] = ", ".join(cc)

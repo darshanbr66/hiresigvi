@@ -87,11 +87,15 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
     smtp_from_email: str | None = None
-    smtp_from_name: str = "Zodiac Patent Recruitment"
+    #: The sender display name ("From: Zodiac Patent <…>"). A name carrying
+    #: the retired SIGVITAS brand is never sent (app/integrations/email/
+    #: branding.py).
+    smtp_from_name: str = "Zodiac Patent"
     smtp_use_tls: bool = True
 
     # `email_from` is the Resend sender: a verified-domain address, optionally
-    # with a display name, e.g. `Zodiac Patent Recruitment <hr@zodiacpatent.com>`.
+    # with a display name, e.g. `Zodiac Patent <hr@zodiacpatent.com>` (a bare address
+    # gets the display name "Zodiac Patent").
     resend_api_key: SecretStr | None = None
     email_from: str | None = None
 

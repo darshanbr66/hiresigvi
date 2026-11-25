@@ -214,13 +214,13 @@ nothing sensitive is stored in the Blueprint file itself.
 | `MONGODB_URI` | Yes, if `RESUME_STORAGE_PROVIDER=mongodb_gridfs` | Connection string for the MongoDB deployment storing resume files (e.g. an Atlas cluster). Never commit the real value. |
 | `MONGODB_DATABASE` | No (default `ai_recruitment`) | Database name within the MongoDB deployment; the `resumes` GridFS bucket is created inside it. |
 | `RESEND_API_KEY` | **For email in production** | **Secret** — a Resend API key (`re_…`); set only in the Render dashboard (`sync: false`). Render's free web services block outbound SMTP (ports 25/465/587), so production email must use Resend's HTTPS API. Never commit it. |
-| `EMAIL_FROM` | **For email in production** | The Resend `From:` — an address on a domain you have **verified in Resend**, optionally with a display name: `Zodiac Patent Recruitment <hr@zodiacpatent.com>`. |
+| `EMAIL_FROM` | **For email in production** | The Resend `From:` — an address on a domain you have **verified in Resend**, optionally with a display name: `Zodiac Patent <hr@zodiacpatent.com>` (a bare address is sent as `Zodiac Patent <address>`). |
 | `SMTP_HOST` | Local development only | SMTP server, e.g. `smtp.gmail.com`. Ignored whenever `RESEND_API_KEY` + `EMAIL_FROM` are both set. |
 | `SMTP_PORT` | No (default `587`) | `587` = STARTTLS, `465` = implicit TLS. |
 | `SMTP_USERNAME` | For email | SMTP login (also usually the from address). |
 | `SMTP_PASSWORD` | For email | **Secret** — set only in the Render dashboard (`sync: false` in `render.yaml`). For Gmail this must be an app password. Never commit it, never put it in `.env.example`. |
 | `SMTP_FROM_EMAIL` | For email | The `From:` address. |
-| `SMTP_FROM_NAME` | No (default `AI Recruitment Platform`) | Display name on the `From:` header. |
+| `SMTP_FROM_NAME` | No (default `Zodiac Patent`) | Display name on the `From:` header. A name containing "SIGVITAS" is replaced by "Zodiac Patent". |
 | `SMTP_USE_TLS` | No (default `true`) | STARTTLS on non-465 ports. |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | No | Optional, free/local AI screening — not reachable from Render, only useful if you run Ollama somewhere Render can reach it. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | No | Optional paid AI screening providers. Do not set unless you intend to enable AI screening. |
@@ -626,9 +626,16 @@ safe.**
 **Candidate-facing branding.** The verification code and welcome emails
 take the company name from the organization row ("Zodiac Patent" for the
 careers organization) and are signed "Recruitment Team, Zodiac Patent".
-The sender display name is "Zodiac Patent Recruitment" (`SMTP_FROM_NAME`,
-or the display part of `EMAIL_FROM`). The sender *address* is deployment
-configuration and still a `@sigvitas.com` mailbox. Changing it needs a
+The sender display name is "Zodiac Patent" (`SMTP_FROM_NAME`, or the
+display part of `EMAIL_FROM`; a bare `EMAIL_FROM` address gets "Zodiac
+Patent"). `app/integrations/email/branding.py` guarantees it: an empty name,
+or one containing "SIGVITAS" in any case, is replaced by "Zodiac Patent"
+(with a warning in the log). On Gmail / Google Workspace SMTP, the From
+address must be the authenticated mailbox or one of its verified "Send
+mail as" aliases — otherwise Google rewrites the From header to the
+authenticated account, including that account's own name. The sender
+*address* is deployment configuration and may still be a `@sigvitas.com`
+mailbox. Changing it needs a
 verified Zodiac Patent sending domain (Resend) or mailbox (SMTP), which has
 to be supplied — none is invented here.
 
@@ -662,7 +669,7 @@ on Render is harmless; the SMTP provider is kept for local development.
 | Variable | Value |
 |---|---|
 | `RESEND_API_KEY` | An API key from the Resend dashboard (API Keys). A "sending access" key is enough. |
-| `EMAIL_FROM` | `Zodiac Patent Recruitment <hr@zodiacpatent.com>` — the domain must be verified in Resend (Domains -> add the DNS records it shows, wait for "Verified"). |
+| `EMAIL_FROM` | `Zodiac Patent <hr@zodiacpatent.com>` — the domain must be verified in Resend (Domains -> add the DNS records it shows, wait for "Verified"). |
 
 **Sender-domain requirement.** Until a domain is verified, Resend only lets an
 account send test mail *to its own address* and rejects anything else with a
@@ -697,8 +704,8 @@ recipients or the message body.
   button, footer with a contact address), inline CSS only — no images,
   scripts or external resources — with a plain-text alternative. The message
   is sent from the configured sender (`EMAIL_FROM` on Resend;
-  `SMTP_FROM_NAME <SMTP_FROM_EMAIL>` on SMTP, display name "Zodiac Patent
-  Recruitment" by default). The footer contact, the `{{recruiter_email}}`
+  `SMTP_FROM_NAME <SMTP_FROM_EMAIL>` on SMTP, display name "Zodiac Patent"
+  by default). The footer contact, the `{{recruiter_email}}`
   placeholder and `Reply-To` are the organization's published recruitment
   contact (`careers_contact_email`, e.g. hr@zodiacpatent.com); only when an
   organization has none is the sending staff member's own address used.

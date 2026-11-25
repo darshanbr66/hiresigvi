@@ -5,6 +5,7 @@ from pydantic import SecretStr
 
 from app.core.logging import get_logger
 from app.integrations.email.base import EmailError, EmailProvider, as_address_list
+from app.integrations.email.branding import from_header_for
 
 logger = get_logger(__name__)
 
@@ -53,7 +54,7 @@ class ResendEmailProvider(EmailProvider):
         bcc: Sequence[str] = (),
     ) -> None:
         payload: dict[str, object] = {
-            "from": self._from_email,
+            "from": from_header_for(self._from_email),
             "to": as_address_list(to),
             "subject": subject,
             "html": html,

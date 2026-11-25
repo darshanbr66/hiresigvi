@@ -203,3 +203,42 @@ def test_smtp_password_never_appears_in_settings_repr() -> None:
     settings = _settings(smtp_password=_DUMMY_PASSWORD)
     assert _DUMMY_PASSWORD not in repr(settings)
     assert _DUMMY_PASSWORD not in str(settings.model_dump())
+
+
+# --- sender display name (branding) ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        ("SIGVITAS", "Zodiac Patent"),
+        ("Sigvitas Recruitment", "Zodiac Patent"),
+        ("", "Zodiac Patent"),
+        ("   ", "Zodiac Patent"),
+        ("Zodiac Patent", "Zodiac Patent"),
+        ("Zodiac Patent Recruitment", "Zodiac Patent Recruitment"),
+    ],
+)
+async def test_the_mime_from_header_never_carries_the_retired_brand(
+    fake_smtp, configured: str, expected: str
+) -> None:
+    provider = SmtpEmailProvider(
+        host="smtp.example.test",
+        port=587,
+        username="mailer@sigvitas.example",
+        password=SecretStr(_DUMMY_PASSWORD),
+        from_email="mailer@sigvitas.example",
+        from_name=configured,
+        use_tls=True,
+    )
+    await provider.send(to="cara@example.test", subject="Code", html="<p>1</p>", text="1")
+
+    message = fake_smtp.instances[0].sent
+    # The display name is the brand; the configured mailbox is unchanged.
+    assert message["From"] == f"{expected} <mailer@sigvitas.example>"
+    assert message["From"].addresses[0].display_name == expected
+    assert fake_smtp.instances[0].login_args[0] == "mailer@sigvitas.example"
+
+
+def test_the_default_sender_name_is_zodiac_patent() -> None:
+    assert Settings.model_fields["smtp_from_name"].default == "Zodiac Patent"

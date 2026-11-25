@@ -310,3 +310,28 @@ def test_resend_api_key_never_appears_in_settings_repr() -> None:
     settings = _settings(**_RESEND)
     assert _DUMMY_KEY not in repr(settings)
     assert _DUMMY_KEY not in str(settings.model_dump())
+
+
+# --- sender display name (branding) ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("email_from", "expected"),
+    [
+        # A bare address gets the brand name, so clients never fall back to
+        # the mailbox's own account name.
+        ("noreply@sigvitas.example", "Zodiac Patent <noreply@sigvitas.example>"),
+        ("SIGVITAS <noreply@sigvitas.example>", "Zodiac Patent <noreply@sigvitas.example>"),
+        ('"Sigvitas Pvt. Ltd." <hr@example.test>', "Zodiac Patent <hr@example.test>"),
+        (_FROM, _FROM),
+    ],
+)
+async def test_resend_sender_is_always_branded_zodiac_patent(
+    resend_api, email_from: str, expected: str
+) -> None:
+    from pydantic import SecretStr
+
+    api = resend_api()
+    provider = ResendEmailProvider(api_key=SecretStr(_DUMMY_KEY), from_email=email_from)
+    await provider.send(to="candidate@example.test", subject="Code", html="<p>1</p>")
+    assert api.json()["from"] == expected

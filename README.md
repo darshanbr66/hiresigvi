@@ -121,8 +121,10 @@ intentionally simplified for the local MVP — see each doc for specifics).
 - [`docs/deployment-vps.md`](docs/deployment-vps.md) — **production
   deployment** on the Hostinger VPS (zphirex.com): PostgreSQL + pgvector,
   systemd, nginx/TLS, frontend build and FileZilla upload, backups.
-- [`docs/deployment.md`](docs/deployment.md) — the earlier Render + Vercel
-  deployment (kept, not the current target).
+- [`docs/deployment.md`](docs/deployment.md) — the **production release
+  sequence** on the VPS (backup → migrate → restart `zphirex-api` → health
+  check, rollback, per-release migration notes), followed by the earlier
+  Render + Vercel deployment (kept, not the current target).
 
 ## Running locally
 

@@ -1,14 +1,134 @@
-# Deployment (Render + Vercel)
+# Deployment
 
-> **The production target is now the Hostinger VPS (zphirex.com): see
-> [`deployment-vps.md`](deployment-vps.md).** This Render + Vercel
-> configuration is kept unchanged and still works, but it isn't the
-> target of the VPS deployment.
+**Production runs on the Hostinger VPS (zphirex.com), not Render.** The
+backend is the systemd service `zphirex-api` (uvicorn on `127.0.0.1:8000`
+behind nginx at `https://api.zphirex.com`), with PostgreSQL 16 on the VPS
+and file bytes in MongoDB Atlas GridFS. The full server setup is in
+[`deployment-vps.md`](deployment-vps.md); the files it uses are in
+[`deploy/vps/`](../deploy/vps). The section below is the release sequence
+for an existing VPS. Everything after it (§ 0 onwards) describes the
+earlier **Render + Vercel** setup, kept for reference only.
 
-**Status: preparation only.** This document describes how to deploy the
-ZPHIREX recruitment platform — backend to Render, frontend to Vercel,
-database to Render PostgreSQL. Nothing described here has been executed
-against a production environment as part of writing this document; no
+## Production release sequence (Hostinger VPS)
+
+Run on the VPS over SSH. Paths: checkout `/opt/zphirex/app`, virtualenv
+`/opt/zphirex/venv`, settings `/opt/zphirex/app/backend/.env`, service
+user `zphirex`. Migrations run **only** in this sequence — never on a
+service restart, and never from a laptop against production.
+
+**One command** does steps 2–6 and stops at the first failure, so the
+service is never restarted onto code whose migrations didn't apply:
+
+```bash
+sudo bash /opt/zphirex/app/deploy/vps/scripts/deploy-backend.sh main
+```
+
+The same steps by hand (e.g. to watch each one):
+
+1. **Check the current state.**
+   ```bash
+   systemctl status zphirex-api --no-pager
+   curl -s http://127.0.0.1:8000/readyz        # {"status":"ok","database":"ok","mongodb":"ok"}
+   cd /opt/zphirex/app/backend && sudo -u zphirex /opt/zphirex/venv/bin/alembic current
+   sudo -u zphirex git -C /opt/zphirex/app log -1 --oneline   # note this commit for rollback
+   ```
+2. **Back up — and do not continue unless it succeeds.**
+   ```bash
+   sudo bash /opt/zphirex/app/deploy/vps/scripts/backup.sh
+   ```
+   It must end with `BACKUP OK: PostgreSQL + MongoDB (zphirex)` (exit 0).
+   The backup is in `/var/backups/zphirex/<UTC stamp>/`; its `MANIFEST.txt`
+   records the schema revision it was taken at. Details and restore:
+   `deployment-vps.md` § 10–11.
+3. **Update the code** (fast-forward only; refuses if the server checkout
+   was edited by hand).
+   ```bash
+   sudo -u zphirex git -C /opt/zphirex/app fetch --prune origin
+   sudo -u zphirex git -C /opt/zphirex/app checkout main
+   sudo -u zphirex git -C /opt/zphirex/app merge --ff-only origin/main
+   ```
+4. **Install pinned dependencies.**
+   ```bash
+   cd /opt/zphirex/app/backend
+   sudo -u zphirex /opt/zphirex/venv/bin/pip install --quiet -c constraints.txt .
+   ```
+5. **Apply migrations.**
+   ```bash
+   sudo -u zphirex /opt/zphirex/venv/bin/alembic current
+   sudo -u zphirex /opt/zphirex/venv/bin/alembic upgrade head
+   sudo -u zphirex /opt/zphirex/venv/bin/alembic current      # must print "(head)"
+   ```
+   Each migration runs in a transaction: if one fails, the database stays
+   at the previous revision. The running API still serves the old code
+   from memory — **don't restart it**; fix the cause or roll back (below).
+6. **Restart the backend.**
+   ```bash
+   sudo systemctl restart zphirex-api
+   systemctl status zphirex-api --no-pager
+   journalctl -u zphirex-api -n 50 --no-pager
+   ```
+7. **Verify health** (allow a few seconds after the restart).
+   ```bash
+   curl -s http://127.0.0.1:8000/healthz       # {"status":"ok"} — process is up
+   curl -s http://127.0.0.1:8000/readyz        # all "ok" — PostgreSQL and MongoDB reachable
+   curl -s https://api.zphirex.com/healthz     # through nginx and TLS
+   ```
+   `/readyz` returns 503 if PostgreSQL or MongoDB is unreachable. Then
+   smoke-test in a browser: open a job on `https://zphirex.com` and reach
+   its Education step; sign in as HR and open an application.
+8. **Frontend, after the backend is healthy:** build and upload with
+   FileZilla (`deployment-vps.md` § 8: `assets/` first, `index.html`
+   last). Backend first matters whenever the frontend uses new API fields.
+
+**Rollback.**
+- Migration failed (step 5): nothing changed in the database. Return the
+  checkout to the noted commit (`sudo -u zphirex git -C /opt/zphirex/app
+  checkout <commit>`); the service was not restarted.
+- Problem after the restart: check out the noted commit and restart
+  (`sudo systemctl restart zphirex-api`). Additive migrations (new
+  nullable columns) are safe to leave in place under the old code. Only if
+  the schema itself must go back, run `alembic downgrade <revision from
+  step 1>` (this drops the new columns and their data), or restore the
+  step-2 backup (`deployment-vps.md` § 11).
+
+### Release notes: education specialization (`1e2f3a4b5c6d`, `2f3a4b5c6d7e`)
+
+Both migrations are additive only — no backfill, no data rewritten, no new
+environment variables:
+
+- `1e2f3a4b5c6d` adds three nullable `VARCHAR(50)` columns to
+  `applications` (`education_qualification_key`,
+  `education_specialization_category`, `education_specialization`) and two
+  to `education_verification_runs` (`specialization_category`,
+  `specialization`);
+- `2f3a4b5c6d7e` adds the nullable JSONB `applications.education_eligibility`
+  (the job's fields of study at submission and why HR was asked to check
+  eligibility).
+
+`ADD COLUMN ... NULL` with no default is a catalog-only change in
+PostgreSQL (no table rewrite; a brief exclusive lock). The new backend
+selects these columns, so it fails with `UndefinedColumn` against an
+unmigrated database — step 5 must succeed before step 6. The previous
+backend runs unchanged against the migrated database (rollback-safe).
+After step 5, `alembic current` prints `2f3a4b5c6d7e (head)`. Deploy the
+frontend after the backend: the new Education step needs
+`specialization_categories` from `qualification-options`.
+
+Existing applications read NULL and keep loading (HR sees the profile's
+qualification text and the generic eligibility notice). A draft saved
+before this release can't be submitted until the candidate picks a
+specialization category and specialization; the Education step asks for
+them. Downgrade drops the columns and the values recorded in them.
+Verified locally: `upgrade` / `downgrade -2` / `upgrade` and `alembic
+check` (no drift).
+
+---
+
+# Legacy: Render + Vercel
+
+**Not the production target.** This Render + Vercel configuration is kept
+unchanged (`render.yaml`, `frontend/vercel.json`) for reference. Nothing
+described below has been executed against a production environment; no
 Render/Vercel resources, secrets, or DNS records have been created.
 
 ## 0. Architecture recap

@@ -620,6 +620,11 @@ fast-forward-only `git` update, a pinned `pip install`,
 `alembic upgrade head`, a restart, and a wait for `/readyz`. Frontend
 updates: rebuild (§ 8) and upload with FileZilla.
 
+The same sequence step by step — pre-checks, backup, migrations, restart,
+health verification, rollback — and the notes for each release's
+migrations are in [`deployment.md`](deployment.md) § "Production release
+sequence (Hostinger VPS)".
+
 ## 15. Not yet verified on the real VPS
 
 These were tested only in containers. Confirm them on the server:

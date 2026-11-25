@@ -4,7 +4,12 @@ import type { ComponentProps } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiClient";
-import type { DraftView, EducationCheck, QualificationOptions } from "../../types/applyFlow";
+import type {
+  DraftView,
+  EducationCheck,
+  QualificationOptions,
+  SpecializationCategoryView,
+} from "../../types/applyFlow";
 import type { PublicApplicationResult } from "../../types/careers";
 import type { ProgramDeclaration } from "../../types/program";
 import * as careersApi from "./api";
@@ -70,11 +75,61 @@ const DOCUMENT = {
 const EDUCATION = {
   qualification_key: "ME_MTECH",
   degree_name: null,
+  specialization_category: "MECHANICAL_MANUFACTURING",
+  specialization: "MECHANICAL_ENGINEERING",
   branch: "Mechanical Engineering",
   institution: "IIT Madras",
   completion_year: 2022,
   tenth_marks_percentage: null,
 };
+
+const category = (key: string, label: string, items: [string, string][]) => ({
+  key,
+  label,
+  specializations: items.map(([itemKey, itemLabel]) => ({ key: itemKey, label: itemLabel })),
+});
+
+/** What the server serves (app/services/education/specializations.py). */
+const SPECIALIZATION_CATEGORIES: SpecializationCategoryView[] = [
+  category("CS_IT", "Computer Science & Information Technology", [
+    ["COMPUTER_SCIENCE_ENGINEERING", "Computer Science and Engineering"],
+    ["INFORMATION_TECHNOLOGY", "Information Technology"],
+    ["AI_ML", "Artificial Intelligence and Machine Learning"],
+    ["DATA_SCIENCE", "Data Science"],
+    ["SOFTWARE_ENGINEERING", "Software Engineering"],
+    ["CYBERSECURITY", "Cybersecurity"],
+    ["COMPUTER_NETWORKS", "Computer Networks"],
+    ["CLOUD_COMPUTING", "Cloud Computing"],
+    ["COMPUTER_ENGINEERING", "Computer Engineering"],
+  ]),
+  category("ELECTRONICS_ELECTRICAL", "Electronics & Electrical", [
+    ["ELECTRONICS_COMMUNICATION", "Electronics and Communication Engineering"],
+    ["VLSI_DESIGN", "VLSI Design"],
+  ]),
+  category("MECHANICAL_MANUFACTURING", "Mechanical & Manufacturing", [
+    ["MECHANICAL_ENGINEERING", "Mechanical Engineering"],
+    ["MECHATRONICS", "Mechatronics"],
+    ["ROBOTICS_AUTOMATION", "Robotics and Automation"],
+    ["AUTOMOTIVE_ENGINEERING", "Automotive Engineering"],
+    ["AEROSPACE_ENGINEERING", "Aerospace Engineering"],
+    ["MANUFACTURING_ENGINEERING", "Manufacturing Engineering"],
+    ["PRODUCTION_ENGINEERING", "Production Engineering"],
+    ["THERMAL_ENGINEERING", "Thermal Engineering"],
+    ["INDUSTRIAL_ENGINEERING", "Industrial Engineering"],
+  ]),
+  category("CIVIL_INFRASTRUCTURE", "Civil & Infrastructure", [
+    ["CIVIL_ENGINEERING", "Civil Engineering"],
+  ]),
+  category("CHEMICAL_MATERIALS", "Chemical & Materials", [
+    ["CHEMICAL_ENGINEERING", "Chemical Engineering"],
+  ]),
+  category("BIOTECH_BIOMEDICAL", "Biotechnology & Biomedical", [
+    ["BIOTECHNOLOGY", "Biotechnology"],
+  ]),
+  category("OTHER_TECHNOLOGY", "Other Technology Domains", [
+    ["ENERGY_ENGINEERING", "Energy Engineering"],
+  ]),
+];
 
 const MTECH_OPTIONS: QualificationOptions = {
   restricted: true,
@@ -101,6 +156,7 @@ const MTECH_OPTIONS: QualificationOptions = {
   ],
   fields_of_study: [],
   field_mandatory: false,
+  specialization_categories: SPECIALIZATION_CATEGORIES,
   accepted_document_types: ["PDF", "PNG", "JPG"],
   max_document_size_mb: 5,
 };
@@ -149,16 +205,21 @@ function mockApi() {
       .mockImplementation(async (_b, _a, background) => ({ ...latestDraft(draftSpies), background })),
     options: vi.spyOn(careersApi, "getQualificationOptions").mockResolvedValue(MTECH_OPTIONS),
     // Like the server: the document and its check survive a save, and a
-    // changed qualification or branch resets the check.
+    // changed qualification or specialization resets the check; the branch
+    // is the specialization's label.
     saveEducation: vi.spyOn(careersApi, "saveDraftEducation").mockImplementation(
       async (_b, _a, education) => {
         const current = latestDraft(draftSpies);
         const changed =
           current.education?.qualification_key !== education.qualification_key ||
-          (current.education?.branch ?? "").toLowerCase() !== (education.branch ?? "").toLowerCase();
+          current.education?.specialization !== education.specialization;
+        const branch =
+          SPECIALIZATION_CATEGORIES.flatMap((item) => item.specializations).find(
+            (item) => item.key === education.specialization,
+          )?.label ?? null;
         return {
           ...current,
-          education,
+          education: { ...education, branch },
           education_check: changed ? check() : current.education_check,
         };
       },
@@ -216,10 +277,20 @@ async function completeBackground() {
   await screen.findByRole("heading", { name: /Step \d of \d: Education/ });
 }
 
+/** The specific-specialization dropdown (not "Specialization category"). */
+const SPECIALIZATION = /^Specialization(?! category)/;
+
+function optionLabels(select: HTMLElement): string[] {
+  return within(select)
+    .getAllByRole("option")
+    .map((option) => option.textContent ?? "");
+}
+
 async function fillEducationDetails() {
   await screen.findByLabelText(/Highest qualification/);
   fill(/Highest qualification/, "ME_MTECH");
-  fill(/Specialization/, "Mechanical Engineering");
+  fill(/Specialization category/, "MECHANICAL_MANUFACTURING");
+  fill(SPECIALIZATION, "MECHANICAL_ENGINEERING");
   fill(/Year of completion/, "2022");
   fill(/Institution \/ university/, "IIT Madras");
 }
@@ -468,8 +539,134 @@ describe("JobApplicationForm — progressive apply flow", () => {
       expect(screen.getByText(/Upload your final-year marks card or degree certificate/)).toBeInTheDocument();
       expect(screen.getByText(/PDF, PNG, JPG, up to 5 MB/)).toBeInTheDocument();
       uploadDocument();
-      expect(screen.getByText("Enter your specialization.")).toBeInTheDocument();
+      expect(screen.getByText("Select your specialization category.")).toBeInTheDocument();
       expect(api.upload).not.toHaveBeenCalled();
+    });
+
+    it("offers all seven specialization categories, with the specialization disabled until one is chosen", async () => {
+      mockApi();
+      await reachEducation();
+      const categorySelect = await screen.findByLabelText(/Specialization category/);
+      expect(optionLabels(categorySelect).slice(1)).toEqual([
+        "Computer Science & Information Technology",
+        "Electronics & Electrical",
+        "Mechanical & Manufacturing",
+        "Civil & Infrastructure",
+        "Chemical & Materials",
+        "Biotechnology & Biomedical",
+        "Other Technology Domains",
+      ]);
+      const specializationSelect = screen.getByLabelText(SPECIALIZATION);
+      expect(specializationSelect).toBeDisabled();
+      expect(optionLabels(specializationSelect)).toEqual(["Select a category first"]);
+
+      fill(/Specialization category/, "MECHANICAL_MANUFACTURING");
+      expect(specializationSelect).toBeEnabled();
+      expect(specializationSelect).toBeRequired();
+      expect(optionLabels(specializationSelect).slice(1)).toEqual([
+        "Mechanical Engineering",
+        "Mechatronics",
+        "Robotics and Automation",
+        "Automotive Engineering",
+        "Aerospace Engineering",
+        "Manufacturing Engineering",
+        "Production Engineering",
+        "Thermal Engineering",
+        "Industrial Engineering",
+      ]);
+    });
+
+    it("clears the specialization when the category changes", async () => {
+      mockApi();
+      await reachEducation();
+      await screen.findByLabelText(/Specialization category/);
+      fill(/Specialization category/, "MECHANICAL_MANUFACTURING");
+      fill(SPECIALIZATION, "ROBOTICS_AUTOMATION");
+      expect(screen.getByLabelText(SPECIALIZATION)).toHaveValue("ROBOTICS_AUTOMATION");
+      fill(/Specialization category/, "CS_IT");
+      const specializationSelect = screen.getByLabelText(SPECIALIZATION);
+      expect(specializationSelect).toHaveValue("");
+      expect(optionLabels(specializationSelect)).not.toContain("Robotics and Automation");
+      expect(optionLabels(specializationSelect)).toContain("Data Science");
+    });
+
+    it("requires the qualification, the category and the specialization", async () => {
+      const api = mockApi();
+      await reachEducation();
+      await screen.findByLabelText(/Highest qualification/);
+      click(/Save and continue/);
+      expect(screen.getByText("Select your qualification.")).toBeInTheDocument();
+      expect(screen.getByText("Select your specialization category.")).toBeInTheDocument();
+      fill(/Highest qualification/, "ME_MTECH");
+      fill(/Specialization category/, "ELECTRONICS_ELECTRICAL");
+      fill(/Year of completion/, "2022");
+      fill(/Institution \/ university/, "IIT Madras");
+      click(/Save and continue/);
+      expect(screen.getByText("Select your specialization.")).toBeInTheDocument();
+      expect(screen.queryByText("Select your specialization category.")).not.toBeInTheDocument();
+      expect(api.saveEducation).not.toHaveBeenCalled();
+    });
+
+    it("sends the selected keys to the server", async () => {
+      const api = mockApi();
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument();
+      await screen.findByText("Document checked");
+      expect(api.saveEducation).toHaveBeenCalledWith(
+        JOB_BASE,
+        AUTH,
+        expect.objectContaining({
+          qualification_key: "ME_MTECH",
+          specialization_category: "MECHANICAL_MANUFACTURING",
+          specialization: "MECHANICAL_ENGINEERING",
+        }),
+      );
+    });
+
+    it("keeps the selections when going back and forward", async () => {
+      mockApi();
+      await reachEducation();
+      await fillEducationDetails();
+      click(/Back/);
+      await screen.findByLabelText(/Place of birth/);
+      click(/^Continue/);
+      expect(await screen.findByLabelText(/Highest qualification/)).toHaveValue("ME_MTECH");
+      expect(screen.getByLabelText(/Specialization category/)).toHaveValue("MECHANICAL_MANUFACTURING");
+      expect(screen.getByLabelText(SPECIALIZATION)).toHaveValue("MECHANICAL_ENGINEERING");
+    });
+
+    it("restores both selections from a resumed draft", async () => {
+      const api = mockApi();
+      api.startDraft.mockResolvedValue(
+        draftView({
+          background: {
+            date_of_birth: "1998-06-01",
+            place_of_birth: "Pune",
+            languages: ["English"],
+            candidate_type: "FRESHER",
+            location: "Pune",
+            preferred_location: "Bengaluru",
+            linkedin_url: null,
+            github_url: null,
+            years_experience: null,
+            current_title: null,
+            current_company: null,
+            notice_period_days: null,
+            immediate_joiner: null,
+          },
+          education: { ...EDUCATION, specialization: "ROBOTICS_AUTOMATION", branch: "Robotics and Automation" },
+        }),
+      );
+      renderForm();
+      await completeDetails();
+      await completeVerify();
+      // The saved background is prefilled: continue straight on.
+      expect(screen.getByLabelText(/Place of birth/)).toHaveValue("Pune");
+      click(/^Continue/);
+      expect(await screen.findByLabelText(/Specialization category/)).toHaveValue("MECHANICAL_MANUFACTURING");
+      expect(screen.getByLabelText(SPECIALIZATION)).toHaveValue("ROBOTICS_AUTOMATION");
+      expect(screen.getByLabelText(SPECIALIZATION)).toBeEnabled();
     });
 
     it("rejects other file types and oversized files without uploading", async () => {
@@ -616,13 +813,15 @@ describe("JobApplicationForm — progressive apply flow", () => {
       await screen.findByText("Document checked");
       fill(/Highest qualification/, "PHD");
       expect(screen.getByText("Details changed")).toBeInTheDocument();
-      fill(/Research area/, "Robotics");
+      // The category and specialization are kept across a qualification change.
+      expect(screen.getByLabelText(/Specialization category/)).toHaveValue("MECHANICAL_MANUFACTURING");
+      expect(screen.getByLabelText(SPECIALIZATION)).toHaveValue("MECHANICAL_ENGINEERING");
       api.saveEducation.mockResolvedValueOnce(
-        draftView({ education: { ...EDUCATION, qualification_key: "PHD", branch: "Robotics" }, document: DOCUMENT, education_check: check() }),
+        draftView({ education: { ...EDUCATION, qualification_key: "PHD" }, document: DOCUMENT, education_check: check() }),
       );
       api.recheck.mockResolvedValue(
         draftView({
-          education: { ...EDUCATION, qualification_key: "PHD", branch: "Robotics" },
+          education: { ...EDUCATION, qualification_key: "PHD" },
           document: DOCUMENT,
           education_check: check({ status: "MISMATCH", message: "You selected Ph.D., but the uploaded document appears to be an M.Tech academic record." }),
         }),
@@ -658,7 +857,13 @@ describe("JobApplicationForm — progressive apply flow", () => {
       expect(basic).toHaveTextContent("Verified");
       expect(screen.getByRole("region", { name: "Professional background" })).toHaveTextContent("Pune");
       const education = screen.getByRole("region", { name: "Education" });
-      expect(education).toHaveTextContent("M.Tech in Mechanical Engineering");
+      expect(within(education).getByText("Highest qualification").nextElementSibling).toHaveTextContent("M.Tech");
+      expect(within(education).getByText("Specialization category").nextElementSibling).toHaveTextContent(
+        "Mechanical & Manufacturing",
+      );
+      expect(within(education).getByText("Specialization").nextElementSibling).toHaveTextContent(
+        "Mechanical Engineering",
+      );
       expect(education).toHaveTextContent("Document checked");
       expect(screen.getByRole("region", { name: "Resume" })).toHaveTextContent("resume.pdf");
 

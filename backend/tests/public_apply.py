@@ -133,7 +133,8 @@ _BACKGROUND_FIELDS = {
 
 DEFAULT_EDUCATION: dict[str, Any] = {
     "qualification_key": "ME_MTECH",
-    "branch": "Computer Science",
+    "specialization_category": "CS_IT",
+    "specialization": "COMPUTER_SCIENCE_ENGINEERING",
     "institution": "Anna University",
     "completion_year": 2020,
 }

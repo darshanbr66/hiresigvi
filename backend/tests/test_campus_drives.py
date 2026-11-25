@@ -221,6 +221,17 @@ async def test_public_candidate_can_view_and_apply_to_active_drive(
     assert applications[0]["candidate_full_name"] == "Priya Candidate"
     assert applications[0]["source"] == "CAMPUS_IMPORT"
 
+    # The shared Education step: all three selections reach HR.
+    education = (
+        await client.get(
+            f"/api/v1/recruiter/applications/{applications[0]['id']}/education",
+            headers=ctx["headers"],
+        )
+    ).json()
+    assert education["highest_qualification"] == "M.Tech"
+    assert education["specialization_category"] == "Computer Science & Information Technology"
+    assert education["specialization"] == "Computer Science and Engineering"
+
 
 async def test_apply_to_paused_drive_is_rejected(client: AsyncClient, super_admin: User) -> None:
     ctx = await _bootstrap_org_with_job(client, "campus-paused")

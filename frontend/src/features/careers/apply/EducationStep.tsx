@@ -80,7 +80,8 @@ export function EducationStep({
   const ids = {
     qualification: useId(),
     degree: useId(),
-    branch: useId(),
+    category: useId(),
+    specialization: useId(),
     institution: useId(),
     year: useId(),
     marks: useId(),
@@ -103,18 +104,35 @@ export function EducationStep({
   });
   const options = optionsQuery.data;
   const selected = options?.options.find((option) => option.key === values.qualification_key);
+  const category = options?.specialization_categories.find(
+    (item) => item.key === values.specialization_category,
+  );
   const check = draft.education_check;
   const busy = phase.kind !== "idle";
   const savedKey = draft.education?.qualification_key ?? null;
-  const savedBranch = (draft.education?.branch ?? "").trim().toLowerCase();
+  const savedSpecialization = draft.education?.specialization ?? "";
   const changedSinceCheck =
     draft.education !== null &&
-    (savedKey !== values.qualification_key || savedBranch !== values.branch.trim().toLowerCase());
+    (savedKey !== values.qualification_key || savedSpecialization !== values.specialization);
   const canContinue = check.can_continue && !changedSinceCheck;
 
   function set<K extends keyof EducationValues>(key: K, value: EducationValues[K]) {
     setErrors((current) => ({ ...current, [key]: undefined }));
     onChange({ ...values, [key]: value });
+  }
+
+  function selectCategory(key: string) {
+    // A specialization belongs to one category: a new category clears it.
+    setErrors((current) => ({
+      ...current,
+      specialization_category: undefined,
+      specialization: undefined,
+    }));
+    onChange({
+      ...values,
+      specialization_category: key,
+      specialization: key === values.specialization_category ? values.specialization : "",
+    });
   }
 
   function validate(): boolean {
@@ -123,8 +141,9 @@ export function EducationStep({
     if (selected?.requires_degree_name && !values.degree_name.trim()) {
       next.degree_name = "Enter the name of your degree.";
     }
-    if (selected?.branch_required && !values.branch.trim()) {
-      next.branch = `Enter your ${selected.branch_label.toLowerCase()}.`;
+    if (!category) next.specialization_category = "Select your specialization category.";
+    else if (!category.specializations.some((item) => item.key === values.specialization)) {
+      next.specialization = "Select your specialization.";
     }
     if (!values.institution.trim()) next.institution = "Enter your institution or university.";
     const yearProblem = completionYearError(values.completion_year);
@@ -208,7 +227,7 @@ export function EducationStep({
       return;
     }
     if (saved.education_check.status === "NOT_STARTED" && saved.document) {
-      // The qualification or branch changed: check the same document again.
+      // The qualification or specialization changed: check the same document again.
       try {
         const rechecked = await recheckAcademicDocument(base, auth);
         onDraft(rechecked);
@@ -268,9 +287,10 @@ export function EducationStep({
     );
   }
 
-  const branchHint = options.field_mandatory
-    ? "This role requires one of the listed fields."
-    : undefined;
+  const specializationHint =
+    options.field_mandatory && options.fields_of_study.length > 0
+      ? `This role asks for: ${options.fields_of_study.join(", ")}.`
+      : undefined;
   const tone = changedSinceCheck ? "info" : STATUS_TONE[check.status];
 
   return (
@@ -317,41 +337,66 @@ export function EducationStep({
           </FormField>
         )}
 
+        <div className="field-row">
+          <FormField
+            id={ids.category}
+            label="Specialization category"
+            message={errors.specialization_category}
+          >
+            <select
+              {...fieldAria(ids.category, errors.specialization_category)}
+              required
+              value={values.specialization_category}
+              onChange={(e) => selectCategory(e.target.value)}
+              disabled={busy}
+            >
+              <option value="">Select…</option>
+              {options.specialization_categories.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField
+            id={ids.specialization}
+            label="Specialization"
+            hint={specializationHint}
+            message={errors.specialization}
+          >
+            <select
+              {...fieldAria(ids.specialization, errors.specialization, specializationHint)}
+              required={Boolean(category)}
+              value={values.specialization}
+              onChange={(e) => set("specialization", e.target.value)}
+              disabled={busy || !category}
+            >
+              <option value="">{category ? "Select…" : "Select a category first"}</option>
+              {category?.specializations.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>
+
         {selected && (
           <div className="field-row">
             <FormField
-              id={ids.branch}
-              label={selected.branch_label}
-              optional={!selected.branch_required}
-              hint={branchHint}
-              message={errors.branch}
+              id={ids.institution}
+              label="Institution / university"
+              message={errors.institution}
             >
-              {options.field_mandatory && options.fields_of_study.length > 0 ? (
-                <select
-                  {...fieldAria(ids.branch, errors.branch, branchHint)}
-                  required
-                  value={values.branch}
-                  onChange={(e) => set("branch", e.target.value)}
-                  disabled={busy}
-                >
-                  <option value="">Select…</option>
-                  {options.fields_of_study.map((field) => (
-                    <option key={field} value={field}>
-                      {field}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  {...fieldAria(ids.branch, errors.branch)}
-                  required={selected.branch_required}
-                  maxLength={150}
-                  value={values.branch}
-                  onChange={(e) => set("branch", e.target.value)}
-                  placeholder="e.g. Mechanical Engineering"
-                  disabled={busy}
-                />
-              )}
+              <input
+                {...fieldAria(ids.institution, errors.institution)}
+                required
+                maxLength={255}
+                value={values.institution}
+                onChange={(e) => set("institution", e.target.value)}
+                autoComplete="organization"
+                disabled={busy}
+              />
             </FormField>
             <FormField id={ids.year} label="Year of completion" message={errors.completion_year}>
               <input
@@ -368,23 +413,6 @@ export function EducationStep({
               />
             </FormField>
           </div>
-        )}
-        {selected && (
-          <FormField
-            id={ids.institution}
-            label="Institution / university"
-            message={errors.institution}
-          >
-            <input
-              {...fieldAria(ids.institution, errors.institution)}
-              required
-              maxLength={255}
-              value={values.institution}
-              onChange={(e) => set("institution", e.target.value)}
-              autoComplete="organization"
-              disabled={busy}
-            />
-          </FormField>
         )}
       </fieldset>
 
@@ -459,7 +487,7 @@ export function EducationStep({
               </p>
               <p>
                 {changedSinceCheck
-                  ? "You changed your qualification. Your document will be checked again when you continue."
+                  ? "You changed your qualification or specialization. Your document will be checked again when you continue."
                   : (check.message ?? "Your document will be checked when you continue.")}
               </p>
               {!changedSinceCheck && (check.can_retry || check.can_request_manual_review) && (

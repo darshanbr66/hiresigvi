@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -139,6 +140,23 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     eligibility_review_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    #: The Education step's three selections as submitted through the
+    #: progressive apply flow — qualification (app/services/education/
+    #: catalog.py) and specialization category + specialization (…/
+    #: specializations.py) keys, kept per application because the Candidate
+    #: profile is shared across applications. NULL for applications created
+    #: any other way, or before these were recorded.
+    education_qualification_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    education_specialization_category: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
+    education_specialization: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: What the eligibility check decided at submission (app/services/
+    #: application_draft_service.py `EligibilityReview`): the JD's fields of
+    #: study, whether they were mandatory, the field the specialization
+    #: matched, and the reasons HR was asked to check eligibility. NULL for
+    #: applications created any other way, or before it was recorded.
+    education_eligibility: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Soft delete — same rationale/shape as Candidate's (app/models/candidate.py).
     # A hard DELETE here would CASCADE away AssessmentInvitation/

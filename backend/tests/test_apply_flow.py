@@ -35,7 +35,12 @@ from app.models.application_draft import (
 from app.models.candidate import Candidate
 from app.models.user import User
 from app.services import application_draft_service
-from app.services.education import catalog, document_check, job_qualification_service
+from app.services.education import (
+    catalog,
+    document_check,
+    job_qualification_service,
+    specializations,
+)
 from app.services.education.job_qualification_service import (
     QualificationRequirements,
     normalize,
@@ -95,6 +100,12 @@ BTECH_RECORD: dict[str, Any] = {
     "degree_text": "Bachelor of Technology",
 }
 
+#: `_save_education` overrides for a different specialization (and category).
+VLSI: dict[str, Any] = {
+    "specialization_category": "ELECTRONICS_ELECTRICAL",
+    "specialization": "VLSI_DESIGN",
+}
+
 
 class FakeEducationAI(EducationAIProvider):
     name = "fake"
@@ -127,7 +138,12 @@ class FakeEducationAI(EducationAIProvider):
         vocabulary: Sequence[VocabularyEntry],
     ) -> AcademicDocumentAnalysis:
         self.document_calls.append(
-            {"selected": selected.key, "content_type": content_type, "size": len(content)}
+            {
+                "selected": selected.key,
+                "selected_branch": selected_branch,
+                "content_type": content_type,
+                "size": len(content),
+            }
         )
         result = self.document_results.pop(0) if self.document_results else doc()
         if isinstance(result, Exception):
@@ -575,7 +591,7 @@ async def test_match_then_submit_records_a_verified_application(
         assert application.education_verification_status == ApplicationEducationStatus.VERIFIED
         candidate = await db_session.get(Candidate, application.candidate_id)
         assert candidate is not None
-        assert candidate.qualification == "M.Tech in Computer Science"
+        assert candidate.qualification == "M.Tech in Computer Science and Engineering"
         assert candidate.institution_name == "Anna University"
         assert candidate.qualification_year == 2020
         document = await db_session.scalar(
@@ -620,7 +636,7 @@ async def test_mismatch_blocks_until_the_right_document_is_uploaded(
     fake_ai.job_result = jd(minimum_level="MASTERS", accepted_qualification_keys=["ME_MTECH"])
     auth = await _start(client, ctx, "mismatch@example.com")
     assert (
-        await _save_education(client, ctx, auth, qualification_key="ME_MTECH", branch="CSE")
+        await _save_education(client, ctx, auth, qualification_key="ME_MTECH")
     ).status_code == 200
 
     fake_ai.document_results = [doc(**BTECH_RECORD)]  # a B.Tech marks card
@@ -700,20 +716,20 @@ async def test_changing_the_qualification_resets_the_check(
     await _save_education(client, ctx, auth)
     assert (await _upload(client, ctx, auth)).json()["education_check"]["status"] == "VERIFIED"
 
-    changed = await _save_education(client, ctx, auth, qualification_key="PHD", branch="Physics")
+    changed = await _save_education(client, ctx, auth, qualification_key="PHD", **VLSI)
     assert changed.json()["education_check"]["status"] == "NOT_STARTED"
     assert changed.json()["document"] is not None  # kept, re-checkable
     assert (await _submit(client, ctx, auth)).status_code == 422
 
     # Same details again (e.g. only the year corrected): no reset.
-    await _save_education(client, ctx, auth, qualification_key="PHD", branch="Physics")
+    await _save_education(client, ctx, auth, qualification_key="PHD", **VLSI)
     fake_ai.document_results = [
-        doc(detected_level="DOCTORATE", detected_qualification_key="PHD", branch_text="Physics")
+        doc(detected_level="DOCTORATE", detected_qualification_key="PHD", branch_text="VLSI Design")
     ]
     rechecked = await client.post(f"{ctx['base']}/apply/draft/education/recheck", json=auth)
     assert rechecked.json()["education_check"]["status"] == "VERIFIED"
     kept = await _save_education(
-        client, ctx, auth, qualification_key="PHD", branch="Physics", completion_year=2021
+        client, ctx, auth, qualification_key="PHD", **VLSI, completion_year=2021
     )
     assert kept.json()["education_check"]["status"] == "VERIFIED"
 
@@ -765,7 +781,7 @@ async def test_check_attempts_are_capped(
     monkeypatch.setattr(application_draft_service, "get_settings", lambda: patched)
     ctx = await _setup(client, "flow-cap")
     auth = await _start(client, ctx, "cap@example.com")
-    await _save_education(client, ctx, auth, qualification_key="ME_MTECH", branch="CSE")
+    await _save_education(client, ctx, auth, qualification_key="ME_MTECH")
     await _upload(client, ctx, auth)
     await _upload(client, ctx, auth)
     third = await _upload(client, ctx, auth)
@@ -953,3 +969,316 @@ async def test_clear_requirements_do_not_flag_the_application(
         f"/api/v1/recruiter/applications/{submitted.json()['id']}", headers=ctx["headers"]
     )
     assert detail.json()["eligibility_review_required"] is False
+
+
+# --- Two-level specialization (category -> specialization) --------------------
+
+
+def _error_code(response: Any) -> str:
+    return response.json()["error"]["code"]
+
+
+async def test_options_expose_the_specialization_catalogue(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    ctx = await _setup(client, "flow-spec-options")
+    response = await client.get(f"{ctx['base']}/qualification-options")
+    assert response.status_code == 200, response.text
+    served = response.json()["specialization_categories"]
+    assert served == [
+        {
+            "key": category.key,
+            "label": category.label,
+            "specializations": [
+                {"key": item.key, "label": item.label} for item in category.specializations
+            ],
+        }
+        for category in specializations.CATEGORIES
+    ]
+    assert len(served) == 7
+    # Keys and labels only — nothing else is exposed.
+    assert all(set(category) == {"key", "label", "specializations"} for category in served)
+
+
+async def test_forged_or_unknown_specializations_are_refused(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    ctx = await _setup(client, "flow-spec-forged")
+    auth = await _start(client, ctx, "forged@example.com")
+    cases: list[tuple[dict[str, Any], str]] = [
+        # A real specialization, but from another category.
+        (
+            {"specialization_category": "CS_IT", "specialization": "ROBOTICS_AUTOMATION"},
+            "specialization_invalid",
+        ),
+        ({"specialization_category": "NOT_A_CATEGORY"}, "specialization_category_invalid"),
+        ({"specialization": "NOT_A_SPECIALIZATION"}, "specialization_invalid"),
+        ({"specialization_category": None}, "specialization_category_required"),
+        ({"specialization": None}, "specialization_required"),
+        # A label is not a key.
+        ({"specialization": "Computer Science and Engineering"}, "specialization_invalid"),
+    ]
+    for overrides, code in cases:
+        response = await _save_education(client, ctx, auth, **overrides)
+        assert response.status_code == 422, (overrides, response.text)
+        assert _error_code(response) == code, overrides
+    view = await client.post(f"{ctx['base']}/apply/draft/view", json=auth)
+    assert view.json()["education"] is None  # nothing forged was stored
+
+
+async def test_branch_is_always_derived_from_the_specialization(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    ctx = await _setup(client, "flow-spec-branch")
+    auth = await _start(client, ctx, "branch@example.com")
+    saved = await _save_education(
+        client,
+        ctx,
+        auth,
+        specialization_category="MECHANICAL_MANUFACTURING",
+        specialization="ROBOTICS_AUTOMATION",
+        branch="Anything the client sends",
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["education"]["branch"] == "Robotics and Automation"
+
+
+async def test_draft_restores_and_submission_keeps_all_three_selections(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI, db_session: AsyncSession
+) -> None:
+    ctx = await _setup(client, "flow-spec-submit")
+    auth = await _start(client, ctx, "robotics@example.com")
+    selection = {
+        "qualification_key": "PHD",
+        "specialization_category": "MECHANICAL_MANUFACTURING",
+        "specialization": "ROBOTICS_AUTOMATION",
+    }
+    assert (await _save_education(client, ctx, auth, **selection)).status_code == 200
+
+    # Resumed later: a fresh view, and a fresh start of the same draft.
+    resumed = [
+        await client.post(f"{ctx['base']}/apply/draft/view", json=auth),
+        await client.post(
+            f"{ctx['base']}/apply/draft",
+            json={**auth, "full_name": "Jane Candidate", "phone": phone_for(auth["email"])},
+        ),
+    ]
+    for response in resumed:
+        assert response.status_code == 200, response.text
+        education = response.json()["education"]
+        assert {key: education[key] for key in selection} == selection
+
+    fake_ai.document_results = [
+        doc(
+            detected_level="DOCTORATE",
+            detected_qualification_key="PHD",
+            branch_text="Robotics and Automation",
+        )
+    ]
+    uploaded = await _upload(client, ctx, auth)
+    assert uploaded.json()["education_check"]["status"] == "VERIFIED"
+    # The Ph.D. check still runs against the qualification, with the
+    # specialization's label as the branch.
+    assert fake_ai.document_calls[-1]["selected"] == "PHD"
+    assert fake_ai.document_calls[-1]["selected_branch"] == "Robotics and Automation"
+
+    submitted = await _submit(client, ctx, auth)
+    assert submitted.status_code == 201, submitted.text
+    async with rls_bypass(db_session):
+        application = await db_session.get(Application, submitted.json()["id"])
+        assert application is not None
+        assert application.education_qualification_key == "PHD"
+        assert application.education_specialization_category == "MECHANICAL_MANUFACTURING"
+        assert application.education_specialization == "ROBOTICS_AUTOMATION"
+        run = await db_session.scalar(
+            select(EducationVerificationRun).where(
+                EducationVerificationRun.application_id == application.id
+            )
+        )
+        assert run is not None and run.qualification_key == "PHD"
+        assert run.specialization_category == "MECHANICAL_MANUFACTURING"
+        assert run.specialization == "ROBOTICS_AUTOMATION"
+
+    response = await client.get(
+        f"/api/v1/recruiter/applications/{application.id}/education", headers=ctx["headers"]
+    )
+    assert response.status_code == 200, response.text
+    education = response.json()
+    assert education["highest_qualification"] == "Ph.D."
+    assert education["specialization_category"] == "Mechanical & Manufacturing"
+    assert education["specialization"] == "Robotics and Automation"
+    first_check = education["checks"][0]
+    assert first_check["selected_qualification"] == "Ph.D."
+    assert first_check["selected_specialization_category"] == "Mechanical & Manufacturing"
+    assert first_check["selected_specialization"] == "Robotics and Automation"
+
+
+async def test_changing_only_the_specialization_resets_the_check(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    ctx = await _setup(client, "flow-spec-reset")
+    auth = await _start(client, ctx, "spec-reset@example.com")
+    await _save_education(client, ctx, auth)
+    assert (await _upload(client, ctx, auth)).json()["education_check"]["status"] == "VERIFIED"
+    changed = await _save_education(client, ctx, auth, specialization="DATA_SCIENCE")
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["education_check"]["status"] == "NOT_STARTED"
+
+
+async def test_records_without_the_new_fields_still_load(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI, db_session: AsyncSession
+) -> None:
+    ctx = await _setup(client, "flow-spec-legacy")
+    # An application submitted before the fields were recorded...
+    auth = await _start(client, ctx, "legacy-app@example.com")
+    await _save_education(client, ctx, auth)
+    await _upload(client, ctx, auth)
+    submitted = await _submit(client, ctx, auth)
+    assert submitted.status_code == 201, submitted.text
+    # ...and a draft saved before the catalogue existed (free-text branch).
+    draft_auth = await _start(client, ctx, "legacy-draft@example.com")
+    await _save_education(client, ctx, draft_auth)
+    await _upload(client, ctx, draft_auth)
+    async with rls_bypass(db_session):
+        application = await db_session.get(Application, submitted.json()["id"])
+        assert application is not None
+        application.education_qualification_key = None
+        application.education_specialization_category = None
+        application.education_specialization = None
+        application.education_eligibility = None
+        runs = await db_session.scalars(
+            select(EducationVerificationRun).where(
+                EducationVerificationRun.application_id == application.id
+            )
+        )
+        for run in runs:
+            run.specialization_category = None
+            run.specialization = None
+        draft = await db_session.scalar(
+            select(ApplicationDraft).where(ApplicationDraft.email == "legacy-draft@example.com")
+        )
+        assert draft is not None and draft.education is not None
+        legacy = {
+            key: value
+            for key, value in draft.education.items()
+            if key not in ("specialization_category", "specialization")
+        }
+        draft.education = {**legacy, "branch": "CSE"}
+        await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/recruiter/applications/{application.id}/education", headers=ctx["headers"]
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    # Falls back to the document's qualification; the new fields are empty.
+    assert body["highest_qualification"] == "M.Tech"
+    assert body["specialization_category"] is None and body["specialization"] is None
+    assert body["job_fields_of_study"] == [] and body["eligibility_review_reasons"] == []
+    assert body["checks"][0]["selected_specialization"] is None
+
+    view = await client.post(f"{ctx['base']}/apply/draft/view", json=draft_auth)
+    assert view.status_code == 200, view.text
+    assert view.json()["education"]["specialization_category"] is None
+    assert view.json()["education"]["branch"] == "CSE"
+    # It can't be submitted until the candidate picks a specialization.
+    blocked = await _submit(client, ctx, draft_auth)
+    assert blocked.status_code == 422
+    assert _error_code(blocked) == "education_required"
+
+
+@pytest.mark.parametrize(
+    ("field_of_study", "category_key", "specialization_key", "flagged"),
+    [
+        ("Mechanical Engineering", "MECHANICAL_MANUFACTURING", "MECHANICAL_ENGINEERING", False),
+        ("CSE", "CS_IT", "COMPUTER_SCIENCE_ENGINEERING", False),  # a known equivalent
+        ("Mechanical Engineering", "MECHANICAL_MANUFACTURING", "ROBOTICS_AUTOMATION", True),
+    ],
+)
+async def test_a_mandatory_jd_field_flags_an_unmatched_specialization_for_hr(
+    client: AsyncClient,
+    super_admin: User,
+    fake_ai: FakeEducationAI,
+    db_session: AsyncSession,
+    field_of_study: str,
+    category_key: str,
+    specialization_key: str,
+    flagged: bool,
+) -> None:
+    suffix = f"{specialization_key.lower().replace('_', '-')}-{str(flagged).lower()}"
+    ctx = await _setup(client, f"flow-field-{suffix}"[:60])
+    fake_ai.job_result = jd(
+        minimum_level="MASTERS",
+        accepted_qualification_keys=["ME_MTECH"],
+        fields_of_study=[field_of_study],
+        field_mandatory=True,
+    )
+    auth = await _start(client, ctx, f"field-{suffix}@example.com")
+    saved = await _save_education(
+        client,
+        ctx,
+        auth,
+        specialization_category=category_key,
+        specialization=specialization_key,
+    )
+    assert saved.status_code == 200, saved.text  # never refused on the field
+    await _upload(client, ctx, auth)
+    submitted = await _submit(client, ctx, auth)
+    assert submitted.status_code == 201, submitted.text
+    application_id = submitted.json()["id"]
+    detail = await client.get(
+        f"/api/v1/recruiter/applications/{application_id}", headers=ctx["headers"]
+    )
+    assert detail.json()["eligibility_review_required"] is flagged
+
+    # HR sees the job's field, the selections, and why it was flagged.
+    education = (
+        await client.get(
+            f"/api/v1/recruiter/applications/{application_id}/education", headers=ctx["headers"]
+        )
+    ).json()
+    assert education["job_fields_of_study"] == [field_of_study]
+    assert education["job_field_mandatory"] is True
+    assert education["specialization_category"] == specializations.category_label(category_key)
+    assert education["specialization"] == specializations.specialization_label(
+        specialization_key
+    )
+    reasons = education["eligibility_review_reasons"]
+    if flagged:
+        assert education["matched_field_of_study"] is None
+        assert len(reasons) == 1
+        assert field_of_study in reasons[0] and "Robotics and Automation" in reasons[0]
+    else:
+        assert education["matched_field_of_study"] == field_of_study
+        assert reasons == []
+    async with rls_bypass(db_session):
+        activities = (
+            await db_session.scalars(
+                select(Activity).where(
+                    Activity.action == "QUALIFICATION_REVIEW_REQUIRED",
+                    Activity.entity_id == application_id,
+                )
+            )
+        ).all()
+    assert len(activities) == (1 if flagged else 0)
+
+
+async def test_unclear_requirements_give_hr_the_reason(
+    client: AsyncClient, super_admin: User, fake_ai: FakeEducationAI
+) -> None:
+    ctx = await _setup(client, "flow-reason-unclear")
+    fake_ai.job_result = AIProviderTimeoutError("timed out")
+    auth = await _start(client, ctx, "reason-unclear@example.com")
+    await _save_education(client, ctx, auth)
+    await _upload(client, ctx, auth)
+    submitted = await _submit(client, ctx, auth)
+    assert submitted.status_code == 201, submitted.text
+    education = (
+        await client.get(
+            f"/api/v1/recruiter/applications/{submitted.json()['id']}/education",
+            headers=ctx["headers"],
+        )
+    ).json()
+    assert education["job_fields_of_study"] == []
+    assert len(education["eligibility_review_reasons"]) == 1
+    assert "couldn't be determined automatically" in education["eligibility_review_reasons"][0]

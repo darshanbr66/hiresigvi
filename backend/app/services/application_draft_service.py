@@ -8,7 +8,8 @@ check of the academic document, then submission through the existing
                  application per job, reapply window — the same rules and
                  consequences as a submission), then an OPEN draft
     Step 3    -> `save_background`
-    Step 4    -> `save_education` (qualification must be one the JD allows)
+    Step 4    -> `save_education` (qualification must be one the JD allows;
+                 specialization must belong to the chosen category)
               -> `upload_document` / `recheck_document` (AI consistency
                  check, every attempt kept as an EducationVerificationRun)
               -> `accept_manual_review` (only when the check could not
@@ -85,7 +86,12 @@ from app.services import (
     public_campus_drive_service,
 )
 from app.services.candidate_document_service import MarksCardUpload
-from app.services.education import catalog, document_check, job_qualification_service
+from app.services.education import (
+    catalog,
+    document_check,
+    job_qualification_service,
+    specializations,
+)
 from app.services.education.catalog import QualificationOption
 from app.services.education.job_qualification_service import (
     BRANCH_REQUIRED_FAMILIES,
@@ -275,7 +281,12 @@ def branch_required(option: QualificationOption, requirements: QualificationRequ
 
 def _validate_education(
     details: EducationDetails, requirements: QualificationRequirements
-) -> QualificationOption:
+) -> tuple[QualificationOption, EducationDetails]:
+    """Validates the selection and returns it normalized: `branch` is always
+    the selected specialization's label, never what the client sent. The
+    category/specialization pairing is a fixed lookup in the catalogue
+    (specializations.py) — an unknown key, or a specialization from another
+    category, is rejected."""
     option = catalog.get_option(details.qualification_key)
     offered = {o.key for o in offered_options(requirements)}
     if option is None or option.key not in offered:
@@ -286,20 +297,88 @@ def _validate_education(
         )
     if option.is_other and not details.degree_name:
         raise UnprocessableError("Enter the name of your degree.", code="degree_name_required")
-    if branch_required(option, requirements) and not details.branch:
+    if not details.specialization_category:
         raise UnprocessableError(
-            f"Enter your {option.branch_label.lower()}.", code="branch_required"
+            "Select your specialization category.", code="specialization_category_required"
         )
-    if requirements.field_mandatory and details.branch:
-        allowed = {field.casefold() for field in requirements.fields_of_study}
-        if details.branch.casefold() not in allowed:
-            raise UnprocessableError(
-                "This role requires one of these fields: "
-                + ", ".join(requirements.fields_of_study)
-                + ".",
-                code="branch_not_eligible",
-            )
-    return option
+    if specializations.get_category(details.specialization_category) is None:
+        raise UnprocessableError(
+            "Select a specialization category from the list.",
+            code="specialization_category_invalid",
+        )
+    if not details.specialization:
+        raise UnprocessableError("Select your specialization.", code="specialization_required")
+    specialization = specializations.resolve(
+        details.specialization_category, details.specialization
+    )
+    if specialization is None:
+        raise UnprocessableError(
+            "Select a specialization from the selected category.",
+            code="specialization_invalid",
+        )
+    # A JD's required field of study doesn't narrow the choice: a
+    # specialization that doesn't match it flags the submitted application
+    # for HR instead (`eligibility_review`).
+    return option, details.model_copy(update={"branch": specialization.label})
+
+
+@dataclass(frozen=True)
+class EligibilityReview:
+    """Why HR should check a submitted application's eligibility (empty
+    `reasons` = no flag), and the JD's field of study it was checked
+    against. Stored on the application (`education_eligibility`) so HR sees
+    exactly what was decided at submission, whatever the JD says later."""
+
+    fields_of_study: list[str]
+    field_mandatory: bool
+    matched_field: str | None
+    reasons: list[dict[str, str]]
+
+    def as_json(self) -> dict[str, Any]:
+        return {
+            "fields_of_study": self.fields_of_study,
+            "field_mandatory": self.field_mandatory,
+            "matched_field": self.matched_field,
+            "reasons": self.reasons,
+        }
+
+
+def eligibility_review(
+    details: EducationDetails, requirements: QualificationRequirements
+) -> EligibilityReview:
+    reasons: list[dict[str, str]] = []
+    if requirements.needs_review:
+        reasons.append(
+            {
+                "code": "REQUIREMENTS_UNCLEAR",
+                "message": (
+                    "The job's qualification requirements couldn't be determined "
+                    "automatically, so the default qualification list was offered."
+                ),
+            }
+        )
+    match = specializations.match_field_of_study(
+        details.specialization, requirements.fields_of_study
+    )
+    if requirements.field_mandatory and requirements.fields_of_study and not match.matched:
+        label = specializations.specialization_label(details.specialization) or "—"
+        reasons.append(
+            {
+                "code": "FIELD_OF_STUDY_NOT_MATCHED",
+                "message": (
+                    "The job requires "
+                    + " or ".join(requirements.fields_of_study)
+                    + f", and the selected specialization (“{label}”) couldn't be matched "
+                    "to it automatically."
+                ),
+            }
+        )
+    return EligibilityReview(
+        fields_of_study=list(requirements.fields_of_study),
+        field_mandatory=requirements.field_mandatory,
+        matched_field=match.field_of_study,
+        reasons=reasons,
+    )
 
 
 def _branch_key(education: dict[str, Any] | None) -> tuple[str | None, str | None]:
@@ -317,7 +396,7 @@ async def save_education(
     can re-check it or upload another)."""
     draft = await _require_draft(db, ctx, email=email, token=token)
     requirements = await job_qualification_service.get_requirements(db, ctx.job)
-    _validate_education(details, requirements)
+    _, details = _validate_education(details, requirements)
     new_education = details.model_dump(mode="json")
     if _branch_key(draft.education) != _branch_key(new_education):
         draft.education_status = EducationCheckStatus.NOT_STARTED
@@ -546,6 +625,8 @@ async def _run_check(
             draft_id=draft.id,
             academic_document_id=document.id,
             qualification_key=option.key,
+            specialization_category=details.specialization_category,
+            specialization=details.specialization,
             outcome=result.outcome,
             reason_code=result.reason_code,
             confidence=analysis_json.get("confidence") if analysis_json else None,
@@ -698,7 +779,14 @@ async def submit(
     option = catalog.get_option(details.qualification_key)
     if option is None:
         raise UnprocessableError("Select your qualification again.", code="education_required")
+    if not details.specialization_category or not details.specialization:
+        # A draft saved before the specialization catalogue existed.
+        raise UnprocessableError(
+            "Select your specialization category and specialization in the Education step.",
+            code="education_required",
+        )
     requirements = await _recheck_eligibility(db, ctx, draft, details)
+    review = eligibility_review(details, requirements)
 
     background = ApplicantBackground.model_validate(draft.background)
     profile = PublicApplicantProfile.model_validate(
@@ -721,8 +809,12 @@ async def submit(
         session: AsyncSession, application: Application, candidate: Candidate
     ) -> None:
         application.education_verification_status = education_status
-        application.eligibility_review_required = requirements.needs_review
-        if requirements.needs_review:
+        application.education_qualification_key = option.key
+        application.education_specialization_category = details.specialization_category
+        application.education_specialization = details.specialization
+        application.eligibility_review_required = bool(review.reasons)
+        application.education_eligibility = review.as_json()
+        for reason in review.reasons:
             await activity_service.record_activity(
                 session,
                 organization_id=ctx.organization.id,
@@ -731,11 +823,8 @@ async def submit(
                 entity_type="application",
                 entity_id=application.id,
                 entity_label=f"{candidate.full_name} — {ctx.job.title}",
-                description=(
-                    "The job's qualification requirements couldn't be determined automatically, "
-                    "so the default qualification list was offered; please check the candidate's "
-                    "eligibility against the job description."
-                ),
+                description=reason["message"]
+                + " Please check the candidate's eligibility against the job description.",
             )
         candidate.education_level = option.education_level
         candidate.specialization = details.branch[:150] if details.branch else None

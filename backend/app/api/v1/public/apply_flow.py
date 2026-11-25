@@ -5,6 +5,7 @@ transport and call app/services/application_draft_service.py, which owns
 every rule.
 
     GET  .../qualification-options          the JD-derived qualification list
+                                            + the specialization catalogue
     POST .../apply/draft                    start/resume (after email verify)
     POST .../apply/draft/view               current draft
     PUT  .../apply/draft/background         Step 3
@@ -46,6 +47,8 @@ from app.schemas.application_draft import (
     EducationSave,
     QualificationOptionsView,
     QualificationOptionView,
+    SpecializationCategoryView,
+    SpecializationView,
 )
 from app.schemas.public import PublicApplicationResult
 from app.schemas.public_campus_drive import PublicCampusDriveApplicationResult
@@ -55,7 +58,7 @@ from app.services import (
     public_campus_drive_service,
 )
 from app.services.application_draft_service import ApplyContext, SubmittedDraft
-from app.services.education import job_qualification_service
+from app.services.education import job_qualification_service, specializations
 from app.services.education.job_qualification_service import QualificationRequirements
 
 ACCEPTED_DOCUMENT_TYPES = ["PDF", "PNG", "JPG"]
@@ -97,6 +100,17 @@ def options_view(requirements: QualificationRequirements) -> QualificationOption
         ],
         fields_of_study=requirements.fields_of_study if requirements.field_mandatory else [],
         field_mandatory=requirements.field_mandatory,
+        specialization_categories=[
+            SpecializationCategoryView(
+                key=category.key,
+                label=category.label,
+                specializations=[
+                    SpecializationView(key=item.key, label=item.label)
+                    for item in category.specializations
+                ],
+            )
+            for category in specializations.CATEGORIES
+        ],
         accepted_document_types=ACCEPTED_DOCUMENT_TYPES,
         max_document_size_mb=get_settings().max_academic_document_size_mb,
     )

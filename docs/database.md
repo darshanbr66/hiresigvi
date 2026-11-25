@@ -224,6 +224,20 @@ table tenant-owned with the standard RLS policy):
 - `applications.eligibility_review_required` BOOLEAN NOT NULL DEFAULT false
   (migration `0d1e2f3a4b5c`) — the job's qualification requirements were
   ambiguous at submission, so HR checks eligibility.
+- `applications.education_qualification_key`,
+  `applications.education_specialization_category`,
+  `applications.education_specialization` VARCHAR(50) NULL (migration
+  `1e2f3a4b5c6d`, additive) — the Education step's three selections as
+  submitted (keys into `app/services/education/catalog.py` and
+  `specializations.py`), per application because the Candidate profile is
+  shared. NULL for applications created any other way or before they were
+  recorded; HR then sees the profile's qualification text.
+- `applications.education_eligibility` JSONB NULL (migration
+  `2f3a4b5c6d7e`, additive) — what the eligibility check decided at
+  submission: `{fields_of_study, field_mandatory, matched_field, reasons:
+  [{code, message}]}` (`REQUIREMENTS_UNCLEAR`, `FIELD_OF_STUDY_NOT_MATCHED`).
+  Stored, not recomputed, so HR sees what applied when the candidate
+  submitted. NULL for older applications.
 - `candidates.qualification_year` NULL — year the highest qualification was
   (or will be) completed.
 - **application_drafts** `id, organization_id, job_id, campus_drive_id NULL,
@@ -240,7 +254,8 @@ table tenant-owned with the standard RLS policy):
   metadata of the uploaded marks card/certificate (bytes in the storage
   abstraction). Linked to the candidate and application at submission.
 - **education_verification_runs** `id, organization_id, draft_id NULL,
-  application_id NULL, academic_document_id NULL, qualification_key, outcome
+  application_id NULL, academic_document_id NULL, qualification_key,
+  specialization_category NULL, specialization NULL (`1e2f3a4b5c6d`), outcome
   (MATCH/MISMATCH/UNCLEAR/FAILED), reason_code, confidence NULL,
   candidate_message, analysis JSONB NULL, provider, model, error_message,
   qualification_source_hash` — every AI consistency check, kept as history.

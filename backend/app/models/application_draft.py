@@ -180,6 +180,10 @@ class EducationVerificationRun(UUIDPrimaryKeyMixin, TenantScopedMixin, Timestamp
         UUID(as_uuid=True), ForeignKey("academic_documents.id", ondelete="SET NULL"), nullable=True
     )
     qualification_key: Mapped[str] = mapped_column(String(50), nullable=False)
+    #: The specialization category + specialization the document was
+    #: checked against (NULL for checks run before they were recorded).
+    specialization_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    specialization: Mapped[str | None] = mapped_column(String(50), nullable=True)
     outcome: Mapped[EducationVerificationOutcome] = mapped_column(
         Enum(EducationVerificationOutcome, name="education_verification_outcome", native_enum=True),
         nullable=False,

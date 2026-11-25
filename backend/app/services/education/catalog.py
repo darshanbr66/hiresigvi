@@ -178,6 +178,12 @@ def get_option(key: str | None) -> QualificationOption | None:
     return BY_KEY.get(key) if key else None
 
 
+def qualification_label(key: str | None) -> str | None:
+    """The label for a stored key (the key itself if it was retired)."""
+    option = get_option(key)
+    return option.label if option else key
+
+
 def rank(level: QualificationLevel) -> int:
     return LEVEL_RANK[level]
 

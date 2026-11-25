@@ -58,6 +58,17 @@ class EducationDetails(BaseModel):
     qualification_key: str = Field(min_length=1, max_length=50)
     #: Required only for a catch-all ("Other bachelor's degree") option.
     degree_name: Annotated[str | None, BlankToNone] = Field(default=None, max_length=150)
+    #: Keys from app/services/education/specializations.py. Optional in the
+    #: schema so drafts saved before the catalogue existed still load; the
+    #: service requires both, and that they belong together, on every save
+    #: and again at submission.
+    specialization_category: Annotated[str | None, BlankToNone] = Field(
+        default=None, max_length=50
+    )
+    specialization: Annotated[str | None, BlankToNone] = Field(default=None, max_length=50)
+    #: The specialization's label, set by the server from `specialization`
+    #: (whatever the client sends is replaced). The academic-document check
+    #: compares the document's branch against it.
     branch: Annotated[str | None, BlankToNone] = Field(default=None, max_length=150)
     institution: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
     completion_year: int
@@ -88,6 +99,17 @@ class QualificationOptionView(BaseModel):
     document_hint: str
 
 
+class SpecializationView(BaseModel):
+    key: str
+    label: str
+
+
+class SpecializationCategoryView(BaseModel):
+    key: str
+    label: str
+    specializations: list[SpecializationView]
+
+
 class QualificationOptionsView(BaseModel):
     """What the Education step offers for this job — derived from the JD,
     never a global list. `restricted=false` means the JD doesn't clearly
@@ -98,6 +120,9 @@ class QualificationOptionsView(BaseModel):
     options: list[QualificationOptionView]
     fields_of_study: list[str]
     field_mandatory: bool
+    #: The two-level specialization choice (category -> specialization),
+    #: the same for every job and qualification.
+    specialization_categories: list[SpecializationCategoryView]
     accepted_document_types: list[str]
     max_document_size_mb: int
 

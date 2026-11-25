@@ -61,18 +61,64 @@ export function EducationReviewCard({
         </span>
       </p>
       {query.data?.eligibility_review_required && (
-        <p className="apply-notice" role="note">
-          Eligibility needs checking: this job's qualification requirements couldn't be determined
-          automatically, so the candidate could choose any qualification. Please check it against the
-          job description.
-        </p>
+        <div className="apply-notice" role="note">
+          <p>
+            <strong>Eligibility needs checking.</strong>{" "}
+            {query.data.eligibility_review_reasons.length === 0 &&
+              "The candidate's qualification couldn't be matched to this job's requirements automatically."}{" "}
+            Please check it against the job description.
+          </p>
+          {query.data.eligibility_review_reasons.length > 0 && (
+            <ul>
+              {query.data.eligibility_review_reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {query.isError && <Alert>Could not load the education details.</Alert>}
       {query.data && (
         <>
           <dl className="apply-summary">
-            <dt>Qualification</dt>
-            <dd>{query.data.qualification ?? "—"}</dd>
+            {query.data.highest_qualification ? (
+              <>
+                <dt>Highest qualification</dt>
+                <dd>{query.data.highest_qualification}</dd>
+                <dt>Specialization category</dt>
+                <dd>{query.data.specialization_category ?? "—"}</dd>
+                <dt>Specialization</dt>
+                <dd>{query.data.specialization ?? "—"}</dd>
+                {query.data.job_fields_of_study.length > 0 && (
+                  <>
+                    <dt>
+                      {query.data.job_field_mandatory
+                        ? "Job's required field of study"
+                        : "Job's field of study"}
+                    </dt>
+                    <dd>
+                      {query.data.job_fields_of_study.join(" or ")}
+                      {query.data.matched_field_of_study ? (
+                        <span className="chip chip-verified education-field-chip">
+                          Matches specialization
+                        </span>
+                      ) : (
+                        query.data.job_field_mandatory && (
+                          <span className="chip chip-pending education-field-chip">
+                            Not matched automatically
+                          </span>
+                        )
+                      )}
+                    </dd>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <dt>Qualification</dt>
+                <dd>{query.data.qualification ?? "—"}</dd>
+              </>
+            )}
             <dt>Institution</dt>
             <dd>
               {query.data.institution ?? "—"}
@@ -85,6 +131,20 @@ export function EducationReviewCard({
                   {OUTCOME_LABEL[latest.outcome]}
                   {latest.confidence !== null && ` · confidence ${Math.round(latest.confidence * 100)}%`}
                 </dd>
+                {latest.selected_qualification && (
+                  <>
+                    <dt>Checked against</dt>
+                    <dd>
+                      {[
+                        latest.selected_qualification,
+                        latest.selected_specialization_category,
+                        latest.selected_specialization,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </dd>
+                  </>
+                )}
                 {latest.detected_level && (
                   <>
                     <dt>Document appears to show</dt>

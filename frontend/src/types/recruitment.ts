@@ -252,7 +252,20 @@ export interface ApplicationResponse {
 export interface ApplicationEducation {
   education_verification_status: "VERIFIED" | "MANUAL_REVIEW" | null;
   eligibility_review_required: boolean;
+  /** The candidate profile's qualification text (shared across applications). */
   qualification: string | null;
+  /** This application's Education-step selections, as labels — null for
+   * applications submitted before they were recorded. */
+  highest_qualification: string | null;
+  specialization_category: string | null;
+  specialization: string | null;
+  /** The job's fields of study as recorded at submission; whether the JD
+   * made them mandatory; the one the specialization matched. */
+  job_fields_of_study: string[];
+  job_field_mandatory: boolean;
+  matched_field_of_study: string | null;
+  /** Why HR is asked to check eligibility (empty for older flags). */
+  eligibility_review_reasons: string[];
   institution: string | null;
   qualification_year: number | null;
   document: { filename: string; content_type: string; size_bytes: number; uploaded_at: string } | null;
@@ -261,6 +274,10 @@ export interface ApplicationEducation {
     reason_code: string;
     confidence: number | null;
     candidate_message: string;
+    /** What the document was checked against (labels). */
+    selected_qualification: string | null;
+    selected_specialization_category: string | null;
+    selected_specialization: string | null;
     document_type: string | null;
     detected_level: string | null;
     degree_text: string | null;

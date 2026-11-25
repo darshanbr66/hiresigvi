@@ -965,6 +965,19 @@
   font-size: 0.88rem;
 }
 
+.apply-notice > p {
+  margin: 0;
+}
+
+.apply-notice > ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.education-field-chip {
+  margin-left: 0.5rem;
+}
+
 .verify-status-ok {
   background: var(--color-active-bg);
   color: var(--color-active-text);

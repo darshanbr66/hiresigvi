@@ -242,7 +242,7 @@ submitted. The final submission builds the Application from what the
 server validated at each step. The browser sends only the resume and the
 optional 10th marks card. Going back to edit is free. Changing the email
 needs a new verification (and a new draft). Changing the qualification or
-branch resets the document check. A JD that changed since the Education
+specialization resets the document check. A JD that changed since the Education
 step is re-checked at submission (409 `education_recheck_required` if the
 selection is no longer eligible); the selection is re-validated on every
 submit, not only when the JD changed. Expired drafts are removed with their
@@ -275,7 +275,52 @@ of the AI's reading:
 - nothing below the stated minimum level is offered;
 - related higher qualifications of the same family are added unless the JD
   restricts to exactly the listed degrees;
-- a mandatory branch or field becomes a required choice.
+- a field of study the JD makes mandatory never narrows the choice (see
+  the specialization below): when the selected specialization doesn't
+  deterministically match one of the JD's fields, the submitted
+  application is flagged for HR (`eligibility_review_required` +
+  `QUALIFICATION_REVIEW_REQUIRED` activity), never refused.
+
+**Education — specialization (two levels).** After the qualification the
+candidate picks a **specialization category** and then a
+**specialization** from that category (seven categories, from Computer
+Science & IT to Other Technology Domains). The catalogue is a fixed table in
+`app/services/education/specializations.py` — stable keys, display labels —
+served to the step by `qualification-options`; the frontend has no copy of
+it. Membership is a lookup, never an AI decision: the server refuses an
+unknown key or a specialization from another category, on every save and
+again at submission. Changing the category clears the specialization;
+changing the qualification keeps both. The specialization's label is what
+the academic-document check compares the document's branch against (the
+qualification check itself is unchanged). The three selections are stored
+per application (`applications.education_qualification_key`,
+`education_specialization_category`, `education_specialization`) and on
+each `EducationVerificationRun`, and HR sees them on the application's
+Education card.
+
+**Matching a JD's field of study** (`specializations.match_field_of_study`,
+deterministic, never AI). The JD field is split into its alternatives ("/",
+",", "or") and both sides are normalized (case, punctuation, "&" = "and",
+"Engg." = "Engineering", "and"/"of"/"in" ignored, simple plurals,
+"C.S.E." = "CSE"). An alternative matches when it equals the
+specialization's label or one of its known equivalent names
+(`EQUIVALENT_NAMES`: CSE/CS/Computer Science, IT, ECE/EnTC, EEE/EE, AI/ML,
+VLSI, …), or one contains the other as whole words ("Computer Science"
+matches "Computer Science and Engineering"; "B.Tech in CSE" matches CSE).
+Deliberately not matched — flagged for HR instead: related-but-different
+fields (Robotics vs Mechanical, Aeronautical vs Aerospace), ambiguous
+abbreviations ("ME", "CE"), and fields made only of generic words
+("Engineering", "Technology", "any related field").
+
+**What HR sees** (application → Education card): the highest
+qualification, specialization category and specialization; the job's field
+of study as recorded at submission ("required" when the JD made it
+mandatory) and whether it matched; and, for a flagged application, each
+reason in plain language ("The job requires Mechanical Engineering, and the
+selected specialization (“Robotics and Automation”) couldn't be matched to
+it automatically."). Each reason is also a `QUALIFICATION_REVIEW_REQUIRED`
+activity. Applications flagged before reasons were stored show a generic
+notice.
 
 The job is restricted only when the JD clearly *requires* a qualification
 (not "preferred") with confidence ≥ 0.6. When restricted, the candidate is
@@ -375,7 +420,7 @@ rather than after filling in the form.
 dots, hyphens and apostrophes; no length limit), email, mobile number, date
 of birth (at least 16 years old), place of birth, languages known (1–15),
 candidate type, current and preferred location, the qualification (the
-Education step: qualification, branch where applicable, institution, year
+Education step: qualification, specialization category and specialization, institution, year
 of completion and the academic document; for a program, a free-text
 qualification), and a resume. Optional: LinkedIn and GitHub URLs (validated
 when given), 10th marks (percentage) and a 10th marks card (PDF/PNG/JPG, up

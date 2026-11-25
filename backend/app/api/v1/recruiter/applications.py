@@ -45,6 +45,8 @@ from app.services import (
     assessment_service,
     email_composer,
 )
+from app.services.education import catalog as education_catalog
+from app.services.education import specializations
 
 router = APIRouter(prefix="/applications", tags=["recruiter-applications"])
 
@@ -256,10 +258,27 @@ async def get_application_education(
         raise NotFoundError("Application not found.")
     document, runs = await application_draft_service.application_documents(db, application.id)
     candidate = application.candidate
+    eligibility = application.education_eligibility or {}
+    qualification_key = application.education_qualification_key or (
+        document.qualification_key if document is not None else None
+    )
     return ApplicationEducationResponse(
         education_verification_status=application.education_verification_status,
         eligibility_review_required=application.eligibility_review_required,
         qualification=candidate.qualification,
+        highest_qualification=education_catalog.qualification_label(qualification_key),
+        specialization_category=specializations.category_label(
+            application.education_specialization_category
+        ),
+        specialization=specializations.specialization_label(
+            application.education_specialization
+        ),
+        job_fields_of_study=list(eligibility.get("fields_of_study") or []),
+        job_field_mandatory=bool(eligibility.get("field_mandatory")),
+        matched_field_of_study=eligibility.get("matched_field"),
+        eligibility_review_reasons=[
+            reason["message"] for reason in eligibility.get("reasons") or [] if "message" in reason
+        ],
         institution=candidate.institution_name,
         qualification_year=candidate.qualification_year,
         document=(
@@ -278,6 +297,13 @@ async def get_application_education(
                 reason_code=run.reason_code,
                 confidence=run.confidence,
                 candidate_message=run.candidate_message,
+                selected_qualification=education_catalog.qualification_label(
+                    run.qualification_key
+                ),
+                selected_specialization_category=specializations.category_label(
+                    run.specialization_category
+                ),
+                selected_specialization=specializations.specialization_label(run.specialization),
                 provider=run.provider,
                 model=run.model,
                 created_at=run.created_at,

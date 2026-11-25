@@ -109,6 +109,11 @@ class EducationCheckEntry(BaseModel):
     confidence: float | None
     #: What the candidate was told.
     candidate_message: str
+    #: What the document was checked against (labels; the specialization
+    #: fields are None for checks run before they were recorded).
+    selected_qualification: str | None = None
+    selected_specialization_category: str | None = None
+    selected_specialization: str | None = None
     #: The model's observations, for the reviewer (None when the AI call
     #: failed).
     document_type: str | None = None
@@ -126,7 +131,24 @@ class EducationCheckEntry(BaseModel):
 class ApplicationEducationResponse(BaseModel):
     education_verification_status: ApplicationEducationStatus | None
     eligibility_review_required: bool
+    #: The candidate profile's qualification text ("M.Tech in Robotics and
+    #: Automation") — shared across the candidate's applications.
     qualification: str | None
+    #: This application's Education-step selections, as labels. None for
+    #: applications submitted before they were recorded (fall back to
+    #: `qualification`).
+    highest_qualification: str | None = None
+    specialization_category: str | None = None
+    specialization: str | None = None
+    #: The job's fields of study as recorded at submission, whether the JD
+    #: made them mandatory, and the one the specialization matched (empty /
+    #: None for applications submitted before this was recorded).
+    job_fields_of_study: list[str] = []
+    job_field_mandatory: bool = False
+    matched_field_of_study: str | None = None
+    #: Why HR is asked to check eligibility (plain language; empty when the
+    #: application isn't flagged, or was flagged before reasons were kept).
+    eligibility_review_reasons: list[str] = []
     institution: str | None
     qualification_year: int | None
     document: AcademicDocumentSummary | None

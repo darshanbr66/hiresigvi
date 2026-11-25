@@ -37,7 +37,7 @@ POST /api/v1/public/organizations/{org_slug}/email-verification/request     -- {
 POST /api/v1/public/organizations/{org_slug}/email-verification/verify      -- {email, code, job_id?} -> {verification_token, existing_profile, ...}
 GET  /api/v1/public/organizations/{org_slug}/jobs
 GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}
-GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}/qualification-options  -- the JD-derived qualification list
+GET  /api/v1/public/organizations/{org_slug}/jobs/{job_id}/qualification-options  -- the JD-derived qualification list + specialization catalogue
 POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft       -- {email, email_verification_token, full_name, phone} -> DraftView
 POST /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft/view  -- {email, email_verification_token} -> DraftView
 PUT  /api/v1/public/organizations/{org_slug}/jobs/{job_id}/apply/draft/background  -- {..., background}
@@ -66,9 +66,19 @@ output, provider or the document's extracted contents. `background` takes
 the fields below except name/phone/qualification/10th marks; `education`
 takes `qualification_key` (one of the job's `qualification-options`, 422
 `qualification_not_eligible` otherwise), `degree_name` (catch-all options),
-`branch` (required for engineering/science/doctorate options and when the
-JD makes the field mandatory), `institution`, `completion_year`, optional
-`tenth_marks_percentage`. The final `apply` builds the application from
+`specialization_category` + `specialization` (both required: keys from
+`qualification-options.specialization_categories`; 422
+`specialization_category_required|specialization_category_invalid|
+specialization_required|specialization_invalid` — an unknown key, or a
+specialization from another category, is refused), `institution`,
+`completion_year`, optional `tenth_marks_percentage`. `branch` is set by
+the server to the specialization's label (whatever the client sends is
+replaced). `qualification-options` also returns
+`specialization_categories: [{key, label, specializations: [{key, label}]}]`
+— the fixed catalogue (`app/services/education/specializations.py`), the
+same for every job. A draft saved before the catalogue existed loads with
+both fields null and can't be submitted (422 `education_required`) until
+they're chosen. The final `apply` builds the application from
 the draft and refuses (422) a missing step (`background_required`,
 `education_required`, `academic_document_required`,
 `education_not_verified`) or (409 `education_recheck_required`) a
@@ -185,8 +195,14 @@ POST          /api/v1/recruiter/applications/{application_id}/status
 POST          /api/v1/recruiter/applications/{application_id}/ai-override  (application.status.change; {reason} required;
                                                                              AI_SCREENED_OUT -> UNDER_REVIEW, else 409)
 GET           /api/v1/recruiter/applications/{application_id}/education  (screening.read; the academic document's metadata,
-                                                                 the candidate's education, `eligibility_review_required`
-                                                                 and every AI consistency check)
+                                                                 the candidate's education, `highest_qualification` /
+                                                                 `specialization_category` / `specialization` (labels; null
+                                                                 for older applications), `job_fields_of_study`,
+                                                                 `job_field_mandatory`, `matched_field_of_study`,
+                                                                 `eligibility_review_reasons` (as recorded at submission;
+                                                                 empty for older ones), `eligibility_review_required`
+                                                                 and every AI consistency check, each with the
+                                                                 `selected_*` selections it was run against)
 GET           /api/v1/recruiter/applications/{application_id}/education/document  (application.read; download)
 POST          /api/v1/recruiter/applications/{application_id}/screening-runs
 GET           /api/v1/recruiter/applications/{application_id}/screening-runs

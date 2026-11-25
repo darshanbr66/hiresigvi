@@ -32,6 +32,11 @@ export interface ApplicantBackground {
 export interface EducationDetails {
   qualification_key: string;
   degree_name: string | null;
+  /** Keys from the specialization catalogue (`QualificationOptions.
+   * specialization_categories`). Null only on drafts saved before it existed. */
+  specialization_category: string | null;
+  specialization: string | null;
+  /** Set by the server from `specialization` (its label); ignored when sent. */
   branch: string | null;
   institution: string;
   completion_year: number;
@@ -48,6 +53,18 @@ export interface QualificationOption {
   document_hint: string;
 }
 
+export interface SpecializationView {
+  key: string;
+  label: string;
+}
+
+/** One category of the two-level specialization choice. */
+export interface SpecializationCategoryView {
+  key: string;
+  label: string;
+  specializations: SpecializationView[];
+}
+
 /** What the Education step offers for this job — derived from its JD. */
 export interface QualificationOptions {
   restricted: boolean;
@@ -55,6 +72,8 @@ export interface QualificationOptions {
   options: QualificationOption[];
   fields_of_study: string[];
   field_mandatory: boolean;
+  /** The specialization catalogue — the same for every job and qualification. */
+  specialization_categories: SpecializationCategoryView[];
   accepted_document_types: string[];
   max_document_size_mb: number;
 }

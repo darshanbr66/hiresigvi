@@ -34,7 +34,12 @@ import {
 } from "./ApplicationOutcome";
 import { ApplyStepper, type StepDefinition } from "./apply/ApplyStepper";
 import { EducationStep } from "./apply/EducationStep";
-import { educationFromDraft, EMPTY_EDUCATION, type EducationValues } from "./apply/educationValues";
+import {
+  educationFromDraft,
+  EMPTY_EDUCATION,
+  specializationLabels,
+  type EducationValues,
+} from "./apply/educationValues";
 import { fieldAria } from "./apply/fieldAria";
 import { FormField } from "./apply/formFields";
 import { PhoneInput } from "./apply/PhoneInput";
@@ -1294,6 +1299,11 @@ function ReviewStep({
     (education.degree_name ||
       options.data?.options.find((option) => option.key === education.qualification_key)?.label ||
       education.qualification_key);
+  const specialization = specializationLabels(
+    options.data?.specialization_categories,
+    education?.specialization_category,
+    education?.specialization,
+  );
   return (
     <div className="apply-step-body apply-review">
       <ReviewSection title="Basic information" onEdit={() => onEdit("details")}>
@@ -1356,11 +1366,12 @@ function ReviewStep({
       </ReviewSection>
       {hasEducationStep && education && draft && (
         <ReviewSection title="Education" onEdit={() => onEdit("education")}>
-          <dt>Qualification</dt>
-          <dd>
-            {qualificationLabel}
-            {education.branch && ` in ${education.branch}`}
-          </dd>
+          <dt>Highest qualification</dt>
+          <dd>{qualificationLabel}</dd>
+          <dt>Specialization category</dt>
+          <dd>{specialization.category ?? "—"}</dd>
+          <dt>Specialization</dt>
+          <dd>{specialization.specialization ?? education.branch ?? "—"}</dd>
           <dt>Institution</dt>
           <dd>
             {education.institution} ({education.completion_year})

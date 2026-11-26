@@ -5,6 +5,7 @@ import { Alert } from "../../shared/components/Alert";
 import { PublicHeader } from "../public/PublicHeader";
 import { getCampusDriveByToken } from "./api";
 import { JobApplicationForm } from "./JobApplicationForm";
+import { JobDescription } from "./JobText";
 
 /** A campus drive's public link. Applying uses the same form and the same
  * candidate identity rules as the careers site (email one-time code, every
@@ -58,13 +59,13 @@ export function CampusDriveApplyPage() {
             {driveQuery.data.description && (
               <section style={{ marginBottom: "1.5rem" }}>
                 <h2>About this drive</h2>
-                <p className="job-description">{driveQuery.data.description}</p>
+                <JobDescription text={driveQuery.data.description} />
               </section>
             )}
 
             <section style={{ marginBottom: "2rem" }}>
               <h2>About the role</h2>
-              <p className="job-description">{driveQuery.data.job_description}</p>
+              <JobDescription text={driveQuery.data.job_description} />
             </section>
 
             {driveQuery.data.status !== "ACTIVE" ? (

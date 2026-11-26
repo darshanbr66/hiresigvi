@@ -332,7 +332,20 @@ highlighted cyan pill; then "Role details" and "Job Description" cards and
 the application form. The description is plain text from the recruiter;
 `jobDescription.ts` structures it into headings, paragraphs and lists by
 the conventions recruiters type (short unpunctuated lead lines, `- `/`• `/`1.`
-markers, blank lines) without changing a word.
+markers, blank lines) without changing a word; a marked line that runs
+several items together with ` - ` separators becomes one bullet per item
+(never split between two numbers, so `2023 - 2025` stays whole).
+
+Role details (Experience, Schedule, Eligibility, Terms …) render through
+`parseDetailValue` in the same module: a one-line value stays plain text;
+a multi-line value is one bullet per line, a lone `Label:` line is a
+sub-heading, and for Eligibility/Terms an unmarked line of three or more
+` - ` separated items is split into bullets too. Labels and description
+headings are bold heading-navy with a brand accent bar (labels uppercase).
+Short facts sit two to a row from 640px; list or long values span the full
+row; phones get one column. The shared renderers live in
+`features/careers/JobText.tsx`, also used by the campus-drive apply page so
+its drive and role descriptions are structured the same way.
 
 **Pay visibility:** careers-list cards never show compensation
 (`jobCardChips` omits the pay range and "Unpaid"); the job details page

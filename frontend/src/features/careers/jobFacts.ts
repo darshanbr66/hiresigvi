@@ -44,9 +44,14 @@ export function jobCardChips(job: PublicJobSummary): string[] {
   return chips;
 }
 
+/** One labelled Role-details entry. `list` marks the requirement-style
+ * fields (Eligibility, Terms) whose " - " separated items are shown as
+ * separate bullets; a display hint only. */
+export type JobDetailFact = { label: string; value: string; list?: true };
+
 /** Labelled details for the job page; only what the recruiter filled in. */
-export function jobDetailFacts(job: PublicJobDetail): { label: string; value: string }[] {
-  const facts: { label: string; value: string }[] = [];
+export function jobDetailFacts(job: PublicJobDetail): JobDetailFact[] {
+  const facts: JobDetailFact[] = [];
   const { min_experience_years: minExp, max_experience_years: maxExp } = job;
   if (minExp != null || maxExp != null) {
     facts.push({
@@ -66,7 +71,7 @@ export function jobDetailFacts(job: PublicJobDetail): { label: string; value: st
   if (job.expected_joining_date) {
     facts.push({ label: "Expected joining", value: new Date(job.expected_joining_date).toLocaleDateString() });
   }
-  if (job.eligibility_criteria) facts.push({ label: "Eligibility", value: job.eligibility_criteria });
-  if (job.employment_terms) facts.push({ label: "Terms", value: job.employment_terms });
+  if (job.eligibility_criteria) facts.push({ label: "Eligibility", value: job.eligibility_criteria, list: true });
+  if (job.employment_terms) facts.push({ label: "Terms", value: job.employment_terms, list: true });
   return facts;
 }

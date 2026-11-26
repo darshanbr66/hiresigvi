@@ -667,10 +667,12 @@
   font-weight: 700;
 }
 
+/* Role details: short facts side by side on wider screens; long or list
+   values (Eligibility, Terms) take the full row. One column on phones. */
 .job-details-list {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.85rem 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.35rem 2rem;
   margin: 0;
 }
 
@@ -678,21 +680,67 @@
   .job-details-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .job-detail-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.job-detail {
+  min-width: 0;
+}
+
+/* labels and headings: bold heading navy with a brand accent bar, so each
+   section starts clearly */
+.job-details-list dt,
+.job-description-body h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--job-heading);
+  font-weight: 800;
+}
+
+.job-details-list dt::before,
+.job-description-body h3::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: 1em;
+  border-radius: 2px;
+  background: var(--color-brand);
 }
 
 .job-details-list dt {
-  margin-bottom: 0.15rem;
-  color: var(--color-text-muted);
-  font-size: var(--text-meta);
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
   text-transform: uppercase;
 }
 
 .job-details-list dd {
   margin: 0;
   color: var(--color-text);
-  white-space: pre-line;
+  font-size: var(--text-body);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.job-details-list dd > :last-child {
+  margin-bottom: 0;
+}
+
+/* sub-headings inside one value ("Education:" over its items) */
+.job-details-list h4 {
+  margin: 0.85rem 0 0.35rem;
+  color: var(--job-heading);
+  font-size: var(--text-body);
+  font-weight: 700;
+}
+
+.job-details-list dd > h4:first-child {
+  margin-top: 0;
 }
 
 /* the employer's description: readable measure, rhythm and lists */
@@ -701,6 +749,7 @@
   color: var(--color-text);
   font-size: var(--text-body);
   line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
 .job-description-body > :first-child {
@@ -708,20 +757,21 @@
 }
 
 .job-description-body h3 {
-  margin: 1.5rem 0 0.4rem;
-  color: var(--job-heading);
-  font-size: var(--text-card-title);
-  font-weight: 700;
+  margin: 1.75rem 0 0.6rem;
+  font-size: 1.0625rem;
+  line-height: 1.35;
 }
 
-.job-description-body p {
+.job-description-body p,
+.job-details-list p {
   margin: 0 0 0.85rem;
   white-space: pre-line;
 }
 
 /* emphasis: section headings (h3 above), the lead statement and leading
    labels ("Interview Process:") in bold heading navy; body text regular */
-.job-description-body strong {
+.job-description-body strong,
+.job-details-list strong {
   color: var(--job-heading);
   font-weight: 700;
 }
@@ -730,19 +780,64 @@
   margin-bottom: 1.1rem;
 }
 
+/* the application instruction ("Apply only if you meet the requirements …"):
+   a calm brand-blue callout — soft tint, left accent, navy text — so it is
+   read before applying without shouting. Theme tokens keep contrast in
+   light and dark. */
+.job-description-body .job-notice,
+.job-details-list .job-notice {
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem 0.85rem 1.1rem;
+  border: 1px solid var(--color-brand-soft-border);
+  border-left: 4px solid var(--color-brand);
+  border-radius: 8px;
+  background: var(--color-brand-soft);
+  color: var(--job-heading);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.job-description-body > .job-notice + h3 {
+  margin-top: 1.25rem;
+}
+
+/* nested items sit inside their parent with their own indent */
+.job-description-body li > ul,
+.job-description-body li > ol,
+.job-details-list li > ul,
+.job-details-list li > ol {
+  margin: 0.4rem 0 0;
+}
+
 .job-description-body ul,
-.job-description-body ol {
+.job-description-body ol,
+.job-details-list ul,
+.job-details-list ol {
   margin: 0 0 0.85rem;
   padding-left: 1.25rem;
 }
 
-.job-description-body li {
-  margin: 0.25rem 0;
-  padding-left: 0.25rem;
+.job-description-body li,
+.job-details-list li {
+  margin: 0 0 0.45rem;
+  padding-left: 0.3rem;
+  white-space: pre-line;
 }
 
-.job-description-body ul li::marker {
+.job-description-body li:last-child,
+.job-details-list li:last-child {
+  margin-bottom: 0;
+}
+
+.job-description-body ul li::marker,
+.job-details-list ul li::marker {
   color: var(--color-brand);
+}
+
+.job-description-body ol li::marker,
+.job-details-list ol li::marker {
+  color: var(--color-brand);
+  font-weight: 700;
 }
 
 .job-page #apply {

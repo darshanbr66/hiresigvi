@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { PublicCampusDriveResult } from "../../types/publicCampusDrive";
@@ -71,5 +71,32 @@ describe("CampusDriveApplyPage lifecycle states", () => {
     expect(screen.getByText(unavailable.message)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Careers" })).toHaveAttribute("href", "/");
     expect(screen.queryByRole("heading", { name: "Apply for this drive" })).not.toBeInTheDocument();
+  });
+});
+
+describe("CampusDriveApplyPage role description", () => {
+  it("structures the job description the same way as the job page", async () => {
+    vi.spyOn(careersApi, "getCampusDriveByToken").mockResolvedValue({
+      kind: "drive",
+      name: "Fall Drive",
+      college_name: "MIT",
+      description: null,
+      job_title: "Graduate Engineer",
+      job_description: "Responsibilities\n- Build features.\n- Write tests.",
+      organization_name: "Zodiac Patent",
+      registration_deadline: null,
+      status: "ACTIVE",
+      has_assessment: false,
+      careers_contact_email: "hr@zodiacpatent.com",
+    });
+
+    renderPage();
+
+    const section = (await screen.findByRole("heading", { name: "About the role" })).closest("section") as HTMLElement;
+    expect(within(section).getByRole("heading", { level: 3, name: "Responsibilities" })).toBeInTheDocument();
+    expect(within(section).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Build features.",
+      "Write tests.",
+    ]);
   });
 });

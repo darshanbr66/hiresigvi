@@ -104,7 +104,7 @@ describe("JobDetailPage role summary and description", () => {
 });
 
 describe("JobDetailPage description emphasis", () => {
-  it("leaves an inner 'Job Description' line plain and bolds the statement after it", async () => {
+  it("leaves an inner 'Job Description' line plain and shows the instruction after it as a callout", async () => {
     vi.spyOn(careersApi, "getOpenJob").mockResolvedValue({
       ...baseJob,
       description:
@@ -119,11 +119,13 @@ describe("JobDetailPage description emphasis", () => {
     const inner = within(body).getByText("Job Description");
     expect(inner.tagName).not.toMatch(/^H\d$/);
     expect(inner.closest("strong")).toBeNull();
-    expect(within(body).getByText("Apply only if you meet all the requirements and accept all the terms.").tagName).toBe("STRONG");
+    const notice = within(body).getByRole("note");
+    expect(notice).toHaveClass("job-notice");
+    expect(notice).toHaveTextContent(/^Apply only if you meet all the requirements and accept all the terms\.$/);
     expect(within(body).getByRole("heading", { level: 3, name: "Benefits" })).toBeInTheDocument();
   });
 
-  it("bolds the lead statement and each line's leading label, leaving the rest regular", async () => {
+  it("bolds each line's leading label, leaving the rest regular", async () => {
     vi.spyOn(careersApi, "getOpenJob").mockResolvedValue({
       ...baseJob,
       description:
@@ -135,12 +137,146 @@ describe("JobDetailPage description emphasis", () => {
     await screen.findByRole("heading", { level: 3, name: "Benefits" });
     const bold = Array.from(document.querySelectorAll(".job-description-body strong")).map((el) => el.textContent);
     expect(bold).toEqual([
-      "Apply only if you meet all the requirements and accept all the terms.",
       "Interview Process:",
       "Bond:",
     ]);
     // the text after each label is not bold
     expect(screen.getByText(/Two rounds\./).tagName).not.toBe("STRONG");
     expect(screen.getByText("Health insurance.").closest("strong")).toBeNull();
+  });
+});
+
+describe("JobDetailPage role details", () => {
+  it("shows each eligibility requirement and term as its own bullet under a bold label", async () => {
+    vi.spyOn(careersApi, "getOpenJob").mockResolvedValue({
+      ...baseJob,
+      min_experience_years: 0,
+      max_experience_years: 2,
+      eligibility_criteria: "- B.Tech / B.E. - 2024 batch - No active backlogs\n- 60% throughout",
+      employment_terms: "Bond: 2 years\nNotice period: 1 month",
+    } as PublicJobDetail);
+
+    renderPage();
+
+    const details = await screen.findByRole("region", { name: "Role details" });
+    const entry = (label: string) => within(details).getByText(label).closest(".job-detail") as HTMLElement;
+
+    expect(within(entry("Experience")).getByText("0–2 years").closest("p")).not.toBeNull();
+    expect(within(entry("Experience")).queryByRole("list")).toBeNull();
+    expect(entry("Experience")).not.toHaveClass("job-detail-wide");
+
+    const eligibility = within(entry("Eligibility")).getAllByRole("listitem").map((li) => li.textContent);
+    expect(eligibility).toEqual(["B.Tech / B.E.", "2024 batch", "No active backlogs", "60% throughout"]);
+    expect(entry("Eligibility")).toHaveClass("job-detail-wide");
+
+    const terms = within(entry("Terms")).getAllByRole("listitem");
+    expect(terms.map((li) => li.textContent)).toEqual(["Bond: 2 years", "Notice period: 1 month"]);
+    expect(within(terms[0]).getByText("Bond:").tagName).toBe("STRONG");
+  });
+});
+
+const INSTRUCTION = "Apply only if you meet the requirements and are comfortable with the stated employment terms.";
+
+describe("JobDetailPage formatting regressions", () => {
+  it("renders the salary range as one bullet with a bold label and the values intact", async () => {
+    vi.spyOn(careersApi, "getOpenJob").mockResolvedValue({
+      ...baseJob,
+      description:
+        "Compensation & Benefits\n- Annual salary: ₹6,00,000 - ₹8,00,000 per annum.\n- Health insurance.\n- Paid time off.\n- Provident Fund (PF).",
+    });
+
+    renderPage();
+
+    const heading = await screen.findByRole("heading", { level: 3, name: "Compensation & Benefits" });
+    const list = heading.nextElementSibling as HTMLElement;
+    const items = within(list).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual([
+      "Annual salary: ₹6,00,000 - ₹8,00,000 per annum.",
+      "Health insurance.",
+      "Paid time off.",
+      "Provident Fund (PF).",
+    ]);
+    expect(within(items[0]).getByText("Annual salary:").tagName).toBe("STRONG");
+    expect(within(items[0]).queryByRole("list")).toBeNull();
+  });
+
+  it("keeps schedules, ranges and hyphenated terms whole in Role details", async () => {
+    vi.spyOn(careersApi, "getOpenJob").mockResolvedValue({
+      ...baseJob,
+      min_experience_years: 1,
+      max_experience_years: 3,
+      work_schedule: "Mon - Fri, 9:30 AM - 6:30 PM",
+      eligibility_criteria: "B.Tech / B.E. (2023 - 2025 batch)",
+      employment_terms: "Employment Type: Full-time.\nWork Mode: On-site.",
+    } as PublicJobDetail);
+
+    renderPage();
+
+    const details = await screen.findByRole("region", { name: "Role details" });
+    const entry = (label: string) => within(details).getByText(label).closest(".job-detail") as HTMLElement;
+    expect(within(entry("Experience")).getByText("1–3 years")).toBeInTheDocument();
+    for (const [label, value] of [
+      ["Schedule", "Mon - Fri, 9:30 AM - 6:30 PM"],
+      ["Eligibility", "B.Tech / B.E. (2023 - 2025 batch)"],
+    ]) {
+      expect(within(entry(label)).getByText(value).closest("p")).not.toBeNull();
+      expect(within(entry(label)).queryByRole("list")).toBeNull();
+    }
+    expect(within(entry("Terms")).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Employment Type: Full-time.",
+      "Work Mode: On-site.",
+    ]);
+  });
+
+  it("shows the application instruction once, as a callout, even when Terms repeats it", async () => {
+    vi.spyOn(careersApi, "getOpenJob").mockResolvedValue({
+      ...baseJob,
+      employment_terms: `Bond: 2 years
+${INSTRUCTION}`,
+      description: `${INSTRUCTION}
+
+Responsibilities
+- Draft patent applications.`,
+    } as PublicJobDetail);
+
+    renderPage();
+
+    await screen.findByRole("heading", { level: 3, name: "Responsibilities" });
+    const notes = screen.getAllByRole("note");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toHaveTextContent(INSTRUCTION);
+    expect(notes[0].closest(".job-description-body")).not.toBeNull();
+    expect(screen.getAllByText(INSTRUCTION)).toHaveLength(1);
+    expect(screen.getByText("Bond:")).toBeInTheDocument();
+  });
+
+  it("shows the instruction in Role details when only Terms carries it", async () => {
+    vi.spyOn(careersApi, "getOpenJob").mockResolvedValue({
+      ...baseJob,
+      employment_terms: INSTRUCTION,
+    } as PublicJobDetail);
+
+    renderPage();
+
+    const details = await screen.findByRole("region", { name: "Role details" });
+    expect(within(details).getByRole("note")).toHaveTextContent(INSTRUCTION);
+  });
+
+  it("renders nested requirement lists inside their parent item", async () => {
+    vi.spyOn(careersApi, "getOpenJob").mockResolvedValue({
+      ...baseJob,
+      description: "Requirements\n- Education\n  - B.Tech in CSE\n  - M.Tech\n- 60% throughout",
+    });
+
+    renderPage();
+
+    const heading = await screen.findByRole("heading", { level: 3, name: "Requirements" });
+    const list = heading.nextElementSibling as HTMLElement;
+    const top = Array.from(list.children);
+    expect(top).toHaveLength(2);
+    expect(within(top[0] as HTMLElement).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "B.Tech in CSE",
+      "M.Tech",
+    ]);
   });
 });

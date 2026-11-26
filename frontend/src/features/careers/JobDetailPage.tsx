@@ -8,68 +8,9 @@ import type { PublicJobDetail } from "../../types/careers";
 import { PublicHeader } from "../public/PublicHeader";
 import { getOpenJob } from "./api";
 import { JobApplicationForm } from "./JobApplicationForm";
-import { parseJobDescription, splitLabel } from "./jobDescription";
 import { formatCompensation, jobChips, jobDetailFacts } from "./jobFacts";
-
-/** Text in which each line's leading "Label:" (e.g. "Interview Process:",
- * "Bond:") is emphasised; the rest stays regular. Same characters either
- * way — line breaks are kept and shown by `white-space: pre-line`. */
-function Labelled({ text }: { text: string }) {
-  return (
-    <>
-      {text.split("\n").map((line, i) => {
-        const parts = splitLabel(line);
-        return (
-          <span key={i}>
-            {i > 0 && "\n"}
-            {parts ? (
-              <>
-                <strong>{parts.label}</strong>
-                {parts.rest}
-              </>
-            ) : (
-              line
-            )}
-          </span>
-        );
-      })}
-    </>
-  );
-}
-
-/** The employer's description, structured for reading (jobDescription.ts):
- * same words, same order — bold headings, a bold lead statement, bold
- * leading labels, regular body text and lists. */
-function JobDescription({ text }: { text: string }) {
-  return (
-    <div className="job-description-body">
-      {parseJobDescription(text).map((block, i) => {
-        if (block.kind === "heading") return <h3 key={i}>{block.text}</h3>;
-        if (block.kind === "paragraph") {
-          return block.lead ? (
-            <p key={i} className="job-lead">
-              <strong>{block.text}</strong>
-            </p>
-          ) : (
-            <p key={i}>
-              <Labelled text={block.text} />
-            </p>
-          );
-        }
-        const List = block.ordered ? "ol" : "ul";
-        return (
-          <List key={i}>
-            {block.items.map((item, j) => (
-              <li key={j}>
-                <Labelled text={item} />
-              </li>
-            ))}
-          </List>
-        );
-      })}
-    </div>
-  );
-}
+import { descriptionNoticeKeys, parseDetailValue } from "./jobDescription";
+import { DetailFact, JobDescription } from "./JobText";
 
 /** The role's facts as pills on the hero band: department, location,
  * type/mode/duration/hours, openings — and pay, only when published, set
@@ -113,7 +54,13 @@ export function JobDetailPage() {
     queryFn: () => getOpenJob(slug, jobId),
   });
   const job = jobQuery.data;
-  const facts = job ? jobDetailFacts(job) : [];
+  // The application instruction is shown once: as the description's notice
+  // when the description carries it, so a Role-details value repeating the
+  // same sentence doesn't show it again.
+  const shownNotices = descriptionNoticeKeys(job?.description);
+  const facts = (job ? jobDetailFacts(job) : []).filter(
+    (fact) => parseDetailValue(fact.value, { omitNotices: shownNotices }).length > 0,
+  );
 
   return (
     <div className="public-page careers-page job-page">
@@ -163,10 +110,7 @@ export function JobDetailPage() {
                   <h2 id="role-details-title">Role details</h2>
                   <dl className="job-details-list">
                     {facts.map((fact) => (
-                      <div key={fact.label}>
-                        <dt>{fact.label}</dt>
-                        <dd>{fact.value}</dd>
-                      </div>
+                      <DetailFact key={fact.label} fact={fact} omitNotices={shownNotices} />
                     ))}
                   </dl>
                 </section>

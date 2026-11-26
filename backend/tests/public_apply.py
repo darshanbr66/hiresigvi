@@ -131,10 +131,12 @@ _BACKGROUND_FIELDS = {
     "current_company": "current_company",
 }
 
+#: The candidate types the specialization category and specialization as
+#: free text (app/services/education/specializations.py).
 DEFAULT_EDUCATION: dict[str, Any] = {
     "qualification_key": "ME_MTECH",
-    "specialization_category": "CS_IT",
-    "specialization": "COMPUTER_SCIENCE_ENGINEERING",
+    "specialization_category": "Computer Science & Information Technology",
+    "specialization": "Computer Science and Engineering",
     "institution": "Anna University",
     "completion_year": 2020,
 }

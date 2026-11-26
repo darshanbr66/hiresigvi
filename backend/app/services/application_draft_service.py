@@ -9,11 +9,16 @@ check of the academic document, then submission through the existing
                  consequences as a submission), then an OPEN draft
     Step 3    -> `save_background`
     Step 4    -> `save_education` (qualification must be one the JD allows;
-                 specialization must belong to the chosen category)
-              -> `upload_document` / `recheck_document` (AI consistency
-                 check, every attempt kept as an EducationVerificationRun)
-              -> `accept_manual_review` (only when the check could not
-                 reach a confident answer)
+                 specialization category is required free text; the
+                 specialization is no longer entered — optional, kept
+                 when an older draft or client sends it)
+              -> `upload_document` / `recheck_document` (the document is
+                 stored first; then an advisory AI consistency check, every
+                 attempt kept as an EducationVerificationRun. MATCH = AI
+                 verified; a mismatch, an unclear result or a failed check
+                 sends it to manual review — the candidate always continues)
+              -> `accept_manual_review` (drafts left in a legacy MISMATCH /
+                 UNCLEAR / FAILED state by the earlier, blocking check)
     Step 5-6  -> `submit`: everything re-validated from the draft, then the
                  standard submission (Candidate + Application + resume,
                  screening, welcome email)
@@ -32,7 +37,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -40,7 +45,6 @@ from app.core.exceptions import (
     AppError,
     ConflictError,
     NotFoundError,
-    TooManyRequestsError,
     UnprocessableError,
 )
 from app.core.logging import get_logger
@@ -50,7 +54,7 @@ from app.integrations.ai import (
     AIProviderNotConfiguredError,
     get_education_ai_provider,
 )
-from app.integrations.ai.education import VocabularyEntry
+from app.integrations.ai.education import EducationAIProvider, VocabularyEntry
 from app.integrations.ai.extraction import extract_resume_text
 from app.integrations.storage import (
     ResumeStorage,
@@ -104,14 +108,22 @@ DOCUMENT_KIND = "academic_document"
 
 #: Failed AI attempts on one document after which the candidate may
 #: continue to manual review (the AI itself is having trouble).
-FAILED_ATTEMPTS_FOR_MANUAL_REVIEW = 2
-
+#: The AI check is advisory: only a MATCH verifies the document; any other
+#: outcome — a possible mismatch, an unclear reading, or the check failing —
+#: sends the stored document to manual review, so the candidate continues.
 _CHECK_TO_STATUS = {
     EducationVerificationOutcome.MATCH: EducationCheckStatus.VERIFIED,
-    EducationVerificationOutcome.MISMATCH: EducationCheckStatus.MISMATCH,
-    EducationVerificationOutcome.UNCLEAR: EducationCheckStatus.UNCLEAR,
-    EducationVerificationOutcome.FAILED: EducationCheckStatus.FAILED,
+    EducationVerificationOutcome.MISMATCH: EducationCheckStatus.MANUAL_REVIEW,
+    EducationVerificationOutcome.UNCLEAR: EducationCheckStatus.MANUAL_REVIEW,
+    EducationVerificationOutcome.FAILED: EducationCheckStatus.MANUAL_REVIEW,
 }
+
+#: States a draft could be left in by the earlier, blocking check (before
+#: every outcome led to manual review). Such a draft can still be moved to
+#: manual review (`accept_manual_review`), so no candidate stays stuck.
+_LEGACY_BLOCKED_STATUSES = frozenset(
+    {EducationCheckStatus.MISMATCH, EducationCheckStatus.UNCLEAR, EducationCheckStatus.FAILED}
+)
 
 _COMPLETE_STATUSES = frozenset({EducationCheckStatus.VERIFIED, EducationCheckStatus.MANUAL_REVIEW})
 
@@ -282,11 +294,15 @@ def branch_required(option: QualificationOption, requirements: QualificationRequ
 def _validate_education(
     details: EducationDetails, requirements: QualificationRequirements
 ) -> tuple[QualificationOption, EducationDetails]:
-    """Validates the selection and returns it normalized: `branch` is always
-    the selected specialization's label, never what the client sent. The
-    category/specialization pairing is a fixed lookup in the catalogue
-    (specializations.py) — an unknown key, or a specialization from another
-    category, is rejected."""
+    """Validates the selection and returns it normalized. The specialization
+    category is the candidate's own text — required, trimmed (the schema),
+    within the length limit — and never restricted to the catalogue. The
+    Education step no longer asks for a specialization: it is optional, and
+    when an older draft or client still sends one it is trimmed and
+    length-checked as before. `branch` is always derived here, never what
+    the client sent: the specialization text, or a legacy catalogue key's
+    label — None without a specialization (the document check then has no
+    branch to compare)."""
     option = catalog.get_option(details.qualification_key)
     offered = {o.key for o in offered_options(requirements)}
     if option is None or option.key not in offered:
@@ -297,29 +313,34 @@ def _validate_education(
         )
     if option.is_other and not details.degree_name:
         raise UnprocessableError("Enter the name of your degree.", code="degree_name_required")
-    if not details.specialization_category:
+    category = (details.specialization_category or "").strip()
+    specialization = (details.specialization or "").strip()
+    if not category:
         raise UnprocessableError(
-            "Select your specialization category.", code="specialization_category_required"
+            "Enter your specialization category.", code="specialization_category_required"
         )
-    if specializations.get_category(details.specialization_category) is None:
+    if len(category) > specializations.CATEGORY_MAX_LENGTH:
         raise UnprocessableError(
-            "Select a specialization category from the list.",
-            code="specialization_category_invalid",
+            f"Keep the specialization category to {specializations.CATEGORY_MAX_LENGTH} "
+            "characters or fewer.",
+            code="specialization_category_too_long",
         )
-    if not details.specialization:
-        raise UnprocessableError("Select your specialization.", code="specialization_required")
-    specialization = specializations.resolve(
-        details.specialization_category, details.specialization
-    )
-    if specialization is None:
+    if len(specialization) > specializations.SPECIALIZATION_MAX_LENGTH:
         raise UnprocessableError(
-            "Select a specialization from the selected category.",
-            code="specialization_invalid",
+            f"Keep the specialization to {specializations.SPECIALIZATION_MAX_LENGTH} characters "
+            "or fewer.",
+            code="specialization_too_long",
         )
     # A JD's required field of study doesn't narrow the choice: a
     # specialization that doesn't match it flags the submitted application
     # for HR instead (`eligibility_review`).
-    return option, details.model_copy(update={"branch": specialization.label})
+    return option, details.model_copy(
+        update={
+            "specialization_category": category,
+            "specialization": specialization or None,
+            "branch": specializations.specialization_label(specialization or None),
+        }
+    )
 
 
 @dataclass(frozen=True)
@@ -357,18 +378,35 @@ def eligibility_review(
                 ),
             }
         )
-    match = specializations.match_field_of_study(
-        details.specialization, requirements.fields_of_study
-    )
+    # The candidate's field of study: the specialization when there is one
+    # (older records), otherwise the specialization category — the only
+    # field-of-study input the Education step still asks for. Same matcher,
+    # same rules either way.
+    field_text: str | None
+    field_label: str
+    if details.specialization:
+        field_text, field_label = (
+            details.specialization,
+            "specialization (“"
+            + (specializations.specialization_label(details.specialization) or "—")
+            + "”)",
+        )
+    else:
+        field_text, field_label = (
+            details.specialization_category,
+            "specialization category (“"
+            + (specializations.category_label(details.specialization_category) or "—")
+            + "”)",
+        )
+    match = specializations.match_field_of_study(field_text, requirements.fields_of_study)
     if requirements.field_mandatory and requirements.fields_of_study and not match.matched:
-        label = specializations.specialization_label(details.specialization) or "—"
         reasons.append(
             {
                 "code": "FIELD_OF_STUDY_NOT_MATCHED",
                 "message": (
                     "The job requires "
                     + " or ".join(requirements.fields_of_study)
-                    + f", and the selected specialization (“{label}”) couldn't be matched "
+                    + f", and the selected {field_label} couldn't be matched "
                     "to it automatically."
                 ),
             }
@@ -406,18 +444,6 @@ async def save_education(
     return draft
 
 
-async def _failed_attempts_on(db: AsyncSession, document_id: uuid.UUID) -> int:
-    return int(
-        await db.scalar(
-            select(func.count(EducationVerificationRun.id)).where(
-                EducationVerificationRun.academic_document_id == document_id,
-                EducationVerificationRun.outcome == EducationVerificationOutcome.FAILED,
-            )
-        )
-        or 0
-    )
-
-
 async def _latest_run(db: AsyncSession, draft: ApplicationDraft) -> EducationVerificationRun | None:
     if draft.academic_document_id is None:
         return None
@@ -433,31 +459,19 @@ async def _latest_run(db: AsyncSession, draft: ApplicationDraft) -> EducationVer
     return run
 
 
-async def _manual_review_allowed(db: AsyncSession, draft: ApplicationDraft) -> bool:
-    """Only when the check couldn't reach a confident answer for the
-    current document: UNCLEAR, the AI not configured at all, or the AI
-    failing repeatedly. A MISMATCH never qualifies."""
-    if draft.academic_document_id is None or draft.education is None:
-        return False
-    if draft.education_status == EducationCheckStatus.UNCLEAR:
-        return True
-    if draft.education_status != EducationCheckStatus.FAILED:
-        return False
-    latest = await _latest_run(db, draft)
-    if latest is not None and latest.reason_code == "ai_not_configured":
-        return True
-    return await _failed_attempts_on(db, draft.academic_document_id) >= (
-        FAILED_ATTEMPTS_FOR_MANUAL_REVIEW
+def _manual_review_allowed(draft: ApplicationDraft) -> bool:
+    """A stored document whose check ended in a state the earlier, blocking
+    check left behind (MISMATCH / UNCLEAR / FAILED). New checks go to manual
+    review on their own; this lets such a draft continue too."""
+    return (
+        draft.academic_document_id is not None
+        and draft.education is not None
+        and draft.education_status in _LEGACY_BLOCKED_STATUSES
     )
 
 
-def _require_attempt_budget(draft: ApplicationDraft) -> None:
-    if draft.verification_attempts >= get_settings().max_education_checks_per_draft:
-        raise TooManyRequestsError(
-            "You've reached the limit of document checks for this application. Please contact "
-            "our recruitment team if you need help.",
-            code="education_check_limit",
-        )
+def _attempt_budget_left(draft: ApplicationDraft) -> bool:
+    return draft.verification_attempts < get_settings().max_education_checks_per_draft
 
 
 async def upload_document(
@@ -473,7 +487,9 @@ async def upload_document(
     """Stores (or replaces) the academic document, then checks it. The file
     and its metadata are committed *before* the AI call, so an AI failure
     or timeout never loses the upload; a replaced document is deleted, file
-    included, once the new one is committed."""
+    included, once the new one is committed. File validation and storage
+    failures still refuse the upload — nothing is reported as uploaded
+    unless it was stored. The AI check never refuses it (see _run_check)."""
     upload = candidate_document_service.validate_academic_document(
         filename=filename, content=content
     )
@@ -483,7 +499,6 @@ async def upload_document(
             "Select your qualification before uploading the document.",
             code="education_details_required",
         )
-    _require_attempt_budget(draft)
     try:
         saved = await storage.save(
             organization_id=ctx.organization.id,
@@ -541,7 +556,6 @@ async def recheck_document(
         )
     if draft.education_status in _COMPLETE_STATUSES:
         return draft
-    _require_attempt_budget(draft)
     try:
         content = await get_resume_storage_for_provider(document.storage_provider).read(
             document.storage_path
@@ -580,44 +594,59 @@ async def _run_check(
     assert option is not None
     requirements = await job_qualification_service.get_requirements(db, ctx.job)
 
-    draft.verification_attempts += 1
-    provider = get_education_ai_provider()
     analysis_json: dict[str, Any] | None = None
     error: str | None = None
-    try:
-        analysis = await provider.analyze_academic_document(
-            content=content,
-            content_type=document.content_type,
-            extracted_text=_text_layer(content, document.content_type),
-            selected=_entry(option),
-            selected_branch=details.branch,
-            vocabulary=job_qualification_service.vocabulary(),
-        )
-    except AIProviderNotConfiguredError as exc:
+    provider: EducationAIProvider | None = None
+    if not _attempt_budget_left(draft):
+        # The AI budget is spent: the document is kept and goes to manual
+        # review without another AI call.
         result = document_check.CheckResult(
             EducationVerificationOutcome.FAILED,
-            "ai_not_configured",
-            document_check.AI_UNAVAILABLE_MESSAGE,
+            document_check.CHECK_LIMIT_REASON,
+            document_check.MANUAL_REVIEW_MESSAGE,
         )
-        error = str(exc)[:500]
-    except AIProviderError as exc:
-        logger.warning(
-            "Academic document check failed",
-            extra={"extra_fields": {"draft_id": str(draft.id), "error_type": type(exc).__name__}},
-        )
-        result = document_check.CheckResult(
-            EducationVerificationOutcome.FAILED, "ai_failed", document_check.AI_FAILED_MESSAGE
-        )
-        error = str(exc)[:500]
     else:
-        analysis_json = analysis.model_dump(mode="json")
-        result = document_check.evaluate(
-            analysis,
-            selected=option,
-            selected_branch=details.branch,
-            requirements=requirements,
-            candidate_name=draft.full_name,
-        )
+        draft.verification_attempts += 1
+        provider = get_education_ai_provider()
+        try:
+            analysis = await provider.analyze_academic_document(
+                content=content,
+                content_type=document.content_type,
+                extracted_text=_text_layer(content, document.content_type),
+                selected=_entry(option),
+                selected_branch=details.branch,
+                vocabulary=job_qualification_service.vocabulary(),
+            )
+            analysis_json = analysis.model_dump(mode="json")
+            result = document_check.evaluate(
+                analysis,
+                selected=option,
+                selected_branch=details.branch,
+                requirements=requirements,
+                candidate_name=draft.full_name,
+            )
+        except AIProviderNotConfiguredError as exc:
+            result = document_check.CheckResult(
+                EducationVerificationOutcome.FAILED,
+                "ai_not_configured",
+                document_check.AI_UNAVAILABLE_MESSAGE,
+            )
+            error = str(exc)[:500]
+        except Exception as exc:
+            # Timeouts, provider errors, an invalid or unparseable answer, or
+            # anything else going wrong in the check: a failed *check*, never
+            # a failed upload — the document is already stored.
+            logger.warning(
+                "Academic document check failed",
+                extra={
+                    "extra_fields": {"draft_id": str(draft.id), "error_type": type(exc).__name__}
+                },
+            )
+            analysis_json = None
+            result = document_check.CheckResult(
+                EducationVerificationOutcome.FAILED, "ai_failed", document_check.AI_FAILED_MESSAGE
+            )
+            error = f"{type(exc).__name__}: {exc}"[:500]
 
     db.add(
         EducationVerificationRun(
@@ -630,10 +659,12 @@ async def _run_check(
             outcome=result.outcome,
             reason_code=result.reason_code,
             confidence=analysis_json.get("confidence") if analysis_json else None,
-            candidate_message=result.message,
+            # What the candidate was told (the AI's own reading of the
+            # document stays in `analysis` and `reason_code`).
+            candidate_message=document_check.candidate_message_for(result.outcome, result.message),
             analysis=analysis_json,
-            provider=provider.name,
-            model=provider.model,
+            provider=provider.name if provider else None,
+            model=provider.model if provider else None,
             error_message=error,
             qualification_source_hash=requirements.source_hash,
         )
@@ -649,10 +680,11 @@ async def accept_manual_review(
     draft = await _require_draft(db, ctx, email=email, token=token)
     if draft.education_status == EducationCheckStatus.MANUAL_REVIEW:
         return draft
-    if not await _manual_review_allowed(db, draft):
+    if not _manual_review_allowed(draft):
         raise UnprocessableError(
-            "Manual review isn't available for this document. Please upload a document that "
-            "matches the qualification you selected.",
+            "Upload your academic document first."
+            if draft.academic_document_id is None
+            else "Your document hasn't been checked yet. Continue to check it.",
             code="manual_review_not_allowed",
         )
     draft.education_status = EducationCheckStatus.MANUAL_REVIEW
@@ -669,9 +701,12 @@ async def view(db: AsyncSession, draft: ApplicationDraft) -> DraftView:
     message: str | None = None
     if status == EducationCheckStatus.MANUAL_REVIEW:
         message = (
-            "Your document will be reviewed by our recruitment team. You can continue with "
-            "your application."
+            document_check.MISMATCH_MANUAL_REVIEW_MESSAGE
+            if latest is not None and latest.outcome == EducationVerificationOutcome.MISMATCH
+            else document_check.MANUAL_REVIEW_MESSAGE
         )
+    elif status in _LEGACY_BLOCKED_STATUSES:
+        message = document_check.MANUAL_REVIEW_MESSAGE
     elif status != EducationCheckStatus.NOT_STARTED and latest is not None:
         message = latest.candidate_message
     remaining = max(0, get_settings().max_education_checks_per_draft - draft.verification_attempts)
@@ -683,7 +718,7 @@ async def view(db: AsyncSession, draft: ApplicationDraft) -> DraftView:
         background=(
             ApplicantBackground.model_validate(draft.background) if draft.background else None
         ),
-        education=EducationDetails.model_validate(draft.education) if draft.education else None,
+        education=_education_for_view(draft.education),
         document=(
             AcademicDocumentView(
                 filename=document.original_filename,
@@ -703,10 +738,28 @@ async def view(db: AsyncSession, draft: ApplicationDraft) -> DraftView:
                 and remaining > 0
                 and status in (EducationCheckStatus.NOT_STARTED, EducationCheckStatus.FAILED)
             ),
-            can_request_manual_review=await _manual_review_allowed(db, draft),
+            can_request_manual_review=_manual_review_allowed(draft),
             attempts_remaining=remaining,
         ),
         expires_at=draft.expires_at,
+    )
+
+
+def _education_for_view(education: dict[str, Any] | None) -> EducationDetails | None:
+    """The saved education details for the candidate's form. A draft saved
+    before free-text entry holds catalogue keys; they're shown as their
+    labels (the text the candidate picked), so the form reopens readable.
+    The stored draft itself is not changed."""
+    if not education:
+        return None
+    details = EducationDetails.model_validate(education)
+    return details.model_copy(
+        update={
+            "specialization_category": specializations.category_label(
+                details.specialization_category
+            ),
+            "specialization": specializations.specialization_label(details.specialization),
+        }
     )
 
 
@@ -779,10 +832,10 @@ async def submit(
     option = catalog.get_option(details.qualification_key)
     if option is None:
         raise UnprocessableError("Select your qualification again.", code="education_required")
-    if not details.specialization_category or not details.specialization:
-        # A draft saved before the specialization catalogue existed.
+    if not details.specialization_category:
+        # A draft saved before the specialization category existed.
         raise UnprocessableError(
-            "Select your specialization category and specialization in the Education step.",
+            "Enter your specialization category in the Education step.",
             code="education_required",
         )
     requirements = await _recheck_eligibility(db, ctx, draft, details)
@@ -810,6 +863,8 @@ async def submit(
     ) -> None:
         application.education_verification_status = education_status
         application.education_qualification_key = option.key
+        # As validated: the candidate's trimmed text (or, for a draft saved
+        # before free-text entry, the catalogue key it holds).
         application.education_specialization_category = details.specialization_category
         application.education_specialization = details.specialization
         application.eligibility_review_required = bool(review.reasons)

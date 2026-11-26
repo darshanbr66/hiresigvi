@@ -32,6 +32,8 @@ describe("EducationReviewCard", () => {
       institution: "IIT Madras",
       qualification_year: 2022,
       document: { filename: "mtech.pdf", content_type: "application/pdf", size_bytes: 1, uploaded_at: "" },
+      manual_review_reason:
+        "AI could not confidently classify the document: the document could not be read clearly.",
       checks: [
         {
           outcome: "UNCLEAR",
@@ -55,7 +57,10 @@ describe("EducationReviewCard", () => {
       ],
     });
     renderCard("MANUAL_REVIEW");
-    expect(screen.getByText("Manual review required")).toBeInTheDocument();
+    expect(screen.getByText("Manual verification required")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/AI could not confidently classify the document: the document could not be read clearly\./),
+    ).toBeInTheDocument();
     expect(await screen.findByText("Unclear · confidence 40%")).toBeInTheDocument();
     expect(screen.getByText("Scan is blurred.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download mtech.pdf" })).toBeInTheDocument();
@@ -83,6 +88,7 @@ describe("EducationReviewCard", () => {
       institution: "IIT Madras",
       qualification_year: 2022,
       document: { filename: "mtech.pdf", content_type: "application/pdf", size_bytes: 1, uploaded_at: "" },
+      manual_review_reason: null,
       checks: [
         {
           outcome: "MATCH",
@@ -106,6 +112,7 @@ describe("EducationReviewCard", () => {
       ],
     });
     renderCard("VERIFIED");
+    expect(screen.getByText("AI verified")).toBeInTheDocument();
     const label = await screen.findByText("Highest qualification");
     expect(label.nextElementSibling).toHaveTextContent("M.Tech");
     expect(screen.getByText("Specialization category").nextElementSibling).toHaveTextContent(
@@ -140,6 +147,7 @@ describe("EducationReviewCard", () => {
       institution: "IIT Madras",
       qualification_year: 2022,
       document: null,
+      manual_review_reason: null,
       checks: [],
     });
     renderCard("VERIFIED");

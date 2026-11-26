@@ -4,9 +4,15 @@ import { ApiError } from "../../../lib/apiClient";
 import { triggerBlobDownload } from "../../../lib/downloadBlob";
 import { Alert } from "../../../shared/components/Alert";
 import { ResumePreviewModal } from "../../../shared/components/ResumePreviewModal";
-import type { EducationDocument } from "../../../types/recruitment";
+import type { DocumentVerification, EducationDocument } from "../../../types/recruitment";
 import { formatFileSize } from "../../careers/apply/validation";
 import { downloadEducationDocument, listEducationDocuments } from "./api";
+
+const VERIFICATION: Record<DocumentVerification, { label: string; chip: string }> = {
+  AI_VERIFIED: { label: "AI verified", chip: "chip-verified" },
+  MANUAL_VERIFICATION_REQUIRED: { label: "Manual verification required", chip: "chip-pending" },
+  NOT_UPLOADED: { label: "Not uploaded", chip: "chip-pending" },
+};
 
 function availability(document: EducationDocument): { label: string; chip: string } {
   if (!document.uploaded) {
@@ -20,7 +26,9 @@ function availability(document: EducationDocument): { label: string; chip: strin
 /**
  * The candidate's education documents for this application — the academic
  * document from the Education step and the optional 10th marks card — with
- * View and Download. Files are fetched through the authorized recruiter
+ * View and Download. The academic document also shows its verification:
+ * AI verified, manual verification required (with the reason) or not
+ * uploaded. Files are fetched through the authorized recruiter
  * endpoint (same access as the resume); no storage URL is ever shown.
  */
 export function EducationDocumentsCard({
@@ -67,12 +75,23 @@ export function EducationDocumentsCard({
                   <p className="education-document-title">
                     <strong>{document.label}</strong>
                     <span className={`chip ${state.chip}`}>{state.label}</span>
+                    {document.verification && document.verification !== "NOT_UPLOADED" && (
+                      <span className={`chip ${VERIFICATION[document.verification].chip}`}>
+                        {VERIFICATION[document.verification].label}
+                      </span>
+                    )}
                   </p>
                   <p className="muted">{document.description}</p>
+                  {document.verification_reason && (
+                    <p className="education-document-reason">
+                      <strong>Reason for manual review:</strong> {document.verification_reason}
+                    </p>
+                  )}
                   {document.filename && (
                     <p className="education-document-file">
                       {document.filename}
                       {document.size_bytes !== null && ` · ${formatFileSize(document.size_bytes)}`}
+                      {document.uploaded_at && ` · uploaded ${new Date(document.uploaded_at).toLocaleString()}`}
                     </p>
                   )}
                 </div>

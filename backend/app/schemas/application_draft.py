@@ -12,6 +12,10 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.core.phone import InvalidPhoneNumberError, normalize_phone
 from app.models.application_draft import EducationCheckStatus
 from app.schemas.candidate import ApplicantBackground, BlankToNone
+from app.services.education.specializations import (
+    CATEGORY_MAX_LENGTH,
+    SPECIALIZATION_MAX_LENGTH,
+)
 
 #: Earliest completion year accepted; the latest is a few years ahead, for
 #: candidates still completing their degree.
@@ -58,17 +62,23 @@ class EducationDetails(BaseModel):
     qualification_key: str = Field(min_length=1, max_length=50)
     #: Required only for a catch-all ("Other bachelor's degree") option.
     degree_name: Annotated[str | None, BlankToNone] = Field(default=None, max_length=150)
-    #: Keys from app/services/education/specializations.py. Optional in the
-    #: schema so drafts saved before the catalogue existed still load; the
-    #: service requires both, and that they belong together, on every save
-    #: and again at submission.
+    #: The candidate's own text — any value, trimmed (blank or whitespace
+    #: only = not given), within the catalogue module's length limits.
+    #: Drafts saved before free-text entry hold catalogue keys, which still
+    #: load and resolve to their labels. Optional in the schema so drafts
+    #: saved before these fields existed still load; the service requires
+    #: the category on every save and again at submission. The
+    #: specialization is no longer entered by candidates: optional, kept
+    #: (trimmed, length-checked) when an older draft or client sends it.
     specialization_category: Annotated[str | None, BlankToNone] = Field(
-        default=None, max_length=50
+        default=None, max_length=CATEGORY_MAX_LENGTH
     )
-    specialization: Annotated[str | None, BlankToNone] = Field(default=None, max_length=50)
-    #: The specialization's label, set by the server from `specialization`
-    #: (whatever the client sends is replaced). The academic-document check
-    #: compares the document's branch against it.
+    specialization: Annotated[str | None, BlankToNone] = Field(
+        default=None, max_length=SPECIALIZATION_MAX_LENGTH
+    )
+    #: Set by the server from `specialization` — the text itself, or a
+    #: legacy key's label (whatever the client sends is replaced). The
+    #: academic-document check compares the document's branch against it.
     branch: Annotated[str | None, BlankToNone] = Field(default=None, max_length=150)
     institution: Annotated[str, BlankToNone] = Field(min_length=1, max_length=255)
     completion_year: int

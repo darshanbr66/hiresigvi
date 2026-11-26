@@ -143,14 +143,18 @@ class Application(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     #: The Education step's three selections as submitted through the
     #: progressive apply flow — qualification (app/services/education/
     #: catalog.py) and specialization category + specialization (…/
-    #: specializations.py) keys, kept per application because the Candidate
-    #: profile is shared across applications. NULL for applications created
-    #: any other way, or before these were recorded.
+    #: specializations.py), kept per application because the Candidate
+    #: profile is shared across applications. The specialization category
+    #: and specialization are the candidate's own text (trimmed); records
+    #: submitted before free-text entry hold catalogue keys, which
+    #: `specializations.category_label` / `specialization_label` still
+    #: resolve. NULL for applications created any other way, or before these
+    #: were recorded.
     education_qualification_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
     education_specialization_category: Mapped[str | None] = mapped_column(
-        String(50), nullable=True
+        String(100), nullable=True
     )
-    education_specialization: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    education_specialization: Mapped[str | None] = mapped_column(String(150), nullable=True)
     #: What the eligibility check decided at submission (app/services/
     #: application_draft_service.py `EligibilityReview`): the JD's fields of
     #: study, whether they were mandatory, the field the specialization

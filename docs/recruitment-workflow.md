@@ -282,27 +282,53 @@ of the AI's reading:
   required") keeps the Ph.D. eligible even if the AI flagged it as
   exact-only (`_states_exact_degrees`, rules version 4);
 - a field of study the JD makes mandatory never narrows the choice (see
-  the specialization below): when the selected specialization doesn't
+  the specialization category below): when the candidate's specialization
+  (older records) or, without one, specialization category doesn't
   deterministically match one of the JD's fields, the submitted
   application is flagged for HR (`eligibility_review_required` +
   `QUALIFICATION_REVIEW_REQUIRED` activity), never refused.
 
-**Education — specialization (two levels).** After the qualification the
-candidate picks a **specialization category** and then a
-**specialization** from that category (seven categories, from Computer
-Science & IT to Other Technology Domains). The catalogue is a fixed table in
-`app/services/education/specializations.py` — stable keys, display labels —
-served to the step by `qualification-options`; the frontend has no copy of
-it. Membership is a lookup, never an AI decision: the server refuses an
-unknown key or a specialization from another category, on every save and
-again at submission. Changing the category clears the specialization;
-changing the qualification keeps both. The specialization's label is what
-the academic-document check compares the document's branch against (the
-qualification check itself is unchanged). The three selections are stored
-per application (`applications.education_qualification_key`,
+**Education — specialization category (free text).** After the
+qualification the candidate types a **specialization category** (e.g.
+"Computer Science & Information Technology"). It is required and accepts
+any value: the server trims it, rejects empty or whitespace-only values,
+and caps it at **100** characters — the same limit in the form, the API
+schema (`specializations.CATEGORY_MAX_LENGTH`) and the database column.
+What the candidate typed is stored as typed (trimmed), never replaced by a
+catalogue value.
+
+The Education step **no longer has a Specialization field.** The
+specialization is optional in the API: new applications store none (and so
+no `branch`); a value an older draft or client sends is still trimmed and
+capped at **150** characters (`SPECIALIZATION_MAX_LENGTH`), and an older
+draft's value is carried through the form unchanged. Historical
+applications keep their specialization and HR still sees it.
+
+The catalogue in `app/services/education/specializations.py` (seven
+categories, stable keys, display labels, served by `qualification-options`)
+only supplies typing suggestions for the category, recognises a catalogue
+specialization when matching a JD's field of study, and resolves **legacy
+records**: drafts, applications and verification runs saved before
+free-text entry hold catalogue keys (`CS_IT`, `AI_ML`, …), which are shown
+as their labels; they are not rewritten. When there is a specialization
+(older records) it is what the academic-document check compares the
+document's branch against; without one the check has no branch to compare
+and checks the qualification only (unchanged, as are M.Tech / Ph.D.
+eligibility). For the JD field-of-study match below, the specialization is
+used when present, otherwise the specialization category. The values are
+stored per application (`applications.education_qualification_key`,
 `education_specialization_category`, `education_specialization`) and on
 each `EducationVerificationRun`, and HR sees them on the application's
-Education card.
+Education card. Migration `3a4b5c6d7e8f` widened the two specialization
+columns on both tables from 50 to 100 / 150 characters (metadata-only;
+existing rows untouched; a downgrade truncates longer values to 50).
+
+**Supporting document instruction.** The Education step shows, for every
+qualification: "Upload your final-year (or consolidated) marks card,
+provisional certificate or degree certificate for ME/MS/M.Tech/MSc/PhD.
+PDF, PNG, JPG, up to 5 MB." The file rules it states are the ones enforced
+(`validation.ts` and the server); the qualification's `document_hint` is
+still used by the AI check's messages.
 
 **Matching a JD's field of study** (`specializations.match_field_of_study`,
 deterministic, never AI). The JD field is split into its alternatives ("/",
@@ -319,12 +345,13 @@ abbreviations ("ME", "CE"), and fields made only of generic words
 ("Engineering", "Technology", "any related field").
 
 **What HR sees** (application → Education card): the highest
-qualification, specialization category and specialization; the job's field
-of study as recorded at submission ("required" when the JD made it
-mandatory) and whether it matched; and, for a flagged application, each
-reason in plain language ("The job requires Mechanical Engineering, and the
-selected specialization (“Robotics and Automation”) couldn't be matched to
-it automatically."). Each reason is also a `QUALIFICATION_REVIEW_REQUIRED`
+qualification, specialization category and specialization ("—" for new
+applications, which have none); the job's field of study as recorded at
+submission ("required" when the JD made it mandatory) and whether it
+matched; and, for a flagged application, each reason in plain language
+("The job requires Mechanical Engineering, and the selected specialization
+category (“Computer Science & Information Technology”) couldn't be matched
+to it automatically."; older records name the specialization instead). Each reason is also a `QUALIFICATION_REVIEW_REQUIRED`
 activity. Applications flagged before reasons were stored show a generic
 notice.
 
@@ -345,29 +372,46 @@ is mandatory (PDF/PNG/JPG, up to `MAX_ACADEMIC_DOCUMENT_SIZE_MB`, extension
 reads the file itself; Groq falls back for PDFs with a text layer) reports
 what the document appears to show. `app/services/education/document_check.py`
 decides the outcome from those structured fields only, so a document
-can't talk its way into a match:
+can't talk its way into a match.
+
+The check is **advisory: no outcome ever blocks the candidate.** Uploading
+and storing the file is one operation; the AI check is a separate, optional
+one, and its result never undoes a successful upload. A failed *upload*
+(wrong type, too large, bad signature, storage error) is still refused and
+nothing is reported as uploaded.
 
 - **MATCH**: consistent with the selected qualification and the job. The
-  candidate continues.
-- **MISMATCH**: a confident, specific inconsistency. Examples: an M.Tech
-  selected but a B.Tech record uploaded ("You selected M.Tech, but
-  the uploaded document appears to be a B.E. / B.Tech academic record…"), a
-  school record, a different branch, or a non-academic file. The candidate
-  must upload the correct document; manual review is not offered.
+  document is marked **AI verified** and the candidate continues.
+- **MISMATCH**: a confident, specific inconsistency (an M.Tech selected but
+  a B.Tech record uploaded, a school record, a different branch, a
+  non-academic file). The document is kept, sent to **manual
+  verification**, and the candidate continues, seeing exactly: "Your
+  document has been uploaded successfully. Our recruitment team will review
+  it manually. You can continue with your application."
 - **UNCLEAR**: illegible, low confidence, or the name on the document
-  doesn't match. The candidate may upload a clearer copy or continue to
-  manual review.
-- **FAILED**: the AI was unavailable. The upload is kept and the candidate
-  can retry. Manual review is offered after 2 failures, or at once if no AI
-  is configured.
+  doesn't match. Kept, manual verification, the candidate continues.
+- **FAILED**: the AI was unavailable, timed out, errored or answered
+  invalidly (or the per-draft check limit was reached). Kept, manual
+  verification, the candidate continues.
+
+Drafts left blocked by the earlier (blocking) check are moved to manual
+review when the candidate continues.
 
 Every attempt is an `EducationVerificationRun` (history, never overwritten;
-at most `MAX_EDUCATION_CHECKS_PER_DRAFT` per draft). The submitted
-application records `education_verification_status`: `VERIFIED` or
-`MANUAL_REVIEW`. A `MANUAL_REVIEW` application gets an
-`EDUCATION_MANUAL_REVIEW_REQUIRED` activity, and HR sees the document and
-the checks on the application page. This is a consistency check, never a
-claim that a document is genuine.
+outcome and reason code recorded; at most `MAX_EDUCATION_CHECKS_PER_DRAFT`
+per draft). The submitted application records
+`education_verification_status`: `VERIFIED` or `MANUAL_REVIEW`. A
+`MANUAL_REVIEW` application gets an `EDUCATION_MANUAL_REVIEW_REQUIRED`
+activity. On the application page HR sees the academic document as **AI
+verified**, **Manual verification required** (with a plain-language reason
+built from the stored outcome and reason code — e.g. "AI identified a
+possible document mismatch", "AI could not confidently classify the
+document", "AI verification service was unavailable", "AI classification
+failed" — never an error detail) or **Not uploaded**, with the filename,
+size, upload time and the existing authorized View / Download. This needs
+no schema change: the state is derived from
+`education_verification_status` and the latest run. This is a consistency
+check, never a claim that a document is genuine.
 
 **1. Email verification (required).** The candidate asks for a 6-digit code
 and then confirms it. Confirming it returns a short-lived verification token,

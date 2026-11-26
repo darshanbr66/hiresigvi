@@ -12,7 +12,12 @@ import {
   saveDraftEducation,
   uploadAcademicDocument,
 } from "../api";
-import { toDetails, type EducationValues } from "./educationValues";
+import {
+  SPECIALIZATION_CATEGORY_MAX_LENGTH,
+  specializationSuggestions,
+  toDetails,
+  type EducationValues,
+} from "./educationValues";
 import { fieldAria } from "./fieldAria";
 import { FormField } from "./formFields";
 import {
@@ -24,32 +29,43 @@ import {
   tenthMarksError,
 } from "./validation";
 
+// MISMATCH / UNCLEAR / FAILED only remain on drafts saved under the earlier,
+// blocking check; the server now sends every non-match to manual review.
 const STATUS_TONE: Record<EducationCheckStatus, "success" | "warning" | "error" | "info"> = {
   NOT_STARTED: "info",
   VERIFIED: "success",
   MANUAL_REVIEW: "info",
-  UNCLEAR: "warning",
-  MISMATCH: "error",
-  FAILED: "error",
+  UNCLEAR: "info",
+  MISMATCH: "info",
+  FAILED: "info",
 };
 
 const STATUS_TITLE: Record<EducationCheckStatus, string> = {
   NOT_STARTED: "Document not checked yet",
   VERIFIED: "Document checked",
-  MANUAL_REVIEW: "Document sent for manual review",
-  UNCLEAR: "We couldn't confirm your document",
-  MISMATCH: "Document doesn't match",
-  FAILED: "Check not completed",
+  MANUAL_REVIEW: "Document uploaded",
+  UNCLEAR: "Document uploaded",
+  MISMATCH: "Document uploaded",
+  FAILED: "Document uploaded",
 };
 
-type Phase = { kind: "idle" } | { kind: "uploading"; progress: number } | { kind: "checking" };
+/** The Supporting document instruction, worded by the business (the file
+ * rules it states are enforced by validation.ts and the server). */
+const DOCUMENT_INSTRUCTION =
+  "Upload your final-year (or consolidated) marks card, provisional certificate or degree certificate for ME/MS/M.Tech/MSc/PhD. PDF, PNG, JPG, up to 5 MB.";
+
+type Phase ={ kind: "idle" } | { kind: "uploading"; progress: number } | { kind: "checking" };
 
 /**
  * Step 4: the qualification — offered only from what this job's JD
  * accepts — its details, and the mandatory academic document, which the
  * server checks with AI for consistency with the selected qualification.
- * The outcome comes only from the server: the candidate continues when the
- * check verified the document, or when the server allowed manual review.
+ * The check only assists: once the document is uploaded the candidate
+ * always continues — AI verified, or sent to the recruitment team for manual
+ * review when the AI saw a possible mismatch, was unsure or unavailable.
+ * The outcome comes only from the server. The specialization category is
+ * free text; the catalogue only offers suggestions. (There is no
+ * Specialization field; an older draft's value is kept as it was.)
  */
 export function EducationStep({
   base,
@@ -81,7 +97,7 @@ export function EducationStep({
     qualification: useId(),
     degree: useId(),
     category: useId(),
-    specialization: useId(),
+    categorySuggestions: useId(),
     institution: useId(),
     year: useId(),
     marks: useId(),
@@ -104,35 +120,22 @@ export function EducationStep({
   });
   const options = optionsQuery.data;
   const selected = options?.options.find((option) => option.key === values.qualification_key);
-  const category = options?.specialization_categories.find(
-    (item) => item.key === values.specialization_category,
+  const suggestions = specializationSuggestions(
+    options?.specialization_categories,
+    values.specialization_category,
   );
   const check = draft.education_check;
   const busy = phase.kind !== "idle";
   const savedKey = draft.education?.qualification_key ?? null;
-  const savedSpecialization = draft.education?.specialization ?? "";
-  const changedSinceCheck =
-    draft.education !== null &&
-    (savedKey !== values.qualification_key || savedSpecialization !== values.specialization);
+  // The document is checked against the qualification, so a change to it
+  // asks for a new check. (The specialization is no longer entered here; a
+  // value from an older draft is carried through unchanged.)
+  const changedSinceCheck = draft.education !== null && savedKey !== values.qualification_key;
   const canContinue = check.can_continue && !changedSinceCheck;
 
   function set<K extends keyof EducationValues>(key: K, value: EducationValues[K]) {
     setErrors((current) => ({ ...current, [key]: undefined }));
     onChange({ ...values, [key]: value });
-  }
-
-  function selectCategory(key: string) {
-    // A specialization belongs to one category: a new category clears it.
-    setErrors((current) => ({
-      ...current,
-      specialization_category: undefined,
-      specialization: undefined,
-    }));
-    onChange({
-      ...values,
-      specialization_category: key,
-      specialization: key === values.specialization_category ? values.specialization : "",
-    });
   }
 
   function validate(): boolean {
@@ -141,9 +144,10 @@ export function EducationStep({
     if (selected?.requires_degree_name && !values.degree_name.trim()) {
       next.degree_name = "Enter the name of your degree.";
     }
-    if (!category) next.specialization_category = "Select your specialization category.";
-    else if (!category.specializations.some((item) => item.key === values.specialization)) {
-      next.specialization = "Select your specialization.";
+    const category = values.specialization_category.trim();
+    if (!category) next.specialization_category = "Enter your specialization category.";
+    else if (category.length > SPECIALIZATION_CATEGORY_MAX_LENGTH) {
+      next.specialization_category = `Keep it to ${SPECIALIZATION_CATEGORY_MAX_LENGTH} characters or fewer.`;
     }
     if (!values.institution.trim()) next.institution = "Enter your institution or university.";
     const yearProblem = completionYearError(values.completion_year);
@@ -226,8 +230,20 @@ export function EducationStep({
       onContinue();
       return;
     }
+    if (saved.education_check.can_request_manual_review) {
+      // A draft left blocked by the earlier check: send it to manual review.
+      try {
+        const reviewed = await requestEducationManualReview(base, auth);
+        onDraft(reviewed);
+        setPhase({ kind: "idle" });
+        if (reviewed.education_check.can_continue) onContinue();
+      } catch (err) {
+        fail(err, "Please try again.");
+      }
+      return;
+    }
     if (saved.education_check.status === "NOT_STARTED" && saved.document) {
-      // The qualification or specialization changed: check the same document again.
+      // The qualification changed: check the same document again.
       try {
         const rechecked = await recheckAcademicDocument(base, auth);
         onDraft(rechecked);
@@ -287,7 +303,9 @@ export function EducationStep({
     );
   }
 
-  const specializationHint =
+  // The role's required field of study, shown on the category (the only
+  // field-of-study input since the Specialization field was removed).
+  const fieldOfStudyHint =
     options.field_mandatory && options.fields_of_study.length > 0
       ? `This role asks for: ${options.fields_of_study.join(", ")}.`
       : undefined;
@@ -337,49 +355,33 @@ export function EducationStep({
           </FormField>
         )}
 
-        <div className="field-row">
-          <FormField
-            id={ids.category}
-            label="Specialization category"
-            message={errors.specialization_category}
-          >
-            <select
-              {...fieldAria(ids.category, errors.specialization_category)}
-              required
-              value={values.specialization_category}
-              onChange={(e) => selectCategory(e.target.value)}
-              disabled={busy}
-            >
-              <option value="">Select…</option>
-              {options.specialization_categories.map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField
-            id={ids.specialization}
-            label="Specialization"
-            hint={specializationHint}
-            message={errors.specialization}
-          >
-            <select
-              {...fieldAria(ids.specialization, errors.specialization, specializationHint)}
-              required={Boolean(category)}
-              value={values.specialization}
-              onChange={(e) => set("specialization", e.target.value)}
-              disabled={busy || !category}
-            >
-              <option value="">{category ? "Select…" : "Select a category first"}</option>
-              {category?.specializations.map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </FormField>
-        </div>
+        <FormField
+          id={ids.category}
+          label="Specialization category"
+          hint={fieldOfStudyHint}
+          message={errors.specialization_category}
+        >
+          <input
+            {...fieldAria(ids.category, errors.specialization_category, fieldOfStudyHint)}
+            required
+            maxLength={SPECIALIZATION_CATEGORY_MAX_LENGTH}
+            value={values.specialization_category}
+            onChange={(e) => set("specialization_category", e.target.value)}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              if (trimmed !== e.target.value) set("specialization_category", trimmed);
+            }}
+            list={ids.categorySuggestions}
+            autoComplete="off"
+            placeholder="e.g. Computer Science & Information Technology"
+            disabled={busy}
+          />
+          <datalist id={ids.categorySuggestions}>
+            {suggestions.categories.map((label) => (
+              <option key={label} value={label} />
+            ))}
+          </datalist>
+        </FormField>
 
         {selected && (
           <div className="field-row">
@@ -420,10 +422,7 @@ export function EducationStep({
         <fieldset className="apply-fieldset">
           <legend>Supporting document</legend>
           <p className="apply-doc-hint" id={`${ids.document}-hint`}>
-            Upload {selected.document_hint} for <strong>{selected.label}</strong>.{" "}
-            <span className="muted">
-              {options.accepted_document_types.join(", ")}, up to {options.max_document_size_mb} MB.
-            </span>
+            {DOCUMENT_INSTRUCTION}
           </p>
 
           {draft.document && (
@@ -487,7 +486,7 @@ export function EducationStep({
               </p>
               <p>
                 {changedSinceCheck
-                  ? "You changed your qualification or specialization. Your document will be checked again when you continue."
+                  ? "You changed your qualification. Your document will be checked again when you continue."
                   : (check.message ?? "Your document will be checked when you continue.")}
               </p>
               {!changedSinceCheck && (check.can_retry || check.can_request_manual_review) && (

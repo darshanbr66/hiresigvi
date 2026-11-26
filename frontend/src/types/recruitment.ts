@@ -269,6 +269,9 @@ export interface ApplicationEducation {
   institution: string | null;
   qualification_year: number | null;
   document: { filename: string; content_type: string; size_bytes: number; uploaded_at: string } | null;
+  /** Why the document needs manual verification (plain language from the
+   * latest check's outcome); null when AI verified or not uploaded. */
+  manual_review_reason: string | null;
   checks: {
     outcome: "MATCH" | "MISMATCH" | "UNCLEAR" | "FAILED";
     reason_code: string;
@@ -308,7 +311,14 @@ export interface EducationDocument {
   content_type: string | null;
   size_bytes: number | null;
   uploaded_at: string | null;
+  /** Academic document only; null for the (never checked) 10th marks card. */
+  verification: DocumentVerification | null;
+  /** Why manual verification is required (plain language), else null. */
+  verification_reason: string | null;
 }
+
+/** Where the academic document's verification stands. */
+export type DocumentVerification = "AI_VERIFIED" | "MANUAL_VERIFICATION_REQUIRED" | "NOT_UPLOADED";
 
 export interface EducationDocumentsResponse {
   documents: EducationDocument[];

@@ -3,6 +3,11 @@ academic document uploaded in the Education step (per application,
 `academic_documents`) and the optional 10th marks card (on the shared
 Candidate profile, `candidates.tenth_marks_card_*`).
 
+The academic document also carries its verification state for the
+recruiter — AI verified, manual verification required (with the reason,
+from the stored check outcome) or not uploaded — see
+`academic_verification`.
+
 Both live in the same storage abstraction as resumes but in their own rows,
 and every read resolves the storage backend from the row's own
 `storage_provider` (never the current default), exactly like a resume
@@ -11,8 +16,9 @@ authorized endpoint — never a storage path or a public URL. Tenant scoping
 is the caller's application lookup (and RLS).
 """
 
+import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 
@@ -22,9 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
 from app.integrations.storage import StorageError, get_resume_storage_for_provider
-from app.models.application import Application
-from app.models.application_draft import AcademicDocument
-from app.services.education import catalog
+from app.models.application import Application, ApplicationEducationStatus
+from app.models.application_draft import AcademicDocument, EducationVerificationRun
+from app.services.education import catalog, document_check
 
 logger = get_logger(__name__)
 
@@ -32,6 +38,61 @@ logger = get_logger(__name__)
 class EducationDocumentKind(StrEnum):
     ACADEMIC_DOCUMENT = "academic-document"
     TENTH_MARKS_CARD = "tenth-marks-card"
+
+
+class DocumentVerification(StrEnum):
+    """Where the academic document's verification stands, for the recruiter.
+    The AI check is advisory; it never decides on its own."""
+
+    #: Uploaded, and the AI found it consistent with the selected
+    #: qualification (never a statement that it is genuine).
+    AI_VERIFIED = "AI_VERIFIED"
+    #: Uploaded; the AI flagged a possible mismatch, couldn't classify it
+    #: confidently, or the check failed — a recruiter must review it.
+    MANUAL_VERIFICATION_REQUIRED = "MANUAL_VERIFICATION_REQUIRED"
+    NOT_UPLOADED = "NOT_UPLOADED"
+
+
+def academic_verification(
+    *,
+    uploaded: bool,
+    education_status: ApplicationEducationStatus | None,
+    latest_run: EducationVerificationRun | None,
+) -> tuple[DocumentVerification, str | None]:
+    """The academic document's verification state and, when it needs manual
+    verification, why — plain language from the stored outcome and reason
+    code only (document_check.manual_review_reason), never an error detail."""
+    if not uploaded:
+        return DocumentVerification.NOT_UPLOADED, None
+    if education_status == ApplicationEducationStatus.VERIFIED:
+        return DocumentVerification.AI_VERIFIED, None
+    return DocumentVerification.MANUAL_VERIFICATION_REQUIRED, document_check.manual_review_reason(
+        latest_run.outcome if latest_run else None,
+        latest_run.reason_code if latest_run else None,
+    )
+
+
+async def latest_check(
+    db: AsyncSession, application_id: uuid.UUID
+) -> EducationVerificationRun | None:
+    """The most recent AI check of the application's *current* academic
+    document — checks of a document the candidate later replaced don't
+    describe the one HR is looking at."""
+    current_document = (
+        select(AcademicDocument.id)
+        .where(AcademicDocument.application_id == application_id)
+        .scalar_subquery()
+    )
+    run: EducationVerificationRun | None = await db.scalar(
+        select(EducationVerificationRun)
+        .where(
+            EducationVerificationRun.application_id == application_id,
+            EducationVerificationRun.academic_document_id == current_document,
+        )
+        .order_by(EducationVerificationRun.created_at.desc(), EducationVerificationRun.id.desc())
+        .limit(1)
+    )
+    return run
 
 
 @dataclass(frozen=True)
@@ -60,6 +121,10 @@ class EducationDocument:
     content_type: str | None = None
     size_bytes: int | None = None
     uploaded_at: datetime | None = None
+    #: The academic document only (None for the 10th marks card, which is
+    #: never checked).
+    verification: DocumentVerification | None = None
+    verification_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,20 +195,24 @@ async def list_documents(db: AsyncSession, application: Application) -> list[Edu
     marks_card = _tenth_marks_card(application)
     documents: list[EducationDocument] = []
     if academic is not None or application.education_verification_status is not None:
-        documents.append(
-            _describe(
-                EducationDocumentKind.ACADEMIC_DOCUMENT,
-                "Academic document",
-                (
-                    f"Marks card or certificate for {qualification}"
-                    if qualification
-                    else "Marks card or certificate for the highest qualification"
-                ),
-                required=True,
-                stored=academic,
-                available=await _is_available(academic) if academic else False,
-            )
+        verification, reason = academic_verification(
+            uploaded=academic is not None,
+            education_status=application.education_verification_status,
+            latest_run=await latest_check(db, application.id) if academic is not None else None,
         )
+        described = _describe(
+            EducationDocumentKind.ACADEMIC_DOCUMENT,
+            "Academic document",
+            (
+                f"Marks card or certificate for {qualification}"
+                if qualification
+                else "Marks card or certificate for the highest qualification"
+            ),
+            required=True,
+            stored=academic,
+            available=await _is_available(academic) if academic else False,
+        )
+        documents.append(replace(described, verification=verification, verification_reason=reason))
     documents.append(
         _describe(
             EducationDocumentKind.TENTH_MARKS_CARD,
@@ -216,9 +285,12 @@ async def open_document(
 
 
 __all__ = [
+    "DocumentVerification",
     "EducationDocument",
     "EducationDocumentKind",
     "OpenedDocument",
+    "academic_verification",
+    "latest_check",
     "list_documents",
     "open_document",
 ]

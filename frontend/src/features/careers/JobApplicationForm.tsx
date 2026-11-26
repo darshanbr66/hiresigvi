@@ -37,7 +37,6 @@ import { EducationStep } from "./apply/EducationStep";
 import {
   educationFromDraft,
   EMPTY_EDUCATION,
-  specializationLabels,
   type EducationValues,
 } from "./apply/educationValues";
 import { fieldAria } from "./apply/fieldAria";
@@ -1299,11 +1298,6 @@ function ReviewStep({
     (education.degree_name ||
       options.data?.options.find((option) => option.key === education.qualification_key)?.label ||
       education.qualification_key);
-  const specialization = specializationLabels(
-    options.data?.specialization_categories,
-    education?.specialization_category,
-    education?.specialization,
-  );
   return (
     <div className="apply-step-body apply-review">
       <ReviewSection title="Basic information" onEdit={() => onEdit("details")}>
@@ -1369,9 +1363,9 @@ function ReviewStep({
           <dt>Highest qualification</dt>
           <dd>{qualificationLabel}</dd>
           <dt>Specialization category</dt>
-          <dd>{specialization.category ?? "—"}</dd>
-          <dt>Specialization</dt>
-          <dd>{specialization.specialization ?? education.branch ?? "—"}</dd>
+          {/* The candidate's own text (the server shows a legacy catalogue key
+              as its label). */}
+          <dd>{education.specialization_category ?? "—"}</dd>
           <dt>Institution</dt>
           <dd>
             {education.institution} ({education.completion_year})

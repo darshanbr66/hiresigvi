@@ -1022,6 +1022,18 @@
   overflow-wrap: anywhere;
 }
 
+/* why a document needs manual verification (recruiter view) */
+.education-document-info .education-document-reason,
+.education-review-reason {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.education-review-reason {
+  margin-bottom: 0.75rem;
+}
+
 .verify-status-ok {
   background: var(--color-active-bg);
   color: var(--color-active-text);

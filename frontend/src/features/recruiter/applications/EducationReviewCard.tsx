@@ -6,8 +6,8 @@ import { Alert } from "../../../shared/components/Alert";
 import { downloadAcademicDocument, getApplicationEducation } from "./api";
 
 const STATUS_LABEL = {
-  VERIFIED: "Document consistent with selected qualification",
-  MANUAL_REVIEW: "Manual review required",
+  VERIFIED: "AI verified",
+  MANUAL_REVIEW: "Manual verification required",
 } as const;
 
 const OUTCOME_LABEL = {
@@ -20,7 +20,8 @@ const OUTCOME_LABEL = {
 /**
  * The academic document a self-service applicant uploaded, and the AI
  * consistency checks of it — what HR needs to review a MANUAL_REVIEW
- * application. Advisory only: never presented as proof of authenticity.
+ * application (the AI flagged a possible mismatch, was unsure, or the check
+ * failed). Advisory only: never presented as proof of authenticity.
  */
 export function EducationReviewCard({
   applicationId,
@@ -76,6 +77,11 @@ export function EducationReviewCard({
             </ul>
           )}
         </div>
+      )}
+      {status === "MANUAL_REVIEW" && query.data?.manual_review_reason && (
+        <p className="education-review-reason">
+          <strong>Reason for manual review:</strong> {query.data.manual_review_reason}
+        </p>
       )}
       {query.isError && <Alert>Could not load the education details.</Alert>}
       {query.data && (

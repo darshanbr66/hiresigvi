@@ -7,8 +7,16 @@ Candidate-facing messages are composed here from vocabulary labels — never
 from model free text — and never claim a document is genuine.
 
 Confidence-aware by design: anything the model isn't sure about is
-UNCLEAR (re-upload a clearer copy, or continue to manual review), never a
-rejection. MISMATCH is reserved for a confident, specific inconsistency.
+UNCLEAR, and MISMATCH is reserved for a confident, specific inconsistency.
+
+Advisory only — no outcome ever blocks the candidate. The uploaded document
+is always kept; MATCH marks it AI verified, and MISMATCH, UNCLEAR or a
+failed check (the AI unavailable, timing out, erroring or answering
+invalidly) sends it to the recruitment team for manual verification, with
+the outcome and reason recorded (`manual_review_reason` is the recruiter's
+plain-language version). The `message` of a non-MATCH result explains the
+AI's reading and is kept for the record; the candidate is shown
+`candidate_message_for` instead.
 """
 
 import re
@@ -170,3 +178,77 @@ AI_UNAVAILABLE_MESSAGE = (
     "Automatic document checking isn't available right now. Your document is saved — you "
     "can continue, and our recruitment team will review it."
 )
+
+
+#: What the candidate is told when the AI flags a possible mismatch — the
+#: document is kept and the candidate continues.
+MISMATCH_MANUAL_REVIEW_MESSAGE = (
+    "Your document has been uploaded successfully. Our recruitment team will review it "
+    "manually. You can continue with your application."
+)
+#: What the candidate is told when the AI couldn't classify the document
+#: confidently, or the check couldn't run.
+MANUAL_REVIEW_MESSAGE = (
+    "Your document has been uploaded successfully. It couldn't be verified automatically, "
+    "so our recruitment team will review it manually. You can continue with your application."
+)
+
+#: Reason code of a check that wasn't run because the draft's AI check
+#: budget (`max_education_checks_per_draft`) was used up.
+CHECK_LIMIT_REASON = "check_limit"
+
+
+def candidate_message_for(outcome: EducationVerificationOutcome, ai_message: str) -> str:
+    """What the candidate sees for a check outcome: the AI's confirmation for
+    a MATCH; otherwise that the upload succeeded and HR will review it."""
+    if outcome == EducationVerificationOutcome.MATCH:
+        return ai_message
+    if outcome == EducationVerificationOutcome.MISMATCH:
+        return MISMATCH_MANUAL_REVIEW_MESSAGE
+    return MANUAL_REVIEW_MESSAGE
+
+
+_MISMATCH_REASONS = {
+    "not_academic": "the file may not be an academic record",
+    "level_mismatch": (
+        "the document appears to be for a different qualification level than the one selected"
+    ),
+    "degree_mismatch": "the document appears to be for a different degree than the one selected",
+    "branch_mismatch": (
+        "the specialization on the document may differ from the one the candidate entered"
+    ),
+    "not_eligible": "the selected qualification may not be one this role accepts",
+}
+_UNCLEAR_REASONS = {
+    "illegible": "the document could not be read clearly",
+    "low_confidence": "the document's qualification could not be identified with confidence",
+    "name_mismatch": "the name on the document may differ from the candidate's name",
+}
+
+
+def manual_review_reason(
+    outcome: EducationVerificationOutcome | None, reason_code: str | None
+) -> str:
+    """Why a document needs manual verification, in plain language for the
+    recruiter — from the stored outcome and reason code only, never from an
+    error message or stack trace."""
+    if outcome is None:
+        return "No automatic check was completed for this document."
+    if outcome == EducationVerificationOutcome.MISMATCH:
+        detail = _MISMATCH_REASONS.get(reason_code or "")
+        return "AI identified a possible document mismatch" + (f": {detail}." if detail else ".")
+    if outcome == EducationVerificationOutcome.UNCLEAR:
+        detail = _UNCLEAR_REASONS.get(reason_code or "")
+        return "AI could not confidently classify the document" + (
+            f": {detail}." if detail else "."
+        )
+    if outcome == EducationVerificationOutcome.FAILED:
+        if reason_code == "ai_not_configured":
+            return "AI verification service was unavailable."
+        if reason_code == CHECK_LIMIT_REASON:
+            return (
+                "AI classification was not run: the automatic check limit for this application "
+                "was reached."
+            )
+        return "AI classification failed."
+    return "The recruitment team asked for this document to be verified manually."

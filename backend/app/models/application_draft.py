@@ -181,9 +181,10 @@ class EducationVerificationRun(UUIDPrimaryKeyMixin, TenantScopedMixin, Timestamp
     )
     qualification_key: Mapped[str] = mapped_column(String(50), nullable=False)
     #: The specialization category + specialization the document was
-    #: checked against (NULL for checks run before they were recorded).
-    specialization_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    specialization: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: checked against (NULL for checks run before they were recorded):
+    #: the candidate's text, or a catalogue key on older runs.
+    specialization_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    specialization: Mapped[str | None] = mapped_column(String(150), nullable=True)
     outcome: Mapped[EducationVerificationOutcome] = mapped_column(
         Enum(EducationVerificationOutcome, name="education_verification_outcome", native_enum=True),
         nullable=False,

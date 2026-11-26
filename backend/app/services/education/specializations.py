@@ -1,20 +1,33 @@
-"""The specialization catalogue of the candidate Education step — the single
-source of truth for the two-level choice (category -> specialization).
+"""The specialization catalogue of the candidate Education step.
 
-A fixed application rule, never an AI decision: whether a specialization
-belongs to a category is a lookup in this table. Keys are stable internal
-identifiers (stored on drafts, applications and verification runs); labels
-are what candidates and HR see and may be reworded without a migration.
-Never reuse or repurpose a key — retire it and add a new one instead, so
-stored records keep resolving to what the candidate chose.
+Candidates type their specialization category and specialization as free
+text (any value, trimmed, within the lengths below); the catalogue no
+longer restricts what they can enter. It remains the internal reference
+for three things:
 
-The selected specialization's label is also what the academic-document
-check compares the document's branch against (`EducationDetails.branch`
-is derived from it server-side), so that check is unchanged.
+- suggestions the Education step offers while typing (never a limit);
+- resolving records stored before free-text entry, which hold catalogue
+  keys (`CS_IT`, `AI_ML` …): `category_label` / `specialization_label`
+  turn a key into its label and pass any other text through unchanged;
+- recognising a specialization in a JD's field of study
+  (`match_field_of_study`), including its established equivalent names.
+
+A fixed application rule, never an AI decision. Keys are stable internal
+identifiers; never reuse or repurpose one, so stored records keep
+resolving to what the candidate chose.
+
+The specialization (its label for a legacy key) is also what the
+academic-document check compares the document's branch against
+(`EducationDetails.branch` is derived from it server-side).
 """
 
 import re
 from dataclasses import dataclass
+
+#: Longest accepted free-text values (characters, after trimming) — the same
+#: limits in the API schema, the database columns and the candidate form.
+CATEGORY_MAX_LENGTH = 100
+SPECIALIZATION_MAX_LENGTH = 150
 
 
 @dataclass(frozen=True)
@@ -271,23 +284,51 @@ class FieldMatch:
     field_of_study: str | None = None
 
 
-def match_field_of_study(specialization_key: str | None, fields_of_study: list[str]) -> FieldMatch:
+def _catalog_key_for(text: str) -> str | None:
+    """The catalogue specialization a free-text value names — its label or
+    one of its EQUIVALENT_NAMES, compared normalized ("Computer Science &
+    Engineering" = "Computer Science and Engineering", "CSE") — or None."""
+    wanted = _normalize(text)
+    if not wanted:
+        return None
+    for key, label in _SPECIALIZATION_LABELS.items():
+        if _normalize(label) == wanted or any(
+            _normalize(name) == wanted for name in EQUIVALENT_NAMES.get(key, ())
+        ):
+            return key
+    return None
+
+
+def match_field_of_study(specialization: str | None, fields_of_study: list[str]) -> FieldMatch:
     """Deterministic check of a specialization against a JD's fields of
-    study — never an AI call. A JD field (or one of its "/", ",", "or"
-    alternatives) matches when, after normalization, it equals the
-    specialization's label or one of its EQUIVALENT_NAMES, or one contains
-    the other as whole words ("Computer Science" matches "Computer Science
-    and Engineering", "B.Tech in CSE" matches CSE). A field made only of
-    generic words never matches. No match means the application is
+    study — never an AI call. `specialization` is the candidate's text, or
+    a catalogue key on records stored before free-text entry. A catalogue
+    specialization (by key, or text naming it) is known by its label and
+    EQUIVALENT_NAMES; any other text by itself. A JD field (or one of its
+    "/", ",", "or" alternatives) matches when, after normalization, it
+    equals one of those names, or one contains the other as whole words
+    ("Computer Science" matches "Computer Science and Engineering", "B.Tech
+    in CSE" matches CSE). Generic words alone ("Engineering", "a related
+    field") never match, on either side. No match means the application is
     flagged for HR to check — never refused."""
-    label = _SPECIALIZATION_LABELS.get(specialization_key or "")
-    if label is None:
+    if not specialization or not specialization.strip():
         return FieldMatch(False)
-    assert specialization_key is not None
-    names = {_normalize(label)} | {
-        _normalize(n) for n in EQUIVALENT_NAMES.get(specialization_key, ())
-    }
-    padded_names = [f" {name} " for name in names if name]
+    key = (
+        specialization
+        if specialization in _SPECIALIZATION_LABELS
+        else _catalog_key_for(specialization)
+    )
+    if key is not None:
+        names = {_normalize(_SPECIALIZATION_LABELS[key])} | {
+            _normalize(n) for n in EQUIVALENT_NAMES.get(key, ())
+        }
+    else:
+        names = {_normalize(specialization)}
+    padded_names = [
+        f" {name} " for name in names if name and not set(name.split()) <= _GENERIC_WORDS
+    ]
+    if not padded_names:
+        return FieldMatch(False)
     for field_of_study in fields_of_study:
         for alternative in _alternatives(field_of_study):
             required = _normalize(alternative)

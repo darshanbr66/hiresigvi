@@ -18,6 +18,8 @@ const doc = (overrides: Partial<EducationDocument>): EducationDocument => ({
   content_type: "application/pdf",
   size_bytes: 20480,
   uploaded_at: "2026-11-20T10:00:00Z",
+  verification: "AI_VERIFIED",
+  verification_reason: null,
   ...overrides,
 });
 
@@ -28,6 +30,7 @@ const MARKS = doc({
   required: false,
   filename: "10th.png",
   content_type: "image/png",
+  verification: null,
 });
 
 function renderCard() {
@@ -58,6 +61,36 @@ describe("EducationDocumentsCard", () => {
     expect(academic).toHaveTextContent("mtech.pdf · 20 KB");
     expect(within(academic).getByText("Available")).toBeInTheDocument();
     expect(within(row("10th marks card")).getByText("10th.png", { exact: false })).toBeInTheDocument();
+  });
+
+  it("marks an AI-verified academic document as such, with no review reason", async () => {
+    vi.spyOn(api, "listEducationDocuments").mockResolvedValue({ documents: [doc({}), MARKS] });
+    renderCard();
+    const academic = (await screen.findByText("Academic document")).closest("li") as HTMLElement;
+    expect(within(academic).getByText("AI verified")).toBeInTheDocument();
+    expect(within(academic).queryByText(/Reason for manual review/)).not.toBeInTheDocument();
+    // The 10th marks card is never checked: no verification chip.
+    expect(within(row("10th marks card")).queryByText("AI verified")).not.toBeInTheDocument();
+  });
+
+  it("flags a document needing manual verification, with the reason and secure download", async () => {
+    vi.spyOn(api, "listEducationDocuments").mockResolvedValue({
+      documents: [
+        doc({
+          verification: "MANUAL_VERIFICATION_REQUIRED",
+          verification_reason: "AI identified a possible document mismatch.",
+        }),
+      ],
+    });
+    renderCard();
+    const academic = (await screen.findByText("Academic document")).closest("li") as HTMLElement;
+    expect(within(academic).getByText("Manual verification required")).toBeInTheDocument();
+    expect(academic).toHaveTextContent(
+      "Reason for manual review: AI identified a possible document mismatch.",
+    );
+    expect(academic).toHaveTextContent("mtech.pdf");
+    expect(academic).toHaveTextContent("uploaded");
+    expect(screen.getByRole("button", { name: "Download academic document" })).toBeInTheDocument();
   });
 
   it("downloads and views a document through the authorized endpoint", async () => {

@@ -266,6 +266,15 @@ async def get_application_education(
     qualification_key = application.education_qualification_key or (
         document.qualification_key if document is not None else None
     )
+    _verification, manual_review_reason = application_document_service.academic_verification(
+        uploaded=document is not None,
+        education_status=application.education_verification_status,
+        latest_run=(
+            await application_document_service.latest_check(db, application.id)
+            if document is not None
+            else None
+        ),
+    )
     return ApplicationEducationResponse(
         education_verification_status=application.education_verification_status,
         eligibility_review_required=application.eligibility_review_required,
@@ -295,6 +304,7 @@ async def get_application_education(
             if document is not None
             else None
         ),
+        manual_review_reason=manual_review_reason,
         checks=[
             EducationCheckEntry(
                 outcome=run.outcome,
@@ -382,6 +392,8 @@ async def list_education_documents(
                 content_type=document.content_type,
                 size_bytes=document.size_bytes,
                 uploaded_at=document.uploaded_at,
+                verification=document.verification.value if document.verification else None,
+                verification_reason=document.verification_reason,
             )
             for document in documents
         ]

@@ -75,9 +75,11 @@ const DOCUMENT = {
 const EDUCATION = {
   qualification_key: "ME_MTECH",
   degree_name: null,
-  specialization_category: "MECHANICAL_MANUFACTURING",
-  specialization: "MECHANICAL_ENGINEERING",
-  branch: "Mechanical Engineering",
+  // The candidate's own text (free text).
+  specialization_category: "Mechanical & Manufacturing",
+  // No Specialization field any more: none, so no branch either.
+  specialization: null,
+  branch: null,
   institution: "IIT Madras",
   completion_year: 2022,
   tenth_marks_percentage: null,
@@ -206,17 +208,14 @@ function mockApi() {
     options: vi.spyOn(careersApi, "getQualificationOptions").mockResolvedValue(MTECH_OPTIONS),
     // Like the server: the document and its check survive a save, and a
     // changed qualification or specialization resets the check; the branch
-    // is the specialization's label.
+    // is the specialization the candidate typed.
     saveEducation: vi.spyOn(careersApi, "saveDraftEducation").mockImplementation(
       async (_b, _a, education) => {
         const current = latestDraft(draftSpies);
         const changed =
           current.education?.qualification_key !== education.qualification_key ||
           current.education?.specialization !== education.specialization;
-        const branch =
-          SPECIALIZATION_CATEGORIES.flatMap((item) => item.specializations).find(
-            (item) => item.key === education.specialization,
-          )?.label ?? null;
+        const branch = education.specialization;
         return {
           ...current,
           education: { ...education, branch },
@@ -277,20 +276,40 @@ async function completeBackground() {
   await screen.findByRole("heading", { name: /Step \d of \d: Education/ });
 }
 
-/** The specific-specialization dropdown (not "Specialization category"). */
+/** The removed Specialization field (not "Specialization category"). */
 const SPECIALIZATION = /^Specialization(?! category)/;
 
-function optionLabels(select: HTMLElement): string[] {
-  return within(select)
-    .getAllByRole("option")
-    .map((option) => option.textContent ?? "");
+/** The typing suggestions offered by a free-text input's datalist. */
+/** The Supporting document instruction, exactly as worded. */
+const DOCUMENT_INSTRUCTION =
+  "Upload your final-year (or consolidated) marks card, provisional certificate or degree certificate for ME/MS/M.Tech/MSc/PhD. PDF, PNG, JPG, up to 5 MB.";
+
+function suggestions(input: HTMLElement): string[] {
+  const list = document.getElementById(input.getAttribute("list") ?? "");
+  return Array.from(list?.querySelectorAll("option") ?? []).map((option) => option.value);
+}
+
+/** What the candidate is told for an AI mismatch (exact wording) and for an
+ * unclear or failed check (app/services/education/document_check.py). */
+const UPLOADED_MESSAGE =
+  "Your document has been uploaded successfully. Our recruitment team will review it manually. You can continue with your application.";
+const MANUAL_REVIEW_MESSAGE =
+  "Your document has been uploaded successfully. It couldn't be verified automatically, so our recruitment team will review it manually. You can continue with your application.";
+
+/** The server's view after a non-match: the document kept, manual review,
+ * and the candidate free to continue. */
+function manualReviewDraft(message: string, filename = "mtech.pdf", education = EDUCATION): DraftView {
+  return draftView({
+    education,
+    document: { ...DOCUMENT, filename },
+    education_check: check({ status: "MANUAL_REVIEW", can_continue: true, message }),
+  });
 }
 
 async function fillEducationDetails() {
   await screen.findByLabelText(/Highest qualification/);
   fill(/Highest qualification/, "ME_MTECH");
-  fill(/Specialization category/, "MECHANICAL_MANUFACTURING");
-  fill(SPECIALIZATION, "MECHANICAL_ENGINEERING");
+  fill(/Specialization category/, "Mechanical & Manufacturing");
   fill(/Year of completion/, "2022");
   fill(/Institution \/ university/, "IIT Madras");
 }
@@ -536,18 +555,33 @@ describe("JobApplicationForm — progressive apply flow", () => {
       click(/Save and continue/);
       expect(screen.getByText("Select your qualification.")).toBeInTheDocument();
       fill(/Highest qualification/, "ME_MTECH");
-      expect(screen.getByText(/Upload your final-year marks card or degree certificate/)).toBeInTheDocument();
-      expect(screen.getByText(/PDF, PNG, JPG, up to 5 MB/)).toBeInTheDocument();
+      expect(screen.getByText(DOCUMENT_INSTRUCTION)).toBeInTheDocument();
       uploadDocument();
-      expect(screen.getByText("Select your specialization category.")).toBeInTheDocument();
+      expect(screen.getByText("Enter your specialization category.")).toBeInTheDocument();
       expect(api.upload).not.toHaveBeenCalled();
     });
 
-    it("offers all seven specialization categories, with the specialization disabled until one is chosen", async () => {
+    it("shows the same supporting-document instruction for every qualification", async () => {
       mockApi();
       await reachEducation();
-      const categorySelect = await screen.findByLabelText(/Specialization category/);
-      expect(optionLabels(categorySelect).slice(1)).toEqual([
+      await screen.findByLabelText(/Highest qualification/);
+      for (const key of ["ME_MTECH", "PHD"]) {
+        fill(/Highest qualification/, key);
+        // Exactly this text, as one sentence pair.
+        expect(screen.getByText(DOCUMENT_INSTRUCTION).textContent).toBe(DOCUMENT_INSTRUCTION);
+      }
+    });
+
+    it("has no Specialization field; the category stays required free text with suggestions", async () => {
+      mockApi();
+      await reachEducation();
+      const categoryInput = await screen.findByLabelText(/Specialization category/);
+      expect(screen.queryByLabelText(SPECIALIZATION)).not.toBeInTheDocument();
+      expect(categoryInput.tagName).toBe("INPUT");
+      expect(categoryInput).toBeRequired();
+      expect(categoryInput).toBeEnabled();
+      expect(categoryInput).toHaveAttribute("maxLength", "100");
+      expect(suggestions(categoryInput)).toEqual([
         "Computer Science & Information Technology",
         "Electronics & Electrical",
         "Mechanical & Manufacturing",
@@ -556,58 +590,54 @@ describe("JobApplicationForm — progressive apply flow", () => {
         "Biotechnology & Biomedical",
         "Other Technology Domains",
       ]);
-      const specializationSelect = screen.getByLabelText(SPECIALIZATION);
-      expect(specializationSelect).toBeDisabled();
-      expect(optionLabels(specializationSelect)).toEqual(["Select a category first"]);
-
-      fill(/Specialization category/, "MECHANICAL_MANUFACTURING");
-      expect(specializationSelect).toBeEnabled();
-      expect(specializationSelect).toBeRequired();
-      expect(optionLabels(specializationSelect).slice(1)).toEqual([
-        "Mechanical Engineering",
-        "Mechatronics",
-        "Robotics and Automation",
-        "Automotive Engineering",
-        "Aerospace Engineering",
-        "Manufacturing Engineering",
-        "Production Engineering",
-        "Thermal Engineering",
-        "Industrial Engineering",
-      ]);
     });
 
-    it("clears the specialization when the category changes", async () => {
-      mockApi();
+    it("sends a category outside the catalogue exactly as typed, trimmed, with no specialization", async () => {
+      const api = mockApi();
       await reachEducation();
-      await screen.findByLabelText(/Specialization category/);
-      fill(/Specialization category/, "MECHANICAL_MANUFACTURING");
-      fill(SPECIALIZATION, "ROBOTICS_AUTOMATION");
-      expect(screen.getByLabelText(SPECIALIZATION)).toHaveValue("ROBOTICS_AUTOMATION");
-      fill(/Specialization category/, "CS_IT");
-      const specializationSelect = screen.getByLabelText(SPECIALIZATION);
-      expect(specializationSelect).toHaveValue("");
-      expect(optionLabels(specializationSelect)).not.toContain("Robotics and Automation");
-      expect(optionLabels(specializationSelect)).toContain("Data Science");
+      await screen.findByLabelText(/Highest qualification/);
+      fill(/Highest qualification/, "ME_MTECH");
+      fill(/Specialization category/, "  Quantum & Photonic Systems  ");
+      fireEvent.blur(screen.getByLabelText(/Specialization category/));
+      expect(screen.getByLabelText(/Specialization category/)).toHaveValue("Quantum & Photonic Systems");
+      fill(/Year of completion/, "2022");
+      fill(/Institution \/ university/, "IIT Madras");
+      uploadDocument();
+      await waitFor(() => expect(api.upload).toHaveBeenCalledTimes(1));
+      expect(api.saveEducation).toHaveBeenCalledWith(
+        JOB_BASE,
+        AUTH,
+        expect.objectContaining({ specialization_category: "Quantum & Photonic Systems", specialization: null }),
+      );
     });
 
-    it("requires the qualification, the category and the specialization", async () => {
+    it("requires the qualification and the category, within its length", async () => {
       const api = mockApi();
       await reachEducation();
       await screen.findByLabelText(/Highest qualification/);
       click(/Save and continue/);
       expect(screen.getByText("Select your qualification.")).toBeInTheDocument();
-      expect(screen.getByText("Select your specialization category.")).toBeInTheDocument();
+      expect(screen.getByText("Enter your specialization category.")).toBeInTheDocument();
+      expect(screen.queryByText("Enter your specialization.")).not.toBeInTheDocument();
       fill(/Highest qualification/, "ME_MTECH");
-      fill(/Specialization category/, "ELECTRONICS_ELECTRICAL");
+      // Whitespace only is not a value.
+      fill(/Specialization category/, "   ");
       fill(/Year of completion/, "2022");
       fill(/Institution \/ university/, "IIT Madras");
       click(/Save and continue/);
-      expect(screen.getByText("Select your specialization.")).toBeInTheDocument();
-      expect(screen.queryByText("Select your specialization category.")).not.toBeInTheDocument();
+      expect(screen.getByText("Enter your specialization category.")).toBeInTheDocument();
+      fill(/Specialization category/, "C".repeat(101));
+      click(/Save and continue/);
+      expect(screen.getByText("Keep it to 100 characters or fewer.")).toBeInTheDocument();
       expect(api.saveEducation).not.toHaveBeenCalled();
+      // A valid category is all the step needs besides the document.
+      fill(/Specialization category/, "Electronics & Electrical");
+      click(/Save and continue/);
+      expect(screen.queryByText(/Enter your specialization category\.|Keep it to 100/)).not.toBeInTheDocument();
+      expect(await screen.findByText("Upload your academic document to continue.")).toBeInTheDocument();
     });
 
-    it("sends the selected keys to the server", async () => {
+    it("sends the entered values to the server", async () => {
       const api = mockApi();
       await reachEducation();
       await fillEducationDetails();
@@ -618,13 +648,13 @@ describe("JobApplicationForm — progressive apply flow", () => {
         AUTH,
         expect.objectContaining({
           qualification_key: "ME_MTECH",
-          specialization_category: "MECHANICAL_MANUFACTURING",
-          specialization: "MECHANICAL_ENGINEERING",
+          specialization_category: "Mechanical & Manufacturing",
+          specialization: null,
         }),
       );
     });
 
-    it("keeps the selections when going back and forward", async () => {
+    it("keeps the entered values when going back and forward", async () => {
       mockApi();
       await reachEducation();
       await fillEducationDetails();
@@ -632,12 +662,16 @@ describe("JobApplicationForm — progressive apply flow", () => {
       await screen.findByLabelText(/Place of birth/);
       click(/^Continue/);
       expect(await screen.findByLabelText(/Highest qualification/)).toHaveValue("ME_MTECH");
-      expect(screen.getByLabelText(/Specialization category/)).toHaveValue("MECHANICAL_MANUFACTURING");
-      expect(screen.getByLabelText(SPECIALIZATION)).toHaveValue("MECHANICAL_ENGINEERING");
+      expect(screen.getByLabelText(/Specialization category/)).toHaveValue("Mechanical & Manufacturing");
     });
 
-    it("restores both selections from a resumed draft", async () => {
+    it("restores an older draft's category and carries its specialization through unchanged", async () => {
       const api = mockApi();
+      const legacy = {
+        ...EDUCATION,
+        specialization: "Artificial Intelligence and Machine Learning",
+        branch: "Artificial Intelligence and Machine Learning",
+      };
       api.startDraft.mockResolvedValue(
         draftView({
           background: {
@@ -655,7 +689,7 @@ describe("JobApplicationForm — progressive apply flow", () => {
             notice_period_days: null,
             immediate_joiner: null,
           },
-          education: { ...EDUCATION, specialization: "ROBOTICS_AUTOMATION", branch: "Robotics and Automation" },
+          education: legacy,
         }),
       );
       renderForm();
@@ -664,9 +698,16 @@ describe("JobApplicationForm — progressive apply flow", () => {
       // The saved background is prefilled: continue straight on.
       expect(screen.getByLabelText(/Place of birth/)).toHaveValue("Pune");
       click(/^Continue/);
-      expect(await screen.findByLabelText(/Specialization category/)).toHaveValue("MECHANICAL_MANUFACTURING");
-      expect(screen.getByLabelText(SPECIALIZATION)).toHaveValue("ROBOTICS_AUTOMATION");
-      expect(screen.getByLabelText(SPECIALIZATION)).toBeEnabled();
+      expect(await screen.findByLabelText(/Specialization category/)).toHaveValue("Mechanical & Manufacturing");
+      expect(screen.queryByLabelText(SPECIALIZATION)).not.toBeInTheDocument();
+      // Not lost: the older draft's specialization is sent back unchanged.
+      uploadDocument();
+      await waitFor(() => expect(api.saveEducation).toHaveBeenCalled());
+      expect(api.saveEducation).toHaveBeenLastCalledWith(
+        JOB_BASE,
+        AUTH,
+        expect.objectContaining({ specialization: "Artificial Intelligence and Machine Learning" }),
+      );
     });
 
     it("rejects other file types and oversized files without uploading", async () => {
@@ -680,6 +721,21 @@ describe("JobApplicationForm — progressive apply flow", () => {
       uploadDocument(big);
       expect(screen.getByText("The document must be smaller than 5 MB.")).toBeInTheDocument();
       expect(api.upload).not.toHaveBeenCalled();
+    });
+
+    it("blocks on a failed upload: nothing is reported as uploaded", async () => {
+      const api = mockApi();
+      api.upload.mockRejectedValueOnce(new Error("network"));
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument();
+      await waitFor(() => expect(api.upload).toHaveBeenCalledTimes(1));
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      expect(screen.queryByText("Document uploaded")).not.toBeInTheDocument();
+      expect(screen.queryByText(UPLOADED_MESSAGE)).not.toBeInTheDocument();
+      click(/Save and continue/);
+      expect(await screen.findByText("Upload your academic document to continue.")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: /Resume/ })).not.toBeInTheDocument();
     });
 
     it("shows the checking state, then the verified outcome", async () => {
@@ -718,39 +774,50 @@ describe("JobApplicationForm — progressive apply flow", () => {
       expect(screen.getByText(/not a verification of authenticity/)).toBeInTheDocument();
     });
 
-    it("explains a mismatch and lets the candidate upload the right document", async () => {
+    it("keeps a document the AI flags as a mismatch and lets the candidate continue", async () => {
       const api = mockApi();
-      const mismatch =
-        "The qualification selected does not appear to match the uploaded document. You selected M.Tech, but the uploaded document appears to be a B.E. / B.Tech academic record. Please upload the correct document.";
-      api.upload.mockResolvedValueOnce(
-        draftView({
-          education: EDUCATION,
-          document: { ...DOCUMENT, filename: "btech.pdf" },
-          education_check: check({ status: "MISMATCH", message: mismatch }),
-        }),
-      );
+      api.upload.mockResolvedValueOnce(manualReviewDraft(UPLOADED_MESSAGE, "btech.pdf"));
       await reachEducation();
       await fillEducationDetails();
       uploadDocument(new File(["%PDF"], "btech.pdf", { type: "application/pdf" }));
-      expect(await screen.findByText(mismatch)).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /manual review/ })).not.toBeInTheDocument();
-
-      api.saveEducation.mockResolvedValueOnce(
-        draftView({ education: EDUCATION, document: DOCUMENT, education_check: check({ status: "MISMATCH", message: mismatch }) }),
-      );
-      click(/Save and continue/);
-      expect(
-        await screen.findByText("Your academic document needs to be verified before you continue."),
-      ).toBeInTheDocument();
-
-      fireEvent.change(screen.getByLabelText("Replace academic document"), {
-        target: { files: [new File(["%PDF"], "mtech.pdf", { type: "application/pdf" })] },
-      });
-      expect(await screen.findByText(/appears consistent with M\.Tech/)).toBeInTheDocument();
-      expect(api.upload).toHaveBeenCalledTimes(2);
+      expect(await screen.findByText(UPLOADED_MESSAGE)).toBeInTheDocument();
+      expect(screen.getByText("Document uploaded")).toBeInTheDocument();
+      expect(screen.getByText("btech.pdf")).toBeInTheDocument();
+      expect(screen.queryByText(/Please upload the correct document/)).not.toBeInTheDocument();
+      click(/^Continue/);
+      expect(await screen.findByRole("heading", { name: /Resume/ })).toBeInTheDocument();
+      expect(api.upload).toHaveBeenCalledTimes(1);
     });
 
-    it("offers manual review for an unclear document", async () => {
+    it("keeps a document the AI can't classify and lets the candidate continue", async () => {
+      const api = mockApi();
+      api.upload.mockResolvedValueOnce(manualReviewDraft(MANUAL_REVIEW_MESSAGE));
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument();
+      expect(await screen.findByText(MANUAL_REVIEW_MESSAGE)).toBeInTheDocument();
+      click(/^Continue/);
+      expect(await screen.findByRole("heading", { name: /Resume/ })).toBeInTheDocument();
+      expect(api.manualReview).not.toHaveBeenCalled();
+    });
+
+    it("keeps the document and lets the candidate continue when the AI check fails", async () => {
+      const api = mockApi();
+      // Unavailable, timed out, erroring or answering invalidly: the server
+      // sends the document to manual review either way.
+      api.upload.mockResolvedValueOnce(manualReviewDraft(MANUAL_REVIEW_MESSAGE));
+      await reachEducation();
+      await fillEducationDetails();
+      uploadDocument();
+      expect(await screen.findByText(MANUAL_REVIEW_MESSAGE)).toBeInTheDocument();
+      expect(screen.getByText("mtech.pdf")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+      click(/^Continue/);
+      expect(await screen.findByRole("heading", { name: /Resume/ })).toBeInTheDocument();
+      expect(api.recheck).not.toHaveBeenCalled();
+    });
+
+    it("moves a draft blocked under the earlier check to manual review, and continues", async () => {
       const api = mockApi();
       api.upload.mockResolvedValueOnce(
         draftView({
@@ -758,51 +825,19 @@ describe("JobApplicationForm — progressive apply flow", () => {
           document: DOCUMENT,
           education_check: check({
             status: "UNCLEAR",
-            message: "We couldn't read the uploaded document clearly.",
+            message: MANUAL_REVIEW_MESSAGE,
             can_request_manual_review: true,
           }),
         }),
       );
-      api.manualReview.mockResolvedValue(
-        draftView({
-          education: EDUCATION,
-          document: DOCUMENT,
-          education_check: check({ status: "MANUAL_REVIEW", can_continue: true, message: "Your document will be reviewed by our recruitment team." }),
-        }),
-      );
+      api.manualReview.mockResolvedValue(manualReviewDraft(MANUAL_REVIEW_MESSAGE));
       await reachEducation();
       await fillEducationDetails();
       uploadDocument();
-      expect(await screen.findByText("We couldn't confirm your document")).toBeInTheDocument();
-      click("Continue with manual review");
-      expect(await screen.findByText("Document sent for manual review")).toBeInTheDocument();
+      expect(await screen.findByText(MANUAL_REVIEW_MESSAGE)).toBeInTheDocument();
+      click(/Save and continue/);
+      expect(await screen.findByRole("heading", { name: /Resume/ })).toBeInTheDocument();
       expect(api.manualReview).toHaveBeenCalledWith(JOB_BASE, AUTH);
-    });
-
-    it("keeps the document after an AI failure and retries the check", async () => {
-      const api = mockApi();
-      api.upload.mockResolvedValueOnce(
-        draftView({
-          education: EDUCATION,
-          document: DOCUMENT,
-          education_check: check({
-            status: "FAILED",
-            can_retry: true,
-            message: "We couldn't check your document right now.",
-          }),
-        }),
-      );
-      api.recheck.mockResolvedValue(
-        draftView({ education: EDUCATION, document: DOCUMENT, education_check: check({ status: "VERIFIED", can_continue: true, message: "Your document appears consistent with M.Tech." }) }),
-      );
-      await reachEducation();
-      await fillEducationDetails();
-      uploadDocument();
-      expect(await screen.findByText("Check not completed")).toBeInTheDocument();
-      expect(screen.getByText("mtech.pdf")).toBeInTheDocument();
-      click("Try again");
-      expect(await screen.findByText("Document checked")).toBeInTheDocument();
-      expect(api.recheck).toHaveBeenCalledTimes(1);
     });
 
     it("re-checks the document when the qualification changes after verification", async () => {
@@ -814,22 +849,19 @@ describe("JobApplicationForm — progressive apply flow", () => {
       fill(/Highest qualification/, "PHD");
       expect(screen.getByText("Details changed")).toBeInTheDocument();
       // The category and specialization are kept across a qualification change.
-      expect(screen.getByLabelText(/Specialization category/)).toHaveValue("MECHANICAL_MANUFACTURING");
-      expect(screen.getByLabelText(SPECIALIZATION)).toHaveValue("MECHANICAL_ENGINEERING");
+      expect(screen.getByLabelText(/Specialization category/)).toHaveValue("Mechanical & Manufacturing");
+      expect(screen.queryByLabelText(SPECIALIZATION)).not.toBeInTheDocument();
       api.saveEducation.mockResolvedValueOnce(
         draftView({ education: { ...EDUCATION, qualification_key: "PHD" }, document: DOCUMENT, education_check: check() }),
       );
+      // The AI now reads the M.Tech record as a mismatch for Ph.D.: manual
+      // review, and the candidate still continues.
       api.recheck.mockResolvedValue(
-        draftView({
-          education: { ...EDUCATION, qualification_key: "PHD" },
-          document: DOCUMENT,
-          education_check: check({ status: "MISMATCH", message: "You selected Ph.D., but the uploaded document appears to be an M.Tech academic record." }),
-        }),
+        manualReviewDraft(UPLOADED_MESSAGE, "mtech.pdf", { ...EDUCATION, qualification_key: "PHD" }),
       );
       click(/Save and continue/);
-      expect(await screen.findByText(/You selected Ph.D./)).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: /Resume/ })).toBeInTheDocument();
       expect(api.recheck).toHaveBeenCalledTimes(1);
-      expect(screen.queryByRole("heading", { name: /Resume/ })).not.toBeInTheDocument();
     });
   });
 
@@ -861,9 +893,7 @@ describe("JobApplicationForm — progressive apply flow", () => {
       expect(within(education).getByText("Specialization category").nextElementSibling).toHaveTextContent(
         "Mechanical & Manufacturing",
       );
-      expect(within(education).getByText("Specialization").nextElementSibling).toHaveTextContent(
-        "Mechanical Engineering",
-      );
+      expect(within(education).queryByText("Specialization")).not.toBeInTheDocument();
       expect(education).toHaveTextContent("Document checked");
       expect(screen.getByRole("region", { name: "Resume" })).toHaveTextContent("resume.pdf");
 

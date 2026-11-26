@@ -226,12 +226,20 @@ table tenant-owned with the standard RLS policy):
   ambiguous at submission, so HR checks eligibility.
 - `applications.education_qualification_key`,
   `applications.education_specialization_category`,
-  `applications.education_specialization` VARCHAR(50) NULL (migration
-  `1e2f3a4b5c6d`, additive) — the Education step's three selections as
-  submitted (keys into `app/services/education/catalog.py` and
-  `specializations.py`), per application because the Candidate profile is
-  shared. NULL for applications created any other way or before they were
-  recorded; HR then sees the profile's qualification text.
+  `applications.education_specialization` NULL (migration
+  `1e2f3a4b5c6d`, additive; the two specialization columns widened from
+  VARCHAR(50) to VARCHAR(100) / VARCHAR(150) by `3a4b5c6d7e8f`, as were
+  `education_verification_runs.specialization_category` /
+  `specialization`) — the Education step's values as submitted: the
+  qualification key (`app/services/education/catalog.py`) and the
+  candidate's own free-text specialization category and specialization
+  (trimmed). Rows saved before free-text entry hold catalogue keys from
+  `specializations.py`, still resolved to their labels and never rewritten.
+  Per application because the Candidate profile is shared. NULL for
+  applications created any other way or before they were recorded; HR then
+  sees the profile's qualification text. `3a4b5c6d7e8f` is metadata-only
+  (no table rewrite); its downgrade truncates values longer than 50
+  characters.
 - `applications.education_eligibility` JSONB NULL (migration
   `2f3a4b5c6d7e`, additive) — what the eligibility check decided at
   submission: `{fields_of_study, field_mandatory, matched_field, reasons:

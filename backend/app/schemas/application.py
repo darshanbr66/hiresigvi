@@ -111,6 +111,12 @@ class EducationDocumentEntry(BaseModel):
     content_type: str | None = None
     size_bytes: int | None = None
     uploaded_at: datetime | None = None
+    #: Academic document only: `AI_VERIFIED` | `MANUAL_VERIFICATION_REQUIRED`
+    #: | `NOT_UPLOADED` (None for the 10th marks card, never checked).
+    verification: str | None = None
+    #: Why manual verification is required, in plain language (None
+    #: otherwise). Never an internal error detail.
+    verification_reason: str | None = None
 
 
 class ApplicationDocumentsResponse(BaseModel):
@@ -176,6 +182,9 @@ class ApplicationEducationResponse(BaseModel):
     institution: str | None
     qualification_year: int | None
     document: AcademicDocumentSummary | None
+    #: Why the document needs manual verification (plain language, from the
+    #: latest check's outcome; None when it was AI verified or isn't there).
+    manual_review_reason: str | None = None
     checks: list[EducationCheckEntry]
 
 

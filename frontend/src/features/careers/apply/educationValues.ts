@@ -1,10 +1,18 @@
 import type { EducationDetails, SpecializationCategoryView } from "../../../types/applyFlow";
 
+/** Longest accepted values, in characters after trimming — the same limits
+ * the server enforces (app/services/education/specializations.py). */
+export const SPECIALIZATION_CATEGORY_MAX_LENGTH = 100;
+export const SPECIALIZATION_MAX_LENGTH = 150;
+
 export interface EducationValues {
   qualification_key: string;
   degree_name: string;
-  /** Keys into the server's specialization catalogue. */
+  /** What the candidate typed — any value; the catalogue only suggests. */
   specialization_category: string;
+  /** Not entered in the form any more (the field was removed): empty for
+   * new drafts; an older draft's value is carried through unchanged so it
+   * isn't lost and doesn't reset that draft's document check. */
   specialization: string;
   institution: string;
   completion_year: string;
@@ -50,14 +58,20 @@ export function toDetails(values: EducationValues): EducationDetails {
   };
 }
 
-/** The category and specialization labels for stored keys (null when a key
- * isn't in the catalogue). */
-export function specializationLabels(
+/** Typing suggestions from the server's specialization catalogue — never a
+ * restriction. Categories: every category label. Specializations: those of
+ * the category the candidate typed, when it names one (any case), otherwise
+ * every specialization. */
+export function specializationSuggestions(
   categories: SpecializationCategoryView[] | undefined,
-  categoryKey: string | null | undefined,
-  specializationKey: string | null | undefined,
-): { category: string | null; specialization: string | null } {
-  const category = categories?.find((item) => item.key === categoryKey);
-  const specialization = category?.specializations.find((item) => item.key === specializationKey);
-  return { category: category?.label ?? null, specialization: specialization?.label ?? null };
+  typedCategory: string,
+): { categories: string[]; specializations: string[] } {
+  const all = categories ?? [];
+  const wanted = typedCategory.trim().toLowerCase();
+  const match = all.find((item) => item.label.toLowerCase() === wanted);
+  const pool = match ? [match] : all;
+  return {
+    categories: all.map((item) => item.label),
+    specializations: [...new Set(pool.flatMap((item) => item.specializations.map((s) => s.label)))],
+  };
 }

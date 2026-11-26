@@ -122,6 +122,37 @@ them. Downgrade drops the columns and the values recorded in them.
 Verified locally: `upgrade` / `downgrade -2` / `upgrade` and `alembic
 check` (no drift).
 
+### Release notes: free-text specialization and advisory document check (`3a4b5c6d7e8f`)
+
+**A migration is required.** `3a4b5c6d7e8f` widens four existing nullable
+columns — `applications.education_specialization_category` and
+`education_verification_runs.specialization_category` VARCHAR(50) → 100,
+`applications.education_specialization` and
+`education_verification_runs.specialization` VARCHAR(50) → 150 — because
+candidates now type these values instead of picking catalogue keys.
+Widening a VARCHAR is metadata-only in PostgreSQL (no table rewrite, no
+data change). No new environment variables.
+
+- Run the migration (step 5) **before** deploying the backend (step 6):
+  the new backend accepts values up to 150 characters, which an
+  unmigrated database rejects (`value too long for type character
+  varying(50)`). The previous backend runs unchanged against the migrated
+  database.
+- Existing rows keep their catalogue keys (`CS_IT`, `AI_ML`, …); the
+  backend shows them as their labels. No backfill.
+- The academic-document AI check no longer blocks candidates; the
+  recruiter's verification status (AI verified / manual verification
+  required / not uploaded) is derived from existing columns — no schema
+  change for it.
+- Rollback: `alembic downgrade 2f3a4b5c6d7e` narrows the columns back to
+  50 and **truncates** any value stored after the upgrade that is longer
+  than 50 characters. Take the step-2 backup first, and roll the backend
+  back before the schema.
+
+After step 5, `alembic current` prints `3a4b5c6d7e8f (head)`. Verified
+locally: `upgrade` / `downgrade 2f3a4b5c6d7e` / `upgrade` and `alembic
+check` (no drift).
+
 ---
 
 # Legacy: Render + Vercel

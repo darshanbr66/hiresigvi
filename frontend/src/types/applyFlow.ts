@@ -32,11 +32,12 @@ export interface ApplicantBackground {
 export interface EducationDetails {
   qualification_key: string;
   degree_name: string | null;
-  /** Keys from the specialization catalogue (`QualificationOptions.
-   * specialization_categories`). Null only on drafts saved before it existed. */
+  /** The candidate's own text (trimmed; any value). Drafts saved before
+   * free-text entry come back with the catalogue label. Null only on drafts
+   * saved before these fields existed. */
   specialization_category: string | null;
   specialization: string | null;
-  /** Set by the server from `specialization` (its label); ignored when sent. */
+  /** Set by the server from `specialization`; ignored when sent. */
   branch: string | null;
   institution: string;
   completion_year: number;
@@ -72,7 +73,7 @@ export interface QualificationOptions {
   options: QualificationOption[];
   fields_of_study: string[];
   field_mandatory: boolean;
-  /** The specialization catalogue — the same for every job and qualification. */
+  /** The specialization catalogue — typing suggestions only, never a limit. */
   specialization_categories: SpecializationCategoryView[];
   accepted_document_types: string[];
   max_document_size_mb: number;

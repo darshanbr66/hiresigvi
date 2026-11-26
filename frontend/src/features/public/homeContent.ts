@@ -3,9 +3,9 @@
  * Zodiac Patent candidates (many arrive from a newspaper advertisement and
  * just need to choose a path). Four cards, nothing else: no marketing
  * sections, no long copy. Open Roles opens the careers page's All view
- * (`view=all`: every published role and program); Internships, Campus Hiring
- * and Training Programs open its Open Roles tab (`view=jobs`). Listings come
- * from live data only.
+ * (`view=all`: every published role and program). Internships, Campus Hiring
+ * and Training Programs are not open yet: shown as inactive "Coming Soon"
+ * cards that go nowhere (`comingSoon`). Listings come from live data only.
  */
 
 export const ORGANIZATION_NAME = "Zodiac Patent";
@@ -28,7 +28,12 @@ export interface OpportunityCard {
   glyph: OpportunityGlyphName;
   title: string;
   text: string;
+  /** The link text; for a `comingSoon` card, the status shown instead. */
   cta: string;
+  /** Not open yet: the same card and styling, but inactive — no
+   * destination, so click, Enter/Space and touch do nothing — with `cta`
+   * ("Coming Soon") where the link text was. */
+  comingSoon?: true;
 }
 
 export const OPPORTUNITIES: OpportunityCard[] = [
@@ -46,7 +51,8 @@ export const OPPORTUNITIES: OpportunityCard[] = [
     glyph: "internships",
     title: "Internships",
     text: "Explore internship opportunities.",
-    cta: "Explore Internships",
+    cta: "Coming Soon",
+    comingSoon: true,
   },
   {
     id: "campus",
@@ -54,7 +60,8 @@ export const OPPORTUNITIES: OpportunityCard[] = [
     glyph: "campus",
     title: "Campus Hiring",
     text: "Explore opportunities for students and campus candidates.",
-    cta: "Explore Campus Opportunities",
+    cta: "Coming Soon",
+    comingSoon: true,
   },
   {
     id: "programs",
@@ -62,6 +69,7 @@ export const OPPORTUNITIES: OpportunityCard[] = [
     glyph: "programs",
     title: "Training Programs",
     text: "Discover training and trainee opportunities.",
-    cta: "Explore Programs",
+    cta: "Coming Soon",
+    comingSoon: true,
   },
 ];

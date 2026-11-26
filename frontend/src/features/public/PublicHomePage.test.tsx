@@ -38,7 +38,8 @@ describe("PublicHomePage", () => {
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Explore Opportunities");
     expect(screen.getAllByRole("heading")).toHaveLength(1);
-    const cards = within(screen.getByRole("list", { name: "Opportunity categories" })).getAllByRole("link");
+    const list = screen.getByRole("list", { name: "Opportunity categories" });
+    const cards = [...list.querySelectorAll(".zx-card")];
     expect(cards.map((card) => card.querySelector(".zx-card-title")?.textContent)).toEqual([
       "Open Roles",
       "Internships",
@@ -47,19 +48,45 @@ describe("PublicHomePage", () => {
     ]);
   });
 
-  it("links each card to its exact careers destination", () => {
+  it("keeps Open Roles as the one link, to the careers page's All view", () => {
     renderHome();
 
-    const hrefFor = (title: RegExp) => screen.getByRole("link", { name: title }).getAttribute("href");
+    const list = screen.getByRole("list", { name: "Opportunity categories" });
+    // the only real link (with a destination) among the cards
+    expect(list.querySelectorAll("a[href]")).toHaveLength(1);
     expect(careersPath).toBe("/org/zodiac-patent");
-    expect(hrefFor(/^Open Roles/)).toBe("/org/zodiac-patent?view=all");
-    expect(hrefFor(/^Internships/)).toBe("/org/zodiac-patent?view=jobs");
-    expect(hrefFor(/^Campus Hiring/)).toBe("/org/zodiac-patent?view=jobs");
-    expect(hrefFor(/^Training Programs/)).toBe("/org/zodiac-patent?view=jobs");
     const openRoles = screen.getByRole("link", { name: /^Open Roles/ });
+    expect(openRoles).toHaveAttribute("href", "/org/zodiac-patent?view=all");
+    expect(openRoles.tagName).toBe("A");
+    expect(openRoles).toHaveAttribute("class", "zx-card");
+    expect(openRoles).not.toHaveAttribute("aria-disabled");
     expect(openRoles).toHaveTextContent("Explore current job opportunities.");
     expect(openRoles).toHaveTextContent("View Open Roles");
-    expect(screen.getByRole("link", { name: /^Training Programs/ })).toHaveTextContent("Explore Programs");
+    expect(openRoles).not.toHaveTextContent("Coming Soon");
+  });
+
+  it.each([
+    ["Internships", "Explore internship opportunities.", "Explore Internships"],
+    ["Campus Hiring", "Explore opportunities for students and campus candidates.", "Explore Campus Opportunities"],
+    ["Training Programs", "Discover training and trainee opportunities.", "Explore Programs"],
+  ])("shows %s as an inactive Coming Soon card", (title, text, oldCta) => {
+    renderHome();
+
+    const card = screen.getByRole("link", { name: new RegExp(`^${title}`) });
+    // exactly the original card styling (same class, nothing added), icon
+    // and description; "Coming Soon" where the link text was
+    expect(card.tagName).toBe("DIV");
+    expect(card).toHaveAttribute("class", "zx-card");
+    expect(card.querySelector(".zx-card-deco")).toHaveAttribute("aria-hidden", "true");
+    expect(card.querySelector(".zx-card-icon svg")).not.toBeNull();
+    expect(card).toHaveTextContent(text);
+    expect(card.querySelector(".zx-card-cta")).toHaveTextContent(/^Coming Soon$/);
+    expect(card).not.toHaveTextContent(oldCta);
+    // keyboard-reachable, announced as unavailable, with nowhere to go
+    expect(card).toHaveAttribute("tabindex", "0");
+    expect(card).toHaveAttribute("aria-disabled", "true");
+    expect(card).not.toHaveAttribute("href");
+    expect(card.querySelector("a, button, [href]")).toBeNull();
   });
 
   it("keeps the card decoration out of the accessibility tree", () => {
@@ -92,12 +119,7 @@ describe("homepage card -> careers tab", () => {
     vi.restoreAllMocks();
   });
 
-  it.each([
-    ["Open Roles", "All"],
-    ["Internships", "Open Roles"],
-    ["Campus Hiring", "Open Roles"],
-    ["Training Programs", "Open Roles"],
-  ])("%s opens the careers page on the %s tab", async (card, tab) => {
+  function renderHomeWithCareers() {
     vi.spyOn(careersApi, "listOpenJobs").mockResolvedValue([]);
     vi.spyOn(careersApi, "listPublicPrograms").mockResolvedValue([]);
     vi.spyOn(careersApi, "getPublicOrganization").mockResolvedValue({
@@ -106,7 +128,7 @@ describe("homepage card -> careers tab", () => {
       careers_contact_email: null,
     });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
+    return render(
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <MemoryRouter initialEntries={["/"]}>
@@ -118,6 +140,33 @@ describe("homepage card -> careers tab", () => {
         </ThemeProvider>
       </QueryClientProvider>,
     );
+  }
+
+  const renderedCards = (container: HTMLElement) => expect(container.querySelectorAll(".zx-card")).toHaveLength(4);
+
+  it.each(["Internships", "Campus Hiring", "Training Programs"])(
+    "%s goes nowhere on click, keyboard or touch",
+    (title) => {
+      const { container } = renderHomeWithCareers();
+      renderedCards(container);
+      const card = screen.getByRole("link", { name: new RegExp(`^${title}`) });
+      card.focus();
+      expect(card).toHaveFocus();
+      for (const target of [card, card.querySelector(".zx-card-cta") as HTMLElement]) {
+        fireEvent.click(target);
+        fireEvent.keyDown(target, { key: "Enter" });
+        fireEvent.keyDown(target, { key: " " });
+        fireEvent.touchStart(target);
+        fireEvent.touchEnd(target);
+      }
+      // still on the homepage: the careers page never opened
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Explore Opportunities");
+      expect(screen.queryByRole("navigation", { name: "Opportunity type" })).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([["Open Roles", "All"]])("%s opens the careers page on the %s tab", async (card, tab) => {
+    renderHomeWithCareers();
 
     fireEvent.click(screen.getByRole("link", { name: new RegExp(`^${card}`) }));
 

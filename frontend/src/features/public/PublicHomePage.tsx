@@ -57,20 +57,38 @@ export function PublicHomePage() {
           <ul className="zx-cards" aria-label="Opportunity categories">
             {OPPORTUNITIES.map((card) => (
               <li key={card.id}>
-                <Link to={careersViewPath(card.destination)} className="zx-card">
-                  {/* decoration only: corner rings and dot pattern (styles/home.css) */}
-                  <span className="zx-card-deco" aria-hidden="true" />
-                  <span className="zx-card-icon">
-                    <OpportunityGlyph name={card.glyph} size={22} />
-                  </span>
-                  <span className="zx-card-body">
-                    <span className="zx-card-title">{card.title}</span>
-                    <span className="zx-card-text">{card.text}</span>
-                    <span className="zx-card-cta">
-                      {card.cta} <Icon name="arrow-right" size={16} />
+                {card.comingSoon ? (
+                  // Not open yet: the same card and styles (hover, focus and
+                  // all), but no destination — no href and no handlers, so
+                  // clicks, Enter/Space and taps do nothing. Still reachable
+                  // by keyboard, announced as an unavailable link.
+                  <div className="zx-card" role="link" aria-disabled="true" tabIndex={0}>
+                    <span className="zx-card-deco" aria-hidden="true" />
+                    <span className="zx-card-icon">
+                      <OpportunityGlyph name={card.glyph} size={22} />
                     </span>
-                  </span>
-                </Link>
+                    <span className="zx-card-body">
+                      <span className="zx-card-title">{card.title}</span>
+                      <span className="zx-card-text">{card.text}</span>
+                      <span className="zx-card-cta">{card.cta}</span>
+                    </span>
+                  </div>
+                ) : (
+                  <Link to={careersViewPath(card.destination)} className="zx-card">
+                    {/* decoration only: corner rings and dot pattern (styles/home.css) */}
+                    <span className="zx-card-deco" aria-hidden="true" />
+                    <span className="zx-card-icon">
+                      <OpportunityGlyph name={card.glyph} size={22} />
+                    </span>
+                    <span className="zx-card-body">
+                      <span className="zx-card-title">{card.title}</span>
+                      <span className="zx-card-text">{card.text}</span>
+                      <span className="zx-card-cta">
+                        {card.cta} <Icon name="arrow-right" size={16} />
+                      </span>
+                    </span>
+                  </Link>
+                )}
               </li>
             ))}
           </ul>
